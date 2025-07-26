@@ -142,8 +142,6 @@ pub struct UpdateConfigRequest {
     pub rate_duration: Option<u64>,
     // 其他设置
     pub cdn_sorting: Option<bool>,
-    // 时区设置
-    pub timezone: Option<String>,
     // UP主投稿风控配置
     pub large_submission_threshold: Option<usize>,
     pub base_request_delay: Option<u64>,

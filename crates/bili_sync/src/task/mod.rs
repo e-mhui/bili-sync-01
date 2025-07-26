@@ -95,8 +95,6 @@ pub struct UpdateConfigTask {
     pub rate_duration: Option<u64>,
     // 其他设置
     pub cdn_sorting: Option<bool>,
-    // 时区设置
-    pub timezone: Option<String>,
     // UP主投稿风控配置
     pub large_submission_threshold: Option<usize>,
     pub base_request_delay: Option<u64>,
@@ -1399,8 +1397,6 @@ impl ConfigTaskQueue {
                 rate_duration: task.rate_duration,
                 // 其他设置
                 cdn_sorting: task.cdn_sorting,
-                // 时区设置
-                timezone: task.timezone.clone(),
                 // UP主投稿风控配置
                 large_submission_threshold: task.large_submission_threshold,
                 base_request_delay: task.base_request_delay,

@@ -221,8 +221,6 @@ export interface ConfigResponse {
 	rate_duration?: number;
 	// 新增其他设置
 	cdn_sorting?: boolean;
-	// 时区设置
-	timezone?: string;
 	// UP主投稿风控配置
 	large_submission_threshold?: number;
 	base_request_delay?: number;
@@ -305,8 +303,6 @@ export interface UpdateConfigRequest {
 	rate_duration?: number;
 	// 新增其他设置
 	cdn_sorting?: boolean;
-	// 时区设置
-	timezone?: string;
 	// UP主投稿风控配置
 	large_submission_threshold?: number;
 	base_request_delay?: number;

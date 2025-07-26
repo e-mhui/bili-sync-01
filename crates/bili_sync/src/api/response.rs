@@ -257,8 +257,6 @@ pub struct ConfigResponse {
     pub rate_duration: Option<u64>,
     // 其他设置
     pub cdn_sorting: bool,
-    // 时区设置
-    pub timezone: String,
     // UP主投稿风控配置
     pub large_submission_threshold: usize,
     pub base_request_delay: u64,

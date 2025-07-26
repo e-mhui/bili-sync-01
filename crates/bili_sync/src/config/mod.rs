@@ -84,9 +84,6 @@ fn default_time_format() -> String {
     "%Y-%m-%d".to_string()
 }
 
-fn default_timezone() -> String {
-    "Asia/Shanghai".to_string()
-}
 
 /// 默认的 auth_token 实现，首次使用时返回None，需要用户主动设置
 fn default_auth_token() -> Option<String> {
@@ -161,8 +158,6 @@ pub struct Config {
     pub time_format: String,
     #[serde(default)]
     pub cdn_sorting: bool,
-    #[serde(default = "default_timezone")]
-    pub timezone: String,
     #[serde(default)]
     pub submission_risk_control: crate::config::item::SubmissionRiskControlConfig,
     #[serde(default)]
@@ -321,7 +316,6 @@ impl Clone for Config {
             concurrent_limit: self.concurrent_limit.clone(),
             time_format: self.time_format.clone(),
             cdn_sorting: self.cdn_sorting,
-            timezone: self.timezone.clone(),
             submission_risk_control: self.submission_risk_control.clone(),
             scan_deleted_videos: self.scan_deleted_videos,
             skip_bangumi_preview: self.skip_bangumi_preview,
@@ -359,7 +353,6 @@ impl Default for Config {
             concurrent_limit: ConcurrentLimit::default(),
             time_format: default_time_format(),
             cdn_sorting: true,
-            timezone: default_timezone(),
             submission_risk_control: crate::config::item::SubmissionRiskControlConfig::default(),
             scan_deleted_videos: false,
             skip_bangumi_preview: default_skip_bangumi_preview(),

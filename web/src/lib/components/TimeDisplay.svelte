@@ -1,35 +1,28 @@
 <script lang="ts">
-	import { formatTimestamp, getRelativeTime, getCurrentTimezone } from '$lib/utils/timezone';
+	import { formatTimestamp, getRelativeTime } from '$lib/utils/timezone';
 	import { onMount } from 'svelte';
 
 	export let timestamp: string | number | Date;
 	export let format: 'datetime' | 'date' | 'time' | 'relative' = 'datetime';
-	export let timezone: string = '';
 	export let showTooltip: boolean = true;
 
-	let currentTimezone = '';
 	let formattedTime = '';
 	let relativeTime = '';
 
 	onMount(() => {
-		currentTimezone = timezone || getCurrentTimezone();
 		updateTime();
 	});
 
 	function updateTime() {
+		// 始终使用北京时间 (Asia/Shanghai)
+		const beijingTimezone = 'Asia/Shanghai';
 		if (format === 'relative') {
-			formattedTime = getRelativeTime(timestamp, currentTimezone);
-			relativeTime = formatTimestamp(timestamp, currentTimezone, 'datetime');
+			formattedTime = getRelativeTime(timestamp, beijingTimezone);
+			relativeTime = formatTimestamp(timestamp, beijingTimezone, 'datetime');
 		} else {
-			formattedTime = formatTimestamp(timestamp, currentTimezone, format);
-			relativeTime = getRelativeTime(timestamp, currentTimezone);
+			formattedTime = formatTimestamp(timestamp, beijingTimezone, format);
+			relativeTime = getRelativeTime(timestamp, beijingTimezone);
 		}
-	}
-
-	// 响应时区变化
-	$: if (currentTimezone !== (timezone || getCurrentTimezone())) {
-		currentTimezone = timezone || getCurrentTimezone();
-		updateTime();
 	}
 
 	// 响应时间戳变化

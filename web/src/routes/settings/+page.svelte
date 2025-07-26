@@ -17,13 +17,7 @@
 	import QrLogin from '$lib/components/qr-login.svelte';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
 	import type { ConfigResponse, VideoInfo, UserInfo } from '$lib/types';
-	import {
-		DEFAULT_TIMEZONE,
-		getCurrentTimezone,
-		setTimezone,
-		TIMEZONE_OPTIONS
-	} from '$lib/utils/timezone';
-	import {
+		import {
 		DownloadIcon,
 		FileTextIcon,
 		KeyIcon,
@@ -170,7 +164,6 @@
 
 	// 其他设置
 	let cdnSorting = false;
-	let timezone = DEFAULT_TIMEZONE;
 	let scanDeletedVideos = false;
 	let upperPath = ''; // UP主头像保存路径
 
@@ -457,7 +450,6 @@
 
 			// 其他设置
 			cdnSorting = config.cdn_sorting || false;
-			timezone = config.timezone || getCurrentTimezone();
 			scanDeletedVideos = config.scan_deleted_videos || false;
 			upperPath = config.upper_path || '';
 
@@ -640,7 +632,6 @@
 				rate_duration: rateDuration,
 				// 其他设置
 				cdn_sorting: cdnSorting,
-				timezone: timezone,
 				scan_deleted_videos: scanDeletedVideos,
 				upper_path: upperPath,
 				// UP主投稿风控配置
@@ -2998,22 +2989,6 @@
 								<p class="text-muted-foreground text-sm">每次扫描下载的时间间隔</p>
 							</div>
 
-							<div class="space-y-2">
-								<Label for="timezone">时区设置</Label>
-								<select
-									id="timezone"
-									bind:value={timezone}
-									onchange={() => setTimezone(timezone)}
-									class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-								>
-									{#each TIMEZONE_OPTIONS as option (option.value)}
-										<option value={option.value}>{option.label}</option>
-									{/each}
-								</select>
-								<p class="text-muted-foreground text-sm">
-									选择时区后，所有时间戳将转换为对应时区显示
-								</p>
-							</div>
 
 							<div class="flex items-center space-x-2">
 								<input
