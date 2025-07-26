@@ -3406,7 +3406,7 @@
 							<div
 								class="space-y-4 rounded-lg border border-blue-200 bg-blue-50/50 p-4 dark:border-blue-800 dark:bg-blue-950/10"
 							>
-								<h3 class="text-base font-semibold">Server酱配置</h3>
+								<h3 class="text-base font-semibold">Server酱配置(现被替换为 PushDeer)</h3>
 
 								<div class="space-y-2">
 									<Label for="serverchan-key">Server酱 SendKey</Label>

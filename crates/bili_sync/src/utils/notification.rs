@@ -9,8 +9,9 @@ use crate::config::NotificationConfig;
 // Server酱API请求结构
 #[derive(Serialize)]
 struct ServerChanRequest {
-    title: String,
+    text: String,
     desp: String,
+    pushkey: String,
 }
 
 // Server酱API响应结构
@@ -18,10 +19,9 @@ struct ServerChanRequest {
 struct ServerChanResponse {
     #[serde(deserialize_with = "deserialize_code")]
     code: i32,
-    message: String,
     #[serde(default)]
     #[allow(dead_code)]
-    data: Option<serde_json::Value>,
+    content: Option<serde_json::Value>,
 }
 
 // 自定义反序列化器，支持字符串和整数的code
@@ -225,10 +225,12 @@ impl NotificationClient {
     }
 
     async fn send_to_serverchan(&self, key: &str, title: &str, content: &str) -> Result<()> {
-        let url = format!("https://sctapi.ftqq.com/{}.send", key);
+        // let url = format!("https://sctapi.ftqq.com/{}.send", key);
+        let url = format!("https://api2.pushdeer.com/message/push");
         let request = ServerChanRequest {
-            title: title.to_string(),
+            text: title.to_string(),
             desp: content.to_string(),
+            pushkey: key.to_string(),
         };
 
         let response = self.client.post(&url).json(&request).send().await?;
@@ -240,7 +242,7 @@ impl NotificationClient {
         if server_response.code == 0 {
             Ok(())
         } else {
-            Err(anyhow!("Server酱返回错误: {}", server_response.message))
+            Err(anyhow!("Server酱返回错误: {}", server_response.code))
         }
     }
 

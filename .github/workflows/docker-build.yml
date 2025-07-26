@@ -51,9 +51,9 @@ on:
 
 env:
   REGISTRY: docker.io
-  IMAGE_NAME: qq1582185982/bili-sync
+  IMAGE_NAME: emhui/bili-sync
   CNB_REGISTRY: docker.cnb.cool
-  CNB_IMAGE_NAME: sviplk.com/docker/bili-sync
+  CNB_IMAGE_NAME: m.box/docker/bili-sync
 
 jobs:
   # 构建二进制文件
