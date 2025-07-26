@@ -3908,6 +3908,8 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         enable_auto_backoff: config.submission_risk_control.enable_auto_backoff,
         auto_backoff_base_seconds: config.submission_risk_control.auto_backoff_base_seconds,
         auto_backoff_max_multiplier: config.submission_risk_control.auto_backoff_max_multiplier,
+        source_delay_seconds: config.submission_risk_control.source_delay_seconds,
+        submission_source_delay_seconds: config.submission_risk_control.submission_source_delay_seconds,
         scan_deleted_videos: config.scan_deleted_videos,
         // aria2监控配置
         enable_aria2_health_check: config.enable_aria2_health_check,

@@ -107,13 +107,15 @@ impl FileLogWriter {
         
         let log_line = format!("{},{},{},{}\n", timestamp, level, escaped_message, escaped_target);
         
-        // 写入全部日志文件
-        if let Ok(mut writer) = self.all_writer.lock() {
-            if let Err(e) = writer.write_all(log_line.as_bytes()) {
-                eprintln!("写入全部日志文件失败: {}", e);
-            }
-            if let Err(e) = writer.sync_all() {
-                eprintln!("同步全部日志文件失败: {}", e);
+        // 写入全部日志文件（不包含debug级别）
+        if level.to_lowercase() != "debug" {
+            if let Ok(mut writer) = self.all_writer.lock() {
+                if let Err(e) = writer.write_all(log_line.as_bytes()) {
+                    eprintln!("写入全部日志文件失败: {}", e);
+                }
+                if let Err(e) = writer.sync_all() {
+                    eprintln!("同步全部日志文件失败: {}", e);
+                }
             }
         }
         

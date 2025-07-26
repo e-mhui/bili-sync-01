@@ -273,6 +273,8 @@ pub struct ConfigResponse {
     pub enable_auto_backoff: bool,
     pub auto_backoff_base_seconds: u64,
     pub auto_backoff_max_multiplier: u64,
+    pub source_delay_seconds: u64,
+    pub submission_source_delay_seconds: u64,
     // 系统设置
     pub scan_deleted_videos: bool,
     // aria2监控配置

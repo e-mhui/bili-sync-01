@@ -482,8 +482,8 @@
 			enableAutoBackoff = config.enable_auto_backoff ?? true;
 			autoBackoffBaseSeconds = config.auto_backoff_base_seconds || 10;
 			autoBackoffMaxMultiplier = config.auto_backoff_max_multiplier || 5;
-			sourceDelaySeconds = config.source_delay_seconds || 2;
-			submissionSourceDelaySeconds = config.submission_source_delay_seconds || 5;
+			sourceDelaySeconds = config.source_delay_seconds ?? 2;
+			submissionSourceDelaySeconds = config.submission_source_delay_seconds ?? 5;
 
 			// aria2监控配置
 			enableAria2HealthCheck = config.enable_aria2_health_check ?? false;
