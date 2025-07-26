@@ -8,6 +8,7 @@ use tracing::{debug, error, info, warn};
 use crate::adapter::Args;
 use crate::bilibili::{self, BiliClient, CollectionItem, CollectionType};
 use crate::config::Config;
+use crate::utils::file_logger;
 use crate::initialization;
 use crate::task::TASK_CONTROLLER;
 use crate::unified_downloader::UnifiedDownloader;
@@ -546,6 +547,8 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
         }
 
         // ========== 扫描后处理阶段 ==========
+        // 扫描完成，刷新所有缓冲的日志到文件
+        file_logger::flush_file_logger();
         // 只在未暂停时处理后续任务
         if !TASK_CONTROLLER.is_paused() {
             // 安全时机：扫描任务已完成，处理暂存的删除任务

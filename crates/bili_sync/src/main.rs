@@ -151,13 +151,15 @@ fn init() {
 async fn handle_shutdown(tracker: TaskTracker, token: CancellationToken) {
     tokio::select! {
         _ = tracker.wait() => {
-            error!("所有任务均已终止，程序退出")
+            error!("所有任务均已终止，程序退出");
+            file_logger::shutdown_file_logger();
         }
         _ = terminate() => {
             info!("接收到终止信号，正在终止任务..");
             token.cancel();
             tracker.wait().await;
             info!("所有任务均已终止，程序退出");
+            file_logger::shutdown_file_logger();
         }
     }
 }

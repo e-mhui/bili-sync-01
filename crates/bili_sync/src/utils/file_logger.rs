@@ -1,7 +1,8 @@
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::collections::VecDeque;
 use once_cell::sync::Lazy;
 use chrono::{Local, TimeZone};
 use crate::config::CONFIG_DIR;
@@ -11,13 +12,24 @@ pub static STARTUP_TIME: Lazy<String> = Lazy::new(|| {
     Local::now().format("%Y-%m-%d-%H-%M-%S").to_string()
 });
 
+// 日志条目结构
+#[derive(Clone)]
+struct LogEntry {
+    timestamp: String,
+    level: String,
+    message: String,
+    target: String,
+}
+
 // 日志文件写入器
 pub struct FileLogWriter {
-    all_writer: Arc<Mutex<File>>,
-    debug_writer: Arc<Mutex<File>>,
-    info_writer: Arc<Mutex<File>>,
-    warn_writer: Arc<Mutex<File>>,
-    error_writer: Arc<Mutex<File>>,
+    all_writer: Arc<Mutex<BufWriter<File>>>,
+    debug_writer: Arc<Mutex<BufWriter<File>>>,
+    info_writer: Arc<Mutex<BufWriter<File>>>,
+    warn_writer: Arc<Mutex<BufWriter<File>>>,
+    error_writer: Arc<Mutex<BufWriter<File>>>,
+    // 日志缓冲区
+    log_buffer: Arc<Mutex<VecDeque<LogEntry>>>,
 }
 
 impl FileLogWriter {
@@ -51,22 +63,25 @@ impl FileLogWriter {
             info_writer: Arc::new(Mutex::new(info_writer)),
             warn_writer: Arc::new(Mutex::new(warn_writer)),
             error_writer: Arc::new(Mutex::new(error_writer)),
+            log_buffer: Arc::new(Mutex::new(VecDeque::new())),
         })
     }
     
-    fn create_log_file(path: &Path) -> anyhow::Result<File> {
-        let mut file = OpenOptions::new()
+    fn create_log_file(path: &Path) -> anyhow::Result<BufWriter<File>> {
+        let file = OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
             .open(path)?;
         
-        // 写入CSV头，使用UTF-8 BOM以支持Excel正确识别中文
-        file.write_all(&[0xEF, 0xBB, 0xBF])?; // UTF-8 BOM
-        writeln!(file, "时间,级别,消息,来源")?;
-        file.sync_all()?; // 确保立即写入磁盘
+        let mut buf_writer = BufWriter::with_capacity(64 * 1024, file); // 64KB缓冲区
         
-        Ok(file)
+        // 写入CSV头，使用UTF-8 BOM以支持Excel正确识别中文
+        buf_writer.write_all(&[0xEF, 0xBB, 0xBF])?; // UTF-8 BOM
+        writeln!(buf_writer, "时间,级别,消息,来源")?;
+        buf_writer.flush()?; // 仅刷新缓冲区，不强制同步到磁盘
+        
+        Ok(buf_writer)
     }
     
     fn cleanup_old_logs(log_dir: &Path) -> anyhow::Result<()> {
@@ -101,39 +116,20 @@ impl FileLogWriter {
     pub fn write_log(&self, timestamp: &str, level: &str, message: &str, target: Option<&str>) {
         let target_str = target.unwrap_or("");
         
-        // 转义CSV特殊字符
-        let escaped_message = Self::escape_csv(message);
-        let escaped_target = Self::escape_csv(target_str);
-        
-        let log_line = format!("{},{},{},{}\n", timestamp, level, escaped_message, escaped_target);
-        
-        // 写入全部日志文件（不包含debug级别）
-        if level.to_lowercase() != "debug" {
-            if let Ok(mut writer) = self.all_writer.lock() {
-                if let Err(e) = writer.write_all(log_line.as_bytes()) {
-                    eprintln!("写入全部日志文件失败: {}", e);
-                }
-                if let Err(e) = writer.sync_all() {
-                    eprintln!("同步全部日志文件失败: {}", e);
-                }
-            }
-        }
-        
-        // 根据级别写入对应文件
-        let level_writer = match level.to_lowercase().as_str() {
-            "debug" => &self.debug_writer,
-            "info" => &self.info_writer,
-            "warn" => &self.warn_writer,
-            "error" => &self.error_writer,
-            _ => return,
+        // 创建日志条目
+        let entry = LogEntry {
+            timestamp: timestamp.to_string(),
+            level: level.to_string(),
+            message: message.to_string(),
+            target: target_str.to_string(),
         };
         
-        if let Ok(mut writer) = level_writer.lock() {
-            if let Err(e) = writer.write_all(log_line.as_bytes()) {
-                eprintln!("写入{}日志文件失败: {}", level, e);
-            }
-            if let Err(e) = writer.sync_all() {
-                eprintln!("同步{}日志文件失败: {}", level, e);
+        // 添加到缓冲区，非阻塞操作
+        if let Ok(mut buffer) = self.log_buffer.lock() {
+            buffer.push_back(entry);
+            // 如果缓冲区过大，移除旧条目防止内存溢出
+            if buffer.len() > 10000 {
+                buffer.pop_front();
             }
         }
     }
@@ -145,13 +141,91 @@ impl FileLogWriter {
             field.to_string()
         }
     }
+    
+    // 手动刷新日志到文件
+    pub fn flush(&self) {
+        Self::flush_logs(&self.log_buffer, &self.all_writer, &self.debug_writer, &self.info_writer, &self.warn_writer, &self.error_writer);
+    }
+    
+    // 刷新日志到文件
+    fn flush_logs(
+        log_buffer: &Arc<Mutex<VecDeque<LogEntry>>>,
+        all_writer: &Arc<Mutex<BufWriter<File>>>,
+        debug_writer: &Arc<Mutex<BufWriter<File>>>,
+        info_writer: &Arc<Mutex<BufWriter<File>>>,
+        warn_writer: &Arc<Mutex<BufWriter<File>>>,
+        error_writer: &Arc<Mutex<BufWriter<File>>>,
+    ) {
+        // 获取待处理的日志
+        let entries = {
+            if let Ok(mut buffer) = log_buffer.lock() {
+                if buffer.is_empty() {
+                    return;
+                }
+                let entries: Vec<LogEntry> = buffer.drain(..).collect();
+                entries
+            } else {
+                return;
+            }
+        };
+        
+        // 批量写入日志
+        for entry in entries {
+            let escaped_message = Self::escape_csv(&entry.message);
+            let escaped_target = Self::escape_csv(&entry.target);
+            let log_line = format!("{},{},{},{}\n", entry.timestamp, entry.level, escaped_message, escaped_target);
+            
+            // 写入全部日志文件（不包含debug级别）
+            if entry.level.to_lowercase() != "debug" {
+                if let Ok(mut writer) = all_writer.lock() {
+                    let _ = writer.write_all(log_line.as_bytes());
+                }
+            }
+            
+            // 根据级别写入对应文件
+            let level_writer = match entry.level.to_lowercase().as_str() {
+                "debug" => debug_writer,
+                "info" => info_writer,
+                "warn" => warn_writer,
+                "error" => error_writer,
+                _ => continue,
+            };
+            
+            if let Ok(mut writer) = level_writer.lock() {
+                let _ = writer.write_all(log_line.as_bytes());
+            }
+        }
+        
+        // 刷新所有写入器的缓冲区（不强制同步到磁盘）
+        if let Ok(mut writer) = all_writer.lock() {
+            let _ = writer.flush();
+        }
+        if let Ok(mut writer) = debug_writer.lock() {
+            let _ = writer.flush();
+        }
+        if let Ok(mut writer) = info_writer.lock() {
+            let _ = writer.flush();
+        }
+        if let Ok(mut writer) = warn_writer.lock() {
+            let _ = writer.flush();
+        }
+        if let Ok(mut writer) = error_writer.lock() {
+            let _ = writer.flush();
+        }
+    }
+    
+    // 优雅停止
+    pub fn shutdown(&self) {
+        // 最后一次刷新所有缓冲的日志
+        self.flush();
+    }
 }
 
 // 全局文件日志写入器
 pub static FILE_LOG_WRITER: Lazy<Option<FileLogWriter>> = Lazy::new(|| {
     match FileLogWriter::new() {
         Ok(writer) => {
-            tracing::info!("文件日志系统初始化成功，日志目录: {}/logs", CONFIG_DIR.display());
+            tracing::info!("文件日志系统初始化成功（异步缓冲模式），日志目录: {}/logs", CONFIG_DIR.display());
             Some(writer)
         }
         Err(e) => {
@@ -160,6 +234,20 @@ pub static FILE_LOG_WRITER: Lazy<Option<FileLogWriter>> = Lazy::new(|| {
         }
     }
 });
+
+// 手动刷新所有缓冲的日志到文件
+pub fn flush_file_logger() {
+    if let Some(ref writer) = *FILE_LOG_WRITER {
+        writer.flush();
+    }
+}
+
+// 在程序退出时调用，确保所有日志都被写入
+pub fn shutdown_file_logger() {
+    if let Some(ref writer) = *FILE_LOG_WRITER {
+        writer.shutdown();
+    }
+}
 
 // 获取当前会话的日志文件列表
 pub fn get_current_session_logs() -> Vec<PathBuf> {
