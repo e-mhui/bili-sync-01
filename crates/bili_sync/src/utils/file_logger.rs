@@ -159,17 +159,14 @@ impl FileLogWriter {
         // 获取待处理的日志
         let entries = {
             if let Ok(mut buffer) = log_buffer.lock() {
-                if buffer.is_empty() {
-                    return;
-                }
                 let entries: Vec<LogEntry> = buffer.drain(..).collect();
                 entries
             } else {
-                return;
+                Vec::new()
             }
         };
         
-        // 批量写入日志
+        // 批量写入日志（如果有的话）
         for entry in entries {
             let escaped_message = Self::escape_csv(&entry.message);
             let escaped_target = Self::escape_csv(&entry.target);
