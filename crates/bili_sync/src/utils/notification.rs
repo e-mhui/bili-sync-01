@@ -21,7 +21,7 @@ struct ServerChanResponse {
     code: i32,
     #[serde(default)]
     #[allow(dead_code)]
-    data: Option<serde_json::Value>,
+    content: Option<serde_json::Value>,
 }
 
 // 自定义反序列化器，支持字符串和整数的code
