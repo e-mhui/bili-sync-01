@@ -31,28 +31,6 @@ where
 {
     use serde::de::Error;
     let value = serde_json::Value::deserialize(deserializer)?;
-    
-    match value {
-        serde_json::Value::Number(n) => {
-            n.as_i64()
-                .and_then(|v| i32::try_from(v).ok())
-                .ok_or_else(|| D::Error::custom("code is not a valid i32"))
-        }
-        serde_json::Value::String(s) => {
-            s.parse::<i32>()
-                .map_err(|_| D::Error::custom(format!("code string '{}' is not a valid i32", s)))
-        }
-        _ => Err(D::Error::custom("code must be a number or string")),
-    }
-}
-
-// 自定义反序列化器，支持字符串和整数的code
-fn deserialize_code<'de, D>(deserializer: D) -> Result<i32, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de::Error;
-    let value = serde_json::Value::deserialize(deserializer)?;
 
     match value {
         serde_json::Value::Number(n) => n
