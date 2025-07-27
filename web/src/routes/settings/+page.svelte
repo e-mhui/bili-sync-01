@@ -112,7 +112,7 @@
 		{
 			id: 'system',
 			title: '系统设置',
-			description: '时区、扫描间隔等其他设置',
+			description: '扫描间隔等其他设置',
 			icon: SettingsIcon
 		}
 	];
@@ -2947,7 +2947,7 @@
 			>
 				<SheetHeader class="{isMobile ? 'border-b p-4' : 'border-b p-6'} relative">
 					<SheetTitle>系统设置</SheetTitle>
-					<SheetDescription>时区、扫描间隔等其他设置</SheetDescription>
+					<SheetDescription>扫描间隔等其他设置</SheetDescription>
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
@@ -3029,7 +3029,6 @@
 								<h5 class="mb-2 font-medium text-orange-800 dark:text-orange-200">其他设置说明</h5>
 								<div class="space-y-1 text-sm text-orange-700 dark:text-orange-300">
 									<p><strong>扫描间隔：</strong>每次扫描下载的时间间隔（秒）</p>
-									<p><strong>时间格式：</strong>控制时间变量在文件名中的显示格式</p>
 									<p><strong>CDN排序：</strong>启用后优先使用质量更高的CDN，可能提升下载速度</p>
 									<p>
 										<strong>显示已删除视频：</strong
