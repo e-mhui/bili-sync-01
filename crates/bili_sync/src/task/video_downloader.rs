@@ -354,19 +354,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             // 合并新旧源，新源在前
             let ordered_sources = [new_sources, old_sources].concat();
 
-            // 转换VideoSourceWithId为VideoSourceEnum以便后续处理
-            let mut video_source_enums = Vec::new();
-            for source_with_id in &ordered_sources {
-                match convert_to_video_source_enum(source_with_id, &bili_client, &connection).await {
-                    Ok(video_source_enum) => video_source_enums.push(video_source_enum),
-                    Err(e) => {
-                        warn!("转换视频源失败，跳过该源: {}", e);
-                        continue;
-                    }
-                }
-            }
-
-            // 使用全局内存优化器获取数据库连接
+            // 先获取优化连接，再进行视频源转换
             let optimized_connection = match crate::utils::global_memory_optimizer::get_optimized_connection().await {
                 Some(conn) => {
                     let is_memory_optimized = crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await;
@@ -379,6 +367,18 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                     connection.clone()
                 }
             };
+
+            // 转换VideoSourceWithId为VideoSourceEnum以便后续处理，使用优化后的连接
+            let mut video_source_enums = Vec::new();
+            for source_with_id in &ordered_sources {
+                match convert_to_video_source_enum(source_with_id, &bili_client, &optimized_connection).await {
+                    Ok(video_source_enum) => video_source_enums.push(video_source_enum),
+                    Err(e) => {
+                        warn!("转换视频源失败，跳过该源: {}", e);
+                        continue;
+                    }
+                }
+            }
 
             // 初始化扫描收集器来统计本轮扫描结果
             let mut scan_collector = ScanCollector::new();
