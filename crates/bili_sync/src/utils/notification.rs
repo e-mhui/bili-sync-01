@@ -187,7 +187,15 @@ impl NotificationClient {
                         
                         // 添加额外信息
                         if source_result.source_type == "番剧" && video.episode_number.is_some() {
-                            video_line.push_str(&format!(" (第{}集)", video.episode_number.unwrap()));
+                            video_line.push_str(&format!(" (第{}集", video.episode_number.unwrap()));
+                            // 番剧也显示时间戳
+                            if let Some(pubtime) = &video.pubtime {
+                                // 只显示日期部分，不显示时间
+                                if let Some(date_part) = pubtime.split(' ').next() {
+                                    video_line.push_str(&format!(", {}", date_part));
+                                }
+                            }
+                            video_line.push(')');
                         } else if let Some(pubtime) = &video.pubtime {
                             // 只显示日期部分，不显示时间
                             if let Some(date_part) = pubtime.split(' ').next() {
