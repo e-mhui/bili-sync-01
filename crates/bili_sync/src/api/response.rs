@@ -291,6 +291,8 @@ pub struct ConfigResponse {
     pub credential: Option<CredentialInfo>,
     // 推送通知配置
     pub notification: NotificationConfigResponse,
+    // 内存数据库优化开关
+    pub enable_memory_optimization: bool,
 }
 
 // B站凭证信息结构体

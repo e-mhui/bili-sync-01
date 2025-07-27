@@ -187,6 +187,9 @@ pub struct Config {
     // 推送通知配置
     #[serde(default)]
     pub notification: NotificationConfig,
+    // 内存数据库优化开关（适用于NAS等网络存储环境）
+    #[serde(default)]
+    pub enable_memory_optimization: bool,
 }
 
 fn default_skip_bangumi_preview() -> bool {
@@ -327,6 +330,7 @@ impl Clone for Config {
             collection_use_season_structure: self.collection_use_season_structure,
             bangumi_use_season_structure: self.bangumi_use_season_structure,
             notification: self.notification.clone(),
+            enable_memory_optimization: self.enable_memory_optimization,
         }
     }
 }
@@ -364,6 +368,7 @@ impl Default for Config {
             collection_use_season_structure: default_collection_use_season_structure(),
             bangumi_use_season_structure: default_bangumi_use_season_structure(),
             notification: NotificationConfig::default(),
+            enable_memory_optimization: false, // 默认关闭
         }
     }
 }

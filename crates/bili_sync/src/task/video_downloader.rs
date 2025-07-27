@@ -5,7 +5,7 @@ use anyhow::Result;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
 use tracing::{debug, error, info, warn};
 
-use crate::adapter::Args;
+use crate::adapter::{Args, VideoSourceEnum};
 use crate::bilibili::{self, BiliClient, CollectionItem, CollectionType};
 use crate::config::Config;
 use crate::utils::file_logger;
@@ -13,12 +13,24 @@ use crate::initialization;
 use crate::task::TASK_CONTROLLER;
 use crate::unified_downloader::UnifiedDownloader;
 use crate::utils::scan_collector::ScanCollector;
+use crate::utils::scan_manager::ScanContext;
 use crate::utils::scan_id_tracker::{
     get_last_scanned_ids, group_sources_by_new_old, update_last_scanned_ids,
     LastScannedIds, MaxIdRecorder, SourceType, VideoSourceWithId,
 };
 use crate::workflow::process_video_source;
 use bili_sync_entity::entities;
+
+/// 将VideoSourceWithId转换为VideoSourceEnum的辅助函数
+async fn convert_to_video_source_enum(
+    source: &VideoSourceWithId,
+    bili_client: &BiliClient,
+    connection: &DatabaseConnection,
+) -> Result<VideoSourceEnum, anyhow::Error> {
+    crate::adapter::video_source_from(&source.args, &source.path, bili_client, connection)
+        .await
+        .map(|(video_source, _)| video_source)
+}
 
 /// 从数据库加载所有视频源的函数
 async fn load_video_sources_from_db(
@@ -297,9 +309,6 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             let downloader_arc = std::sync::Arc::new(downloader);
             TASK_CONTROLLER.set_downloader(Some(downloader_arc.clone())).await;
 
-            // 初始化扫描收集器来统计本轮扫描结果
-            let mut scan_collector = ScanCollector::new();
-
             // 获取最后扫描的ID记录
             let mut last_scanned_ids = match get_last_scanned_ids(&connection).await {
                 Ok(ids) => ids,
@@ -335,6 +344,45 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
             // 合并新旧源，新源在前
             let ordered_sources = [new_sources, old_sources].concat();
+
+            // 转换VideoSourceWithId为VideoSourceEnum以创建ScanContext
+            let mut video_source_enums = Vec::new();
+            for source_with_id in &ordered_sources {
+                match convert_to_video_source_enum(source_with_id, &bili_client, &connection).await {
+                    Ok(video_source_enum) => video_source_enums.push(video_source_enum),
+                    Err(e) => {
+                        warn!("转换视频源失败，跳过该源: {}", e);
+                        continue;
+                    }
+                }
+            }
+
+            // 创建扫描上下文，内含内存数据库优化
+            let scan_context = match ScanContext::new(connection.clone(), video_source_enums).await {
+                Ok(context) => context,
+                Err(e) => {
+                    warn!("创建扫描上下文失败，使用常规模式: {}", e);
+                    // 如果创建失败，创建fallback上下文
+                    match ScanContext::new_fallback(connection.clone()).await {
+                        Ok(fallback_context) => fallback_context,
+                        Err(fallback_err) => {
+                            error!("无法创建任何扫描上下文: {}", fallback_err);
+                            TASK_CONTROLLER.set_scanning(false);
+                            crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_finished();
+                            break 'inner;
+                        }
+                    }
+                }
+            };
+
+            info!("扫描上下文创建成功，性能模式: {}", 
+                if scan_context.manager.is_memory_mode() { "内存优化" } else { "常规" });
+
+            // 获取优化后的数据库连接
+            let optimized_connection = scan_context.get_connection();
+
+            // 初始化扫描收集器来统计本轮扫描结果
+            let mut scan_collector = ScanCollector::new();
 
             // 初始化ID记录器
             let mut max_id_recorder = MaxIdRecorder::new();
@@ -410,7 +458,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
                 // 在处理视频源前记录到收集器
                 if let Ok((video_source, _)) =
-                    crate::adapter::video_source_from(args, path, &bili_client, &connection).await
+                    crate::adapter::video_source_from(args, path, &bili_client, &optimized_connection).await
                 {
                     scan_collector.start_source(&video_source);
                 }
@@ -419,7 +467,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                     args,
                     &bili_client,
                     path,
-                    &connection,
+                    &optimized_connection,
                     &downloader_arc,
                     cancellation_token,
                 )
@@ -441,7 +489,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                         // 检查是否有新视频信息需要添加到收集器（修复：同时检查数量和向量）
                         if !new_videos.is_empty() {
                             if let Ok((video_source, _)) =
-                                crate::adapter::video_source_from(args, path, &bili_client, &connection).await
+                                crate::adapter::video_source_from(args, path, &bili_client, &optimized_connection).await
                             {
                                 debug!("向scan_collector添加 {} 个新视频信息", new_videos.len());
                                 scan_collector.add_new_videos(&video_source, new_videos);
@@ -515,6 +563,18 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             }
             
             debug!("扫描完成，所有进度已保存");
+
+            // 完成扫描上下文，将内存数据库变更写回主数据库
+            match scan_context.finalize().await {
+                Ok(scan_result) => {
+                    scan_result.log_result();
+                    info!("内存数据库优化完成，所有变更已同步到主数据库");
+                }
+                Err(e) => {
+                    error!("完成扫描上下文时出错: {}", e);
+                    // 这是严重错误，但不应该阻止推送通知
+                }
+            }
 
             // 生成扫描摘要并发送推送通知
             let scan_summary = scan_collector.generate_summary();

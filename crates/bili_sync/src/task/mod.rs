@@ -119,6 +119,8 @@ pub struct UpdateConfigTask {
     pub bangumi_use_season_structure: Option<bool>,
     // UP主头像保存路径
     pub upper_path: Option<String>,
+    // 内存数据库优化开关
+    pub enable_memory_optimization: Option<bool>,
     pub task_id: String, // 唯一任务ID，用于追踪
 }
 
@@ -1427,6 +1429,8 @@ impl ConfigTaskQueue {
                 bangumi_use_season_structure: task.bangumi_use_season_structure,
                 // UP主头像保存路径
                 upper_path: task.upper_path.clone(),
+                // 内存数据库优化开关
+                enable_memory_optimization: task.enable_memory_optimization,
             };
 
             match update_config_internal(db.clone(), request).await {

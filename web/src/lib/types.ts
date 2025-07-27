@@ -257,6 +257,8 @@ export interface ConfigResponse {
 	};
 	// UP主头像保存路径
 	upper_path?: string;
+	// 内存数据库优化开关（适用于NAS等网络存储环境）
+	enable_memory_optimization?: boolean;
 }
 
 // 更新配置请求类型
@@ -331,6 +333,8 @@ export interface UpdateConfigRequest {
 	bangumi_use_season_structure?: boolean;
 	// UP主头像保存路径
 	upper_path?: string;
+	// 内存数据库优化开关（适用于NAS等网络存储环境）
+	enable_memory_optimization?: boolean;
 }
 
 // 更新配置响应类型

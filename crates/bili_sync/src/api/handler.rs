@@ -3940,6 +3940,8 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
             notification_timeout: config.notification.notification_timeout,
             notification_retry_count: config.notification.notification_retry_count,
         },
+        // 内存数据库优化开关
+        enable_memory_optimization: config.enable_memory_optimization,
     }))
 }
 
@@ -4029,6 +4031,8 @@ pub async fn update_config(
             bangumi_use_season_structure: params.bangumi_use_season_structure,
             // UP主头像保存路径
             upper_path: params.upper_path.clone(),
+            // 内存数据库优化开关
+            enable_memory_optimization: params.enable_memory_optimization,
             task_id: task_id.clone(),
         };
 
@@ -4584,6 +4588,14 @@ pub async fn update_config_internal(
                 config.upper_path = new_path;
                 updated_fields.push("upper_path");
             }
+        }
+    }
+
+    // 内存数据库优化开关
+    if let Some(enable_memory_optimization) = params.enable_memory_optimization {
+        if enable_memory_optimization != config.enable_memory_optimization {
+            config.enable_memory_optimization = enable_memory_optimization;
+            updated_fields.push("enable_memory_optimization");
         }
     }
 
