@@ -23,14 +23,14 @@ use bili_sync_entity::entities;
 
 /// 从数据库加载所有视频源的函数
 async fn load_video_sources_from_db(
-    connection: &DatabaseConnection,
+    connection: &Arc<DatabaseConnection>,
 ) -> Result<Vec<VideoSourceWithId>, Box<dyn std::error::Error + Send + Sync>> {
     let mut video_sources = Vec::new();
 
     // 加载合集源（只加载启用的）
     let collections = entities::collection::Entity::find()
         .filter(entities::collection::Column::Enabled.eq(true))
-        .all(connection)
+        .all(connection.as_ref())
         .await?;
 
     for collection in collections {
@@ -58,7 +58,7 @@ async fn load_video_sources_from_db(
     // 加载收藏夹源（只加载启用的）
     let favorites = entities::favorite::Entity::find()
         .filter(entities::favorite::Column::Enabled.eq(true))
-        .all(connection)
+        .all(connection.as_ref())
         .await?;
 
     for favorite in favorites {
@@ -74,7 +74,7 @@ async fn load_video_sources_from_db(
     // 加载UP主投稿源（只加载启用的）
     let submissions = entities::submission::Entity::find()
         .filter(entities::submission::Column::Enabled.eq(true))
-        .all(connection)
+        .all(connection.as_ref())
         .await?;
 
     for submission in submissions {
@@ -90,7 +90,7 @@ async fn load_video_sources_from_db(
     // 加载稍后观看源（只加载启用的）
     let watch_later_sources = entities::watch_later::Entity::find()
         .filter(entities::watch_later::Column::Enabled.eq(true))
-        .all(connection)
+        .all(connection.as_ref())
         .await?;
 
     for watch_later in watch_later_sources {
@@ -106,7 +106,7 @@ async fn load_video_sources_from_db(
     let bangumi_sources = entities::video_source::Entity::find()
         .filter(entities::video_source::Column::Type.eq(1))
         .filter(entities::video_source::Column::Enabled.eq(true))
-        .all(connection)
+        .all(connection.as_ref())
         .await?;
 
     for bangumi in bangumi_sources {
@@ -127,30 +127,30 @@ async fn load_video_sources_from_db(
 
 /// 统计所有视频源的数量（包括禁用的）
 async fn count_all_video_sources(
-    connection: &DatabaseConnection,
+    connection: &Arc<DatabaseConnection>,
 ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
     let mut total_count = 0;
 
     // 统计合集源
-    let collections_count = entities::collection::Entity::find().count(connection).await?;
+    let collections_count = entities::collection::Entity::find().count(connection.as_ref()).await?;
     total_count += collections_count as usize;
 
     // 统计收藏夹源
-    let favorites_count = entities::favorite::Entity::find().count(connection).await?;
+    let favorites_count = entities::favorite::Entity::find().count(connection.as_ref()).await?;
     total_count += favorites_count as usize;
 
     // 统计UP主投稿源
-    let submissions_count = entities::submission::Entity::find().count(connection).await?;
+    let submissions_count = entities::submission::Entity::find().count(connection.as_ref()).await?;
     total_count += submissions_count as usize;
 
     // 统计稍后观看源
-    let watch_later_count = entities::watch_later::Entity::find().count(connection).await?;
+    let watch_later_count = entities::watch_later::Entity::find().count(connection.as_ref()).await?;
     total_count += watch_later_count as usize;
 
     // 统计番剧源
     let bangumi_count = entities::video_source::Entity::find()
         .filter(entities::video_source::Column::Type.eq(1))
-        .count(connection)
+        .count(connection.as_ref())
         .await?;
     total_count += bangumi_count as usize;
 
@@ -160,10 +160,10 @@ async fn count_all_video_sources(
 /// 初始化所有视频源的辅助函数
 async fn init_all_sources(
     config: &Config,
-    connection: &DatabaseConnection,
+    connection: &Arc<DatabaseConnection>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 初始化番剧源
-    if let Err(e) = initialization::init_sources(config, connection).await {
+    if let Err(e) = initialization::init_sources(config, connection.as_ref()).await {
         error!("初始化番剧源失败: {}", e);
         return Err(e.into());
     }
@@ -189,7 +189,14 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
     // 在启动时初始化所有视频源 - 使用动态配置而非静态CONFIG
     let config = crate::config::reload_config();
-    if let Err(e) = init_all_sources(&config, &connection).await {
+    
+    // 获取启动时的优化连接
+    let startup_connection = match crate::utils::global_memory_optimizer::get_optimized_connection().await {
+        Some(conn) => conn,
+        None => connection.clone(),
+    };
+    
+    if let Err(e) = init_all_sources(&config, &startup_connection).await {
         error!("启动时初始化视频源失败: {}", e);
     } else {
         info!("启动时视频源初始化成功");
@@ -206,19 +213,31 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             info!("定时扫描任务已恢复");
         }
 
-        // 重新加载配置并初始化视频源
-        // 注意：由于我们使用Lazy，全局CONFIG并不会自动更新
-        // 但我们可以获取最新配置用于本轮任务
+        // 重新加载配置
         let config = crate::config::reload_config();
 
+        // 获取优化连接，确保所有数据库操作使用同一连接
+        let optimized_connection = match crate::utils::global_memory_optimizer::get_optimized_connection().await {
+            Some(conn) => {
+                let is_memory_optimized = crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await;
+                info!("使用全局内存优化器，性能模式: {}", 
+                    if is_memory_optimized { "内存优化" } else { "常规" });
+                conn
+            }
+            None => {
+                warn!("无法从全局内存优化器获取连接，使用原始连接");
+                connection.clone()
+            }
+        };
+
         // 重新初始化所有视频源（确保源初始化是幂等的）
-        if let Err(e) = init_all_sources(&config, &connection).await {
+        if let Err(e) = init_all_sources(&config, &optimized_connection).await {
             error!("重新初始化视频源失败: {}", e);
             // 即使初始化失败，也继续使用现有配置进行下载
         }
 
         // 从数据库加载视频源，而不是从配置文件
-        let video_sources = match load_video_sources_from_db(&connection).await {
+        let video_sources = match load_video_sources_from_db(&optimized_connection).await {
             Ok(sources) => sources,
             Err(e) => {
                 error!("从数据库加载视频源失败: {}", e);
@@ -227,7 +246,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
         };
 
         // 统计总的视频源数量（包括禁用的）
-        let total_sources_count = match count_all_video_sources(&connection).await {
+        let total_sources_count = match count_all_video_sources(&optimized_connection).await {
             Ok(count) => count,
             Err(e) => {
                 warn!("统计视频源总数失败: {}", e);
@@ -308,7 +327,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             TASK_CONTROLLER.set_downloader(Some(downloader_arc.clone())).await;
 
             // 获取最后扫描的ID记录
-            let mut last_scanned_ids = match get_last_scanned_ids(&connection).await {
+            let mut last_scanned_ids = match get_last_scanned_ids(&optimized_connection).await {
                 Ok(ids) => ids,
                 Err(e) => {
                     warn!("获取最后扫描ID记录失败，将所有源视为旧源: {}", e);
@@ -343,20 +362,6 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             // 合并新旧源，新源在前
             let ordered_sources = [new_sources, old_sources].concat();
 
-            // 先获取优化连接，再进行视频源转换
-            let optimized_connection = match crate::utils::global_memory_optimizer::get_optimized_connection().await {
-                Some(conn) => {
-                    let is_memory_optimized = crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await;
-                    info!("使用全局内存优化器，性能模式: {}", 
-                        if is_memory_optimized { "内存优化" } else { "常规" });
-                    conn
-                }
-                None => {
-                    warn!("无法从全局内存优化器获取连接，使用原始连接");
-                    connection.clone()
-                }
-            };
-
             // 初始化扫描收集器来统计本轮扫描结果
             let mut scan_collector = ScanCollector::new();
 
@@ -384,7 +389,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                     max_id_recorder.record(prev_source.source_type, prev_source.id);
                     max_id_recorder.merge_into(&mut last_scanned_ids);
                     
-                    if let Err(e) = update_last_scanned_ids(&connection, &last_scanned_ids).await {
+                    if let Err(e) = update_last_scanned_ids(&optimized_connection, &last_scanned_ids).await {
                         warn!("保存扫描进度失败 (源ID: {}): {}", prev_source.id, e);
                     } else {
                         debug!("已保存扫描进度 (源ID: {}, 类型: {:?})", prev_source.id, prev_source.source_type);
@@ -577,7 +582,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                     last_scanned_ids.reset_all_processed_ids();
                 }
                 
-                if let Err(e) = update_last_scanned_ids(&connection, &last_scanned_ids).await {
+                if let Err(e) = update_last_scanned_ids(&optimized_connection, &last_scanned_ids).await {
                     warn!("保存最后源的扫描进度失败 (源ID: {}): {}", final_source.id, e);
                 } else {
                     debug!("已保存最后源的扫描进度 (源ID: {}, 类型: {:?})", final_source.id, final_source.source_type);

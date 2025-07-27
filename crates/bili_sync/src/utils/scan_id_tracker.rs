@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use anyhow::Result;
 use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
@@ -35,14 +36,14 @@ pub struct LastScannedIds {
 const CONFIG_KEY: &str = "last_scanned_ids";
 
 /// 从数据库获取最后扫描的ID记录
-pub async fn get_last_scanned_ids(db: &DatabaseConnection) -> Result<LastScannedIds> {
+pub async fn get_last_scanned_ids(db: &Arc<DatabaseConnection>) -> Result<LastScannedIds> {
     use bili_sync_entity::entities::{config_item, prelude::ConfigItem};
     use sea_orm::{EntityTrait, QueryFilter, ColumnTrait};
     
     // 查询配置项
     let config_item = ConfigItem::find()
         .filter(config_item::Column::KeyName.eq(CONFIG_KEY))
-        .one(db)
+        .one(db.as_ref())
         .await?;
     
     match config_item {
@@ -59,7 +60,7 @@ pub async fn get_last_scanned_ids(db: &DatabaseConnection) -> Result<LastScanned
 }
 
 /// 更新最后扫描的ID记录到数据库
-pub async fn update_last_scanned_ids(db: &DatabaseConnection, ids: &LastScannedIds) -> Result<()> {
+pub async fn update_last_scanned_ids(db: &Arc<DatabaseConnection>, ids: &LastScannedIds) -> Result<()> {
     use bili_sync_entity::entities::{config_item, prelude::ConfigItem};
     use sea_orm::{EntityTrait, QueryFilter, ColumnTrait, ActiveModelTrait, Set};
     
@@ -68,7 +69,7 @@ pub async fn update_last_scanned_ids(db: &DatabaseConnection, ids: &LastScannedI
     // 查询是否已存在
     let existing = ConfigItem::find()
         .filter(config_item::Column::KeyName.eq(CONFIG_KEY))
-        .one(db)
+        .one(db.as_ref())
         .await?;
     
     if let Some(existing_item) = existing {
@@ -76,7 +77,7 @@ pub async fn update_last_scanned_ids(db: &DatabaseConnection, ids: &LastScannedI
         let mut active_model: config_item::ActiveModel = existing_item.into();
         active_model.value_json = Set(value_json);
         active_model.updated_at = Set(crate::utils::time_format::now_standard_string());
-        active_model.update(db).await?;
+        active_model.update(db.as_ref()).await?;
     } else {
         // 创建新记录
         let new_item = config_item::ActiveModel {
@@ -85,7 +86,7 @@ pub async fn update_last_scanned_ids(db: &DatabaseConnection, ids: &LastScannedI
             updated_at: Set(crate::utils::time_format::now_standard_string()),
             ..Default::default()
         };
-        new_item.insert(db).await?;
+        new_item.insert(db.as_ref()).await?;
     }
     
     Ok(())
