@@ -13,7 +13,7 @@ pub static STARTUP_TIME: Lazy<String> = Lazy::new(|| {
 });
 
 // 日志条目结构
-#[derive(Clone)]
+#[derive(Debug)]
 struct LogEntry {
     timestamp: String,
     level: String,
@@ -193,21 +193,26 @@ impl FileLogWriter {
             }
         }
         
-        // 刷新所有写入器的缓冲区（不强制同步到磁盘）
+        // 刷新所有写入器的缓冲区并强制同步到磁盘
         if let Ok(mut writer) = all_writer.lock() {
             let _ = writer.flush();
+            let _ = writer.get_mut().sync_all(); // 强制同步到磁盘
         }
         if let Ok(mut writer) = debug_writer.lock() {
             let _ = writer.flush();
+            let _ = writer.get_mut().sync_all();
         }
         if let Ok(mut writer) = info_writer.lock() {
             let _ = writer.flush();
+            let _ = writer.get_mut().sync_all();
         }
         if let Ok(mut writer) = warn_writer.lock() {
             let _ = writer.flush();
+            let _ = writer.get_mut().sync_all();
         }
         if let Ok(mut writer) = error_writer.lock() {
             let _ = writer.flush();
+            let _ = writer.get_mut().sync_all();
         }
     }
     
@@ -221,10 +226,7 @@ impl FileLogWriter {
 // 全局文件日志写入器
 pub static FILE_LOG_WRITER: Lazy<Option<FileLogWriter>> = Lazy::new(|| {
     match FileLogWriter::new() {
-        Ok(writer) => {
-            tracing::info!("文件日志系统初始化成功（异步缓冲模式），日志目录: {}/logs", CONFIG_DIR.display());
-            Some(writer)
-        }
+        Ok(writer) => Some(writer),
         Err(e) => {
             tracing::error!("文件日志系统初始化失败: {}", e);
             None

@@ -156,6 +156,8 @@ async fn handle_shutdown(tracker: TaskTracker, token: CancellationToken) {
         }
         _ = terminate() => {
             info!("接收到终止信号，正在终止任务..");
+            // 立即刷新日志以确保不丢失
+            file_logger::flush_file_logger();
             token.cancel();
             tracker.wait().await;
             info!("所有任务均已终止，程序退出");
