@@ -93,6 +93,7 @@ impl VideoInfo {
                 intro: Set(intro),
                 cover: Set(cover),
                 ctime: Set(ctime.naive_utc()),
+                pubtime: Set(ctime.naive_utc()), // 使用ctime作为pubtime
                 category: Set(2), // 投稿视频的内容类型肯定是视频
                 valid: Set(true),
                 ..default
