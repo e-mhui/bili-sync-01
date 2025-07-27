@@ -179,7 +179,7 @@
 						type="text"
 						bind:value={confirmText}
 						placeholder="输入视频源名称以确认删除"
-						class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 dark:focus:border-red-400 dark:focus:ring-red-400"
+						class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-foreground dark:text-foreground focus:border-red-500 focus:ring-2 focus:ring-red-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:placeholder-gray-400 dark:focus:border-red-400 dark:focus:ring-red-400"
 						disabled={isDeleting}
 					/>
 				</div>
