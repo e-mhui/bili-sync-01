@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::time::Instant;
+use tracing::{debug, warn};
 
 use crate::adapter::{VideoSource, VideoSourceEnum};
 use crate::utils::notification::{NewVideoInfo, ScanSummary, SourceScanResult};
@@ -47,8 +48,15 @@ impl ScanCollector {
     /// 批量添加新增视频信息
     pub fn add_new_videos(&mut self, video_source: &VideoSourceEnum, videos: Vec<NewVideoInfo>) {
         let key = self.get_source_key(video_source);
+        debug!("scan_collector.add_new_videos: key={}, videos.len()={}", key, videos.len());
+        
         if let Some(result) = self.source_results.get_mut(&key) {
+            let before_count = result.new_videos.len();
             result.new_videos.extend(videos);
+            let after_count = result.new_videos.len();
+            debug!("scan_collector更新: {} 从{}个视频增加到{}个", key, before_count, after_count);
+        } else {
+            warn!("scan_collector.add_new_videos: 未找到源 {}", key);
         }
     }
 
@@ -56,6 +64,15 @@ impl ScanCollector {
     pub fn generate_summary(self) -> ScanSummary {
         let scan_duration = self.start_time.elapsed();
         let total_new_videos = self.source_results.values().map(|result| result.new_videos.len()).sum();
+
+        debug!("scan_collector.generate_summary: total_sources={}, total_new_videos={}", self.total_sources, total_new_videos);
+        
+        // 详细记录每个源的新视频数量
+        for (key, result) in &self.source_results {
+            if !result.new_videos.is_empty() {
+                debug!("  源 '{}' 有 {} 个新视频", key, result.new_videos.len());
+            }
+        }
 
         let source_results = self.source_results.into_values().collect();
 

@@ -593,6 +593,7 @@ pub async fn refresh_video_source<'a>(
     }
     
     video_source.log_refresh_video_end(count);
+    debug!("workflow返回: count={}, new_videos.len()={}", count, new_videos.len());
     Ok((count, new_videos))
 }
 

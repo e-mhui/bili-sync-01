@@ -431,14 +431,25 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                         // 成功处理后，记录为上一个成功的源（不立即保存，等下次循环再保存）
                         last_successful_source = Some(source);
                         
+                        // 添加调试日志来跟踪new_videos数据传递
+                        debug!("扫描完成 - new_video_count: {}, new_videos.len(): {}", new_video_count, new_videos.len());
+                        
                         if new_video_count > 0 {
                             sources_with_new_content += 1;
-                            // 将新增视频信息添加到收集器
+                        }
+                        
+                        // 检查是否有新视频信息需要添加到收集器（修复：同时检查数量和向量）
+                        if !new_videos.is_empty() {
                             if let Ok((video_source, _)) =
                                 crate::adapter::video_source_from(args, path, &bili_client, &connection).await
                             {
+                                debug!("向scan_collector添加 {} 个新视频信息", new_videos.len());
                                 scan_collector.add_new_videos(&video_source, new_videos);
+                            } else {
+                                warn!("无法获取视频源信息，跳过添加新视频到收集器");
                             }
+                        } else if new_video_count > 0 {
+                            warn!("发现不一致：new_video_count={} 但 new_videos 为空", new_video_count);
                         }
                     }
                     Err(e) => {

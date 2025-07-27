@@ -9205,7 +9205,13 @@ pub async fn update_notification_config(
 )]
 pub async fn get_notification_status() -> Result<ApiResponse<crate::api::response::NotificationStatusResponse>, ApiError>
 {
-    let config = crate::config::reload_config().notification;
+    // 确保获取最新的配置
+    if let Err(e) = crate::config::reload_config_bundle().await {
+        warn!("重新加载配置失败: {}", e);
+    }
+    
+    // 从当前配置包中获取最新的通知配置
+    let config = crate::config::with_config(|bundle| bundle.config.notification.clone());
 
     // 这里可以从数据库或缓存中获取推送统计信息
     let status = crate::api::response::NotificationStatusResponse {
