@@ -5,7 +5,7 @@ use anyhow::Result;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
 use tracing::{debug, error, info, warn};
 
-use crate::adapter::{Args, VideoSourceEnum};
+use crate::adapter::Args;
 use crate::bilibili::{self, BiliClient, CollectionItem, CollectionType};
 use crate::config::Config;
 use crate::utils::file_logger;
@@ -20,17 +20,6 @@ use crate::utils::scan_id_tracker::{
 };
 use crate::workflow::process_video_source;
 use bili_sync_entity::entities;
-
-/// 将VideoSourceWithId转换为VideoSourceEnum的辅助函数
-async fn convert_to_video_source_enum(
-    source: &VideoSourceWithId,
-    bili_client: &BiliClient,
-    connection: &DatabaseConnection,
-) -> Result<VideoSourceEnum, anyhow::Error> {
-    crate::adapter::video_source_from(&source.args, &source.path, bili_client, connection)
-        .await
-        .map(|(video_source, _)| video_source)
-}
 
 /// 从数据库加载所有视频源的函数
 async fn load_video_sources_from_db(
@@ -368,18 +357,6 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                 }
             };
 
-            // 转换VideoSourceWithId为VideoSourceEnum以便后续处理，使用优化后的连接
-            let mut video_source_enums = Vec::new();
-            for source_with_id in &ordered_sources {
-                match convert_to_video_source_enum(source_with_id, &bili_client, &optimized_connection).await {
-                    Ok(video_source_enum) => video_source_enums.push(video_source_enum),
-                    Err(e) => {
-                        warn!("转换视频源失败，跳过该源: {}", e);
-                        continue;
-                    }
-                }
-            }
-
             // 初始化扫描收集器来统计本轮扫描结果
             let mut scan_collector = ScanCollector::new();
 
@@ -563,9 +540,16 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             
             debug!("扫描完成，所有进度已保存");
 
-            // 注意：全局内存优化器将在程序关闭时自动完成数据同步
-            // 这里只需要记录扫描完成日志
+            // 如果使用了内存优化模式，在扫描完成后立即同步数据到主数据库
             let is_memory_optimized = crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await;
+            if is_memory_optimized {
+                info!("开始将本轮扫描的数据同步到主数据库...");
+                match crate::utils::global_memory_optimizer::sync_to_main_db().await {
+                    Ok(_) => info!("数据同步完成，所有变更已保存到主数据库"),
+                    Err(e) => error!("数据同步失败: {}，可能导致数据丢失", e),
+                }
+            }
+            
             let mode = if is_memory_optimized { "内存优化模式" } else { "常规模式" };
             info!("本轮扫描完成 - 模式: {}, 视频源数量: {}", mode, ordered_sources.len());
             

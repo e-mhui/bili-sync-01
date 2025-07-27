@@ -199,6 +199,23 @@ impl GlobalMemoryOptimizer {
         Ok(())
     }
 
+    /// 同步变更但保持内存模式
+    pub async fn sync_changes_without_stopping(&mut self) -> Result<()> {
+        if !self.is_initialized || !self.is_memory_mode_enabled {
+            return Ok(());
+        }
+        
+        info!("开始同步全局内存优化器的变更（保持内存模式）");
+        
+        if let Some(ref optimizer) = self.optimizer {
+            // 调用底层的同步方法
+            optimizer.sync_to_main_db_keep_memory().await?;
+            info!("全局内存优化器数据同步完成");
+        }
+        
+        Ok(())
+    }
+
 }
 
 impl Default for GlobalMemoryOptimizer {
@@ -236,5 +253,11 @@ pub async fn reconfigure_global_memory_optimizer(db: Arc<DatabaseConnection>) ->
 pub async fn finalize_global_memory_optimizer() -> Result<()> {
     let mut optimizer = GLOBAL_MEMORY_OPTIMIZER.write().await;
     optimizer.finalize().await
+}
+
+/// 便捷函数：手动触发同步到主数据库（不停止内存模式）
+pub async fn sync_to_main_db() -> Result<()> {
+    let mut optimizer = GLOBAL_MEMORY_OPTIMIZER.write().await;
+    optimizer.sync_changes_without_stopping().await
 }
 

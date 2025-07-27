@@ -305,6 +305,22 @@ impl MemoryDbOptimizer {
         Ok(())
     }
 
+    /// 同步到主数据库但保持内存模式运行
+    pub async fn sync_to_main_db_keep_memory(&self) -> Result<()> {
+        if !self.is_memory_mode {
+            return Ok(()); // 不在内存模式中
+        }
+
+        info!("开始同步内存数据库变更到主数据库（保持内存模式）");
+
+        if let Some(memory_db) = &self.memory_db {
+            self.sync_changes_to_main_db(memory_db).await?;
+            info!("数据同步完成，内存模式继续运行");
+        }
+
+        Ok(())
+    }
+
     /// 将内存数据库的变更同步到主数据库
     async fn sync_changes_to_main_db(&self, memory_db: &DatabaseConnection) -> Result<()> {
         // 开始一个大事务来批量写入所有变更
