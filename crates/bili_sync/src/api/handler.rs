@@ -1840,7 +1840,7 @@ pub async fn add_video_source_internal(
                 created_at: sea_orm::Set(crate::utils::time_format::now_standard_string()),
                 latest_row_at: sea_orm::Set(crate::utils::time_format::now_standard_string()),
                 enabled: sea_orm::Set(true),
-                ..Default::default()
+                scan_deleted_videos: sea_orm::Set(false),
             };
 
             let insert_result = watch_later::Entity::insert(watch_later).exec(&txn).await?;
