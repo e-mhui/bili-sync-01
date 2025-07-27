@@ -4711,6 +4711,25 @@ pub async fn update_config_internal(
         }
     }
 
+    // 检查是否更新了内存优化配置
+    if updated_fields.contains(&"enable_memory_optimization") {
+        info!("检测到内存优化配置更新，准备重配置内存优化器");
+        
+        // 检查并重配置内存优化器
+        match crate::utils::global_memory_optimizer::reconfigure_global_memory_optimizer(db.clone()).await {
+            Ok(changed) => {
+                if changed {
+                    info!("内存优化配置已根据配置变化进行了重配置");
+                } else {
+                    debug!("内存优化配置无需变更");
+                }
+            }
+            Err(e) => {
+                warn!("重配置内存优化器失败: {}, 继续使用当前模式", e);
+            }
+        }
+    }
+
     Ok(crate::api::response::UpdateConfigResponse {
         success: true,
         message: if should_rename && should_reset_nfo {

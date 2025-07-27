@@ -1436,6 +1436,7 @@ impl ConfigTaskQueue {
             match update_config_internal(db.clone(), request).await {
                 Ok(response) => {
                     info!("更新配置任务执行成功: {}", response.message);
+                    // update_config_internal 已经处理了配置重载和内存优化重配置
                     processed_count += 1;
 
                     // 标记数据库任务为已完成
@@ -1464,6 +1465,21 @@ impl ConfigTaskQueue {
             match reload_config_internal().await {
                 Ok(_) => {
                     info!("重载配置任务执行成功");
+                    
+                    // 重载配置成功后，检查并重配置内存优化器
+                    match crate::utils::global_memory_optimizer::reconfigure_global_memory_optimizer(db.clone()).await {
+                        Ok(changed) => {
+                            if changed {
+                                info!("内存优化配置已根据配置变化进行了重配置");
+                            } else {
+                                debug!("内存优化配置无需变更");
+                            }
+                        }
+                        Err(e) => {
+                            warn!("重配置内存优化器失败: {}, 继续使用当前模式", e);
+                        }
+                    }
+                    
                     processed_count += 1;
 
                     // 标记数据库任务为已完成

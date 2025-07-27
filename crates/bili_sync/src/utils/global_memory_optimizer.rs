@@ -88,6 +88,88 @@ impl GlobalMemoryOptimizer {
         self.is_memory_mode_enabled
     }
 
+    /// 动态重配置内存优化器（检测配置变化并重新配置）
+    /// 这允许在运行时根据配置变化切换内存优化模式
+    pub async fn reconfigure_if_needed(&mut self, db: Arc<DatabaseConnection>) -> Result<bool> {
+        if !self.is_initialized {
+            // 如果未初始化，直接初始化
+            self.initialize(db).await?;
+            return Ok(true);
+        }
+
+        // 获取最新配置
+        let config = crate::config::reload_config();
+        let should_use_memory = config.enable_memory_optimization;
+
+        // 检测配置变化
+        if should_use_memory != self.is_memory_mode_enabled {
+            info!("检测到内存优化配置变化：{} -> {}", 
+                self.is_memory_mode_enabled, should_use_memory);
+
+            if should_use_memory {
+                // 需要切换到内存模式
+                self.switch_to_memory_mode(db).await?;
+            } else {
+                // 需要切换到常规模式
+                self.switch_to_normal_mode().await?;
+            }
+            return Ok(true); // 发生了切换
+        }
+        
+        Ok(false) // 无需切换
+    }
+
+    /// 切换到内存优化模式
+    async fn switch_to_memory_mode(&mut self, db: Arc<DatabaseConnection>) -> Result<()> {
+        info!("开始切换到内存优化模式");
+
+        // 如果当前有优化器实例，先清理
+        if let Some(mut current_optimizer) = self.optimizer.take() {
+            if self.is_memory_mode_enabled {
+                // 先停止当前的内存模式
+                current_optimizer.stop_memory_mode().await?;
+            }
+        }
+
+        // 创建新的内存数据库优化器并启动内存模式
+        let mut new_optimizer = MemoryDbOptimizer::new(db.clone());
+        match new_optimizer.start_memory_mode().await {
+            Ok(_) => {
+                self.optimizer = Some(new_optimizer);
+                self.is_memory_mode_enabled = true;
+                info!("成功切换到内存优化模式");
+                Ok(())
+            }
+            Err(e) => {
+                warn!("切换到内存优化模式失败，回退到常规模式: {}", e);
+                self.optimizer = Some(MemoryDbOptimizer::new(db));
+                self.is_memory_mode_enabled = false;
+                Err(e)
+            }
+        }
+    }
+
+    /// 切换到常规模式
+    async fn switch_to_normal_mode(&mut self) -> Result<()> {
+        info!("开始切换到常规模式");
+
+        if let Some(mut current_optimizer) = self.optimizer.take() {
+            if self.is_memory_mode_enabled {
+                // 将内存数据库的变更写回主数据库
+                current_optimizer.stop_memory_mode().await?;
+                info!("内存数据库变更已写回主数据库");
+            }
+            
+            // 创建常规模式的优化器
+            let main_db = current_optimizer.get_active_connection();
+            self.optimizer = Some(MemoryDbOptimizer::new(main_db));
+        }
+
+        self.is_memory_mode_enabled = false;
+        info!("成功切换到常规模式");
+        Ok(())
+    }
+
     /// 完成扫描，将内存数据库的变更写回主数据库
     /// 这通常在程序关闭或扫描完成时调用
     pub async fn finalize(&mut self) -> Result<()> {
@@ -142,6 +224,12 @@ pub async fn get_optimized_connection() -> Option<Arc<DatabaseConnection>> {
 pub async fn is_memory_optimization_enabled() -> bool {
     let optimizer = GLOBAL_MEMORY_OPTIMIZER.read().await;
     optimizer.is_memory_mode_enabled()
+}
+
+/// 便捷函数：重配置全局内存优化器（检测配置变化）
+pub async fn reconfigure_global_memory_optimizer(db: Arc<DatabaseConnection>) -> Result<bool> {
+    let mut optimizer = GLOBAL_MEMORY_OPTIMIZER.write().await;
+    optimizer.reconfigure_if_needed(db).await
 }
 
 /// 便捷函数：完成全局内存优化器
