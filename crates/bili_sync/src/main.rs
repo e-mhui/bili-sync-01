@@ -152,7 +152,7 @@ async fn handle_shutdown(tracker: TaskTracker, token: CancellationToken) {
     tokio::select! {
         _ = tracker.wait() => {
             error!("所有任务均已终止，程序退出");
-            file_logger::shutdown_file_logger();
+            finalize_global_systems().await;
         }
         _ = terminate() => {
             info!("接收到终止信号，正在终止任务..");
@@ -161,7 +161,18 @@ async fn handle_shutdown(tracker: TaskTracker, token: CancellationToken) {
             token.cancel();
             tracker.wait().await;
             info!("所有任务均已终止，程序退出");
-            file_logger::shutdown_file_logger();
+            finalize_global_systems().await;
         }
     }
+}
+
+/// 完成全局系统清理
+async fn finalize_global_systems() {
+    // 完成全局内存优化器，将内存中的变更写回主数据库
+    if let Err(e) = crate::utils::global_memory_optimizer::finalize_global_memory_optimizer().await {
+        warn!("完成全局内存优化器时出错: {}", e);
+    }
+    
+    // 关闭文件日志系统
+    file_logger::shutdown_file_logger();
 }

@@ -13,7 +13,7 @@ use crate::initialization;
 use crate::task::TASK_CONTROLLER;
 use crate::unified_downloader::UnifiedDownloader;
 use crate::utils::scan_collector::ScanCollector;
-use crate::utils::scan_manager::ScanContext;
+use crate::utils::global_memory_optimizer::initialize_global_memory_optimizer;
 use crate::utils::scan_id_tracker::{
     get_last_scanned_ids, group_sources_by_new_old, update_last_scanned_ids,
     LastScannedIds, MaxIdRecorder, SourceType, VideoSourceWithId,
@@ -189,6 +189,15 @@ async fn init_all_sources(
 pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
     let bili_client = BiliClient::new(String::new());
 
+    // 在程序启动阶段就初始化全局内存优化器
+    // 这确保了所有后续的数据库操作都能享受到内存优化
+    info!("开始初始化全局内存数据库优化器");
+    if let Err(e) = initialize_global_memory_optimizer(connection.clone()).await {
+        warn!("初始化全局内存优化器失败，将使用常规模式: {}", e);
+    } else {
+        info!("全局内存数据库优化器初始化完成");
+    }
+
     // 在启动时初始化所有视频源 - 使用动态配置而非静态CONFIG
     let config = crate::config::reload_config();
     if let Err(e) = init_all_sources(&config, &connection).await {
@@ -345,7 +354,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             // 合并新旧源，新源在前
             let ordered_sources = [new_sources, old_sources].concat();
 
-            // 转换VideoSourceWithId为VideoSourceEnum以创建ScanContext
+            // 转换VideoSourceWithId为VideoSourceEnum以便后续处理
             let mut video_source_enums = Vec::new();
             for source_with_id in &ordered_sources {
                 match convert_to_video_source_enum(source_with_id, &bili_client, &connection).await {
@@ -357,29 +366,19 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                 }
             }
 
-            // 创建扫描上下文，内含内存数据库优化
-            let scan_context = match ScanContext::new(connection.clone(), video_source_enums).await {
-                Ok(context) => context,
-                Err(e) => {
-                    warn!("创建扫描上下文失败，使用常规模式: {}", e);
-                    // 如果创建失败，创建fallback上下文
-                    match ScanContext::new_fallback(connection.clone()).await {
-                        Ok(fallback_context) => fallback_context,
-                        Err(fallback_err) => {
-                            error!("无法创建任何扫描上下文: {}", fallback_err);
-                            TASK_CONTROLLER.set_scanning(false);
-                            crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_finished();
-                            break 'inner;
-                        }
-                    }
+            // 使用全局内存优化器获取数据库连接
+            let optimized_connection = match crate::utils::global_memory_optimizer::get_optimized_connection().await {
+                Some(conn) => {
+                    let is_memory_optimized = crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await;
+                    info!("使用全局内存优化器，性能模式: {}", 
+                        if is_memory_optimized { "内存优化" } else { "常规" });
+                    conn
+                }
+                None => {
+                    warn!("无法从全局内存优化器获取连接，使用原始连接");
+                    connection.clone()
                 }
             };
-
-            info!("扫描上下文创建成功，性能模式: {}", 
-                if scan_context.manager.is_memory_mode() { "内存优化" } else { "常规" });
-
-            // 获取优化后的数据库连接
-            let optimized_connection = scan_context.get_connection();
 
             // 初始化扫描收集器来统计本轮扫描结果
             let mut scan_collector = ScanCollector::new();
@@ -564,16 +563,14 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             
             debug!("扫描完成，所有进度已保存");
 
-            // 完成扫描上下文，将内存数据库变更写回主数据库
-            match scan_context.finalize().await {
-                Ok(scan_result) => {
-                    scan_result.log_result();
-                    info!("内存数据库优化完成，所有变更已同步到主数据库");
-                }
-                Err(e) => {
-                    error!("完成扫描上下文时出错: {}", e);
-                    // 这是严重错误，但不应该阻止推送通知
-                }
+            // 注意：全局内存优化器将在程序关闭时自动完成数据同步
+            // 这里只需要记录扫描完成日志
+            let is_memory_optimized = crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await;
+            let mode = if is_memory_optimized { "内存优化模式" } else { "常规模式" };
+            info!("本轮扫描完成 - 模式: {}, 视频源数量: {}", mode, ordered_sources.len());
+            
+            if is_memory_optimized {
+                info!("内存优化模式有效减少了数据库I/O开销，提升了扫描性能");
             }
 
             // 生成扫描摘要并发送推送通知
