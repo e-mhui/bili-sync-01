@@ -161,38 +161,38 @@
 	}
 </script>
 
-<div class="flex min-h-screen items-center justify-center bg-gray-50">
+<div class="flex min-h-screen items-center justify-center bg-background">
 	<div class="w-full max-w-2xl space-y-8">
 		<div class="text-center">
-			<h1 class="mb-2 text-3xl font-bold text-gray-900">欢迎使用 bili-sync</h1>
-			<p class="text-gray-600">首次使用需要进行初始设置</p>
+			<h1 class="mb-2 text-3xl font-bold text-foreground">欢迎使用 bili-sync</h1>
+			<p class="text-muted-foreground">首次使用需要进行初始设置</p>
 			<div class="mt-4 flex justify-center">
 				<div class="flex items-center space-x-2">
 					{#each [...Array(totalSteps).keys()] as i (i)}
 						<div
 							class="h-2 w-8 rounded-full {currentStep > i
-								? 'bg-blue-500'
+								? 'bg-primary'
 								: currentStep === i + 1
-									? 'bg-blue-300'
-									: 'bg-gray-300'}"
+									? 'bg-primary/50'
+									: 'bg-muted'}"
 						></div>
 					{/each}
 				</div>
 			</div>
 		</div>
 
-		<div class="rounded-lg bg-white p-8 shadow-md">
+		<div class="rounded-lg bg-card p-8 shadow-md border">
 			{#if currentStep === 1}
 				<!-- 第一步：设置 API Token -->
 				<div class="space-y-6">
 					<div class="text-center">
-						<h2 class="text-xl font-semibold text-gray-900">步骤 1: 设置 API Token</h2>
-						<p class="mt-2 text-sm text-gray-600">API Token 用于保护管理界面的访问安全</p>
+						<h2 class="text-xl font-semibold text-foreground">步骤 1: 设置 API Token</h2>
+						<p class="mt-2 text-sm text-muted-foreground">API Token 用于保护管理界面的访问安全</p>
 					</div>
 
 					<div class="space-y-4">
 						<div>
-							<Label for="auth-token" class="text-sm font-medium text-gray-700">API Token *</Label>
+							<Label for="auth-token" class="text-sm font-medium text-foreground">API Token *</Label>
 							<Input
 								id="auth-token"
 								type="password"
@@ -207,11 +207,11 @@
 							{/if}
 						</div>
 
-						<div class="rounded-md bg-blue-50 p-4">
+						<div class="rounded-md bg-muted p-4">
 							<div class="flex">
 								<div class="ml-3">
-									<h3 class="text-sm font-medium text-blue-800">提示</h3>
-									<div class="mt-2 text-sm text-blue-700">
+									<h3 class="text-sm font-medium text-foreground">提示</h3>
+									<div class="mt-2 text-sm text-muted-foreground">
 										<p>• API Token 可以是任意字符串，建议使用复杂的密码</p>
 										<p>• 设置后请妥善保管，后续访问管理界面需要使用</p>
 										<p>• 如果忘记可以在配置文件中查看或修改</p>
@@ -233,8 +233,8 @@
 				<!-- 第二步：设置 B站凭证 -->
 				<div class="space-y-6">
 					<div class="text-center">
-						<h2 class="text-xl font-semibold text-gray-900">步骤 2: 设置 B站登录凭证</h2>
-						<p class="mt-2 text-sm text-gray-600">设置B站登录凭证以启用视频下载功能</p>
+						<h2 class="text-xl font-semibold text-foreground">步骤 2: 设置 B站登录凭证</h2>
+						<p class="mt-2 text-sm text-muted-foreground">设置B站登录凭证以启用视频下载功能</p>
 					</div>
 
 					<Tabs.Root value="manual" class="w-full">
@@ -245,7 +245,7 @@
 
 						<Tabs.Content value="manual" class="space-y-4">
 							<div>
-								<Label for="sessdata" class="text-sm font-medium text-gray-700">SESSDATA *</Label>
+								<Label for="sessdata" class="text-sm font-medium text-foreground">SESSDATA *</Label>
 								<Input
 									id="sessdata"
 									type="password"
@@ -257,7 +257,7 @@
 							</div>
 
 							<div>
-								<Label for="bili_jct" class="text-sm font-medium text-gray-700">bili_jct *</Label>
+								<Label for="bili_jct" class="text-sm font-medium text-foreground">bili_jct *</Label>
 								<Input
 									id="bili_jct"
 									type="password"
@@ -269,7 +269,7 @@
 							</div>
 
 							<div>
-								<Label for="buvid3" class="text-sm font-medium text-gray-700">buvid3 *</Label>
+								<Label for="buvid3" class="text-sm font-medium text-foreground">buvid3 *</Label>
 								<Input
 									id="buvid3"
 									type="text"
@@ -281,7 +281,7 @@
 							</div>
 
 							<div>
-								<Label for="dedeuserid" class="text-sm font-medium text-gray-700"
+								<Label for="dedeuserid" class="text-sm font-medium text-foreground"
 									>DedeUserID *</Label
 								>
 								<Input
@@ -295,7 +295,7 @@
 							</div>
 
 							<div>
-								<Label for="ac_time_value" class="text-sm font-medium text-gray-700">
+								<Label for="ac_time_value" class="text-sm font-medium text-foreground">
 									ac_time_value (可选)
 								</Label>
 								<Input
@@ -312,11 +312,11 @@
 								<p class="text-sm text-red-600">{credentialError}</p>
 							{/if}
 
-							<div class="rounded-md bg-yellow-50 p-4">
+							<div class="rounded-md bg-muted p-4">
 								<div class="flex">
 									<div class="ml-3">
-										<h3 class="text-sm font-medium text-yellow-800">获取凭证信息</h3>
-										<div class="mt-2 text-sm text-yellow-700">
+										<h3 class="text-sm font-medium text-foreground">获取凭证信息</h3>
+										<div class="mt-2 text-sm text-muted-foreground">
 											<p>请按以下步骤获取B站登录凭证：</p>
 											<ol class="mt-1 list-inside list-decimal space-y-1">
 												<li>在浏览器中登录B站</li>
@@ -329,7 +329,7 @@
 											<Button
 												variant="link"
 												onclick={() => (showHelpDialog = true)}
-												class="mt-2 h-auto p-0 text-yellow-700 underline"
+												class="mt-2 h-auto p-0 text-primary underline"
 											>
 												查看详细教程
 											</Button>
@@ -345,7 +345,7 @@
 								</Button>
 							</div>
 
-							<Button variant="ghost" onclick={skipCredentialSetup} class="w-full text-gray-500">
+							<Button variant="ghost" onclick={skipCredentialSetup} class="w-full text-muted-foreground">
 								跳过此步骤（稍后设置）
 							</Button>
 						</Tabs.Content>
@@ -359,7 +359,7 @@
 
 							<div class="flex space-x-3">
 								<Button variant="outline" onclick={goBack} class="flex-1">上一步</Button>
-								<Button variant="ghost" onclick={skipCredentialSetup} class="flex-1 text-gray-500">
+								<Button variant="ghost" onclick={skipCredentialSetup} class="flex-1 text-muted-foreground">
 									跳过此步骤（稍后设置）
 								</Button>
 							</div>
@@ -380,7 +380,7 @@
 		<div class="space-y-4 text-sm">
 			<div>
 				<h4 class="font-medium">方法一：通过开发者工具获取</h4>
-				<ol class="mt-2 list-inside list-decimal space-y-1 text-gray-600">
+				<ol class="mt-2 list-inside list-decimal space-y-1 text-muted-foreground">
 					<li>在Chrome或Edge浏览器中登录B站 (bilibili.com)</li>
 					<li>按F12键打开开发者工具</li>
 					<li>点击"Network"（网络）标签</li>
@@ -389,7 +389,7 @@
 					<li>在右侧面板中找到"Request Headers"（请求头）</li>
 					<li>找到"Cookie"字段，复制其中的值：</li>
 				</ol>
-				<ul class="mt-2 ml-4 list-inside list-disc space-y-1 text-gray-600">
+				<ul class="mt-2 ml-4 list-inside list-disc space-y-1 text-muted-foreground">
 					<li><code>SESSDATA=</code> 后面的值复制到SESSDATA框</li>
 					<li><code>bili_jct=</code> 后面的值复制到bili_jct框</li>
 					<li><code>buvid3=</code> 后面的值复制到buvid3框</li>
@@ -399,16 +399,16 @@
 
 			<div>
 				<h4 class="font-medium">方法二：通过浏览器设置获取</h4>
-				<ol class="mt-2 list-inside list-decimal space-y-1 text-gray-600">
+				<ol class="mt-2 list-inside list-decimal space-y-1 text-muted-foreground">
 					<li>在Chrome中访问 chrome://settings/content/cookies</li>
 					<li>搜索"bilibili.com"</li>
 					<li>展开bilibili.com，找到对应的Cookie值</li>
 				</ol>
 			</div>
 
-			<div class="rounded-md bg-red-50 p-3">
-				<h4 class="font-medium text-red-800">重要提醒</h4>
-				<p class="mt-1 text-red-700">
+			<div class="rounded-md bg-destructive/10 p-3 border border-destructive/20">
+				<h4 class="font-medium text-destructive">重要提醒</h4>
+				<p class="mt-1 text-destructive/80">
 					• 请确保在登录状态下获取Cookie<br />
 					• 这些信息相当于您的登录凭证，请妥善保管<br />
 					• 如果Cookie过期，需要重新获取
