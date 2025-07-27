@@ -369,6 +369,12 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             let mut last_successful_source: Option<&VideoSourceWithId> = None; // 记录上一个成功处理的源
             let mut is_interrupted = false; // 标记是否因风控等原因中断
             
+            // 定期同步相关变量
+            let mut videos_since_last_sync = 0; // 自上次同步以来处理的视频数
+            let sync_interval_videos = 10; // 每处理10个视频同步一次
+            let mut last_sync_time = std::time::Instant::now(); // 上次同步时间
+            let sync_interval_minutes = 5; // 每5分钟同步一次
+            
             for source in &ordered_sources {
                 let args = &source.args;
                 let path = &source.path;
@@ -474,6 +480,46 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                             }
                         } else if new_video_count > 0 {
                             warn!("发现不一致：new_video_count={} 但 new_videos 为空", new_video_count);
+                        }
+                        
+                        // 更新处理的视频计数
+                        if new_video_count > 0 {
+                            videos_since_last_sync += new_video_count as u32;
+                        }
+                        
+                        // 检查是否需要定期同步
+                        let should_sync = if crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
+                            // 检查是否达到视频数量阈值
+                            let video_threshold_reached = videos_since_last_sync >= sync_interval_videos;
+                            
+                            // 检查是否达到时间阈值
+                            let time_threshold_reached = last_sync_time.elapsed().as_secs() >= (sync_interval_minutes * 60);
+                            
+                            if video_threshold_reached || time_threshold_reached {
+                                if video_threshold_reached {
+                                    info!("已处理 {} 个视频，触发定期同步", videos_since_last_sync);
+                                } else {
+                                    info!("距上次同步已过 {} 分钟，触发定期同步", last_sync_time.elapsed().as_secs() / 60);
+                                }
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+                        
+                        if should_sync {
+                            match crate::utils::global_memory_optimizer::sync_to_main_db().await {
+                                Ok(_) => {
+                                    info!("定期同步完成，数据已保存到主数据库");
+                                    videos_since_last_sync = 0;
+                                    last_sync_time = std::time::Instant::now();
+                                }
+                                Err(e) => {
+                                    error!("定期同步失败: {}，继续处理但数据可能丢失", e);
+                                }
+                            }
                         }
                     }
                     Err(e) => {

@@ -3034,7 +3034,7 @@
 									class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
 								/>
 								<Label for="enable-memory-optimization" class="text-sm">启用内存数据库优化</Label>
-								<p class="text-muted-foreground ml-2 text-sm">适用于NAS等网络存储环境，可显著提升扫描性能</p>
+								<p class="text-muted-foreground ml-2 text-sm">适用于NAS等网络存储环境，可显著提升扫描性能，但会占用更多内存，突然断电可能会丢失5分钟内的数据</p>
 							</div>
 
 							<div
@@ -3043,6 +3043,7 @@
 								<h5 class="mb-2 font-medium text-orange-800 dark:text-orange-200">其他设置说明</h5>
 								<div class="space-y-1 text-sm text-orange-700 dark:text-orange-300">
 									<p><strong>扫描间隔：</strong>每次扫描下载的时间间隔（秒）</p>
+									<p><strong>内存数据库优化：</strong>启用后，将使用内存数据库优化扫描性能，适用于NAS等网络存储环境，可显著提升扫描性能，但会占用更多内存，突然断电可能会丢失5分钟内的数据</p>
 									<p><strong>CDN排序：</strong>启用后优先使用质量更高的CDN，可能提升下载速度</p>
 									<p>
 										<strong>显示已删除视频：</strong
