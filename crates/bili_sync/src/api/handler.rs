@@ -48,89 +48,6 @@ fn normalize_file_path(path: &str) -> String {
     path.replace('\\', "/")
 }
 
-/// 验证视频源记录是否存在于主数据库中（支持所有类型）
-async fn verify_video_source_in_main_db(
-    result: &AddVideoSourceResponse,
-    source_name: &str,
-) -> Result<bool> {
-    use sea_orm::{Database, Statement, ConnectionTrait, DatabaseBackend};
-    
-    // 直接连接到主数据库文件进行验证
-    let database_url = format!("sqlite://{}", 
-        crate::config::CONFIG_DIR.join("data.sqlite").to_string_lossy());
-    
-    // 创建数据库连接
-    let main_db = Database::connect(&database_url).await
-        .context("连接主数据库进行验证失败")?;
-    
-    // 强制检查点，确保WAL中的数据写入主文件
-    let checkpoint_result = main_db.execute_unprepared("PRAGMA wal_checkpoint(RESTART);").await;
-    info!("WAL检查点执行结果: {:?}", checkpoint_result);
-    
-    // 等待确保数据同步
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-    
-    // 根据不同的视频源类型构建验证查询
-    let (check_sql, values) = match result.source_type.as_str() {
-        "bangumi" => {
-            // 番剧：查询video_source表
-            ("SELECT COUNT(*) as count FROM video_source WHERE type = 1 AND name = ?", 
-             vec![source_name.into()])
-        },
-        "collection" => {
-            // 合集：查询collection表
-            ("SELECT COUNT(*) as count FROM collection WHERE name = ?", 
-             vec![source_name.into()])
-        },
-        "favorite" => {
-            // 收藏夹：查询favorite表
-            ("SELECT COUNT(*) as count FROM favorite WHERE name = ?", 
-             vec![source_name.into()])
-        },
-        "submission" => {
-            // UP主投稿：查询submission表
-            ("SELECT COUNT(*) as count FROM submission WHERE upper_name = ?", 
-             vec![source_name.into()])
-        },
-        "watch_later" => {
-            // 稍后观看：查询watch_later表（只有一条记录）
-            ("SELECT COUNT(*) as count FROM watch_later", 
-             vec![])
-        },
-        _ => {
-            warn!("未知的视频源类型: {}", result.source_type);
-            return Ok(false);
-        }
-    };
-    
-    info!("验证查询SQL: {} with name={}", check_sql, source_name);
-    
-    let result_row = main_db
-        .query_one(Statement::from_sql_and_values(
-            DatabaseBackend::Sqlite,
-            check_sql,
-            values,
-        ))
-        .await?;
-    
-    let exists = if let Some(row) = result_row {
-        let count: i64 = row.try_get("", "count")?;
-        count > 0
-    } else {
-        false
-    };
-    
-    if exists {
-        info!("验证成功：{}记录存在于主数据库中", result.source_type);
-    } else {
-        warn!("验证失败：{}记录不存在于主数据库中", result.source_type);
-    }
-    
-    // 关闭临时连接
-    main_db.close().await?;
-    
-    Ok(exists)
-}
 
 
 /// 处理包含路径分隔符的模板结果，对每个路径段单独应用filenamify
@@ -1945,105 +1862,17 @@ pub async fn add_video_source_internal(
 
     txn.commit().await?;
     
-    // 在内存模式下，验证数据是否真正同步到主数据库
+    // 在内存模式下，确保数据同步到主数据库
     if let Some(_optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
         // 检查是否在内存模式
         if crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
-            info!("内存模式下验证番剧添加结果...");
+            info!("内存模式下同步{}数据到主数据库", result.source_type);
             
             // 强制同步内存数据库到主数据库
             if let Err(e) = crate::utils::global_memory_optimizer::sync_to_main_db().await {
                 warn!("强制同步内存数据库失败: {}", e);
-            }
-            
-            // 等待一小段时间确保同步事务完全完成
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            
-            // 直接验证主数据库文件（不使用内存连接）
-            // 根据不同视频源类型获取相应的名称用于验证
-            let source_name = match result.source_type.as_str() {
-                "bangumi" => {
-                    // 番剧：从内存数据库的video_source表获取最新记录名称
-                    if let Ok(vs_rows) = db.query_all(sea_orm::Statement::from_string(
-                        sea_orm::DatabaseBackend::Sqlite, 
-                        "SELECT name FROM video_source ORDER BY id DESC LIMIT 1"
-                    )).await {
-                        if let Some(row) = vs_rows.first() {
-                            row.try_get::<String>("", "name").unwrap_or("未知番剧".to_string())
-                        } else {
-                            "未知番剧".to_string()
-                        }
-                    } else {
-                        "未知番剧".to_string()
-                    }
-                },
-                "collection" => {
-                    // 合集：从collection表获取最新记录名称
-                    if let Ok(rows) = db.query_all(sea_orm::Statement::from_string(
-                        sea_orm::DatabaseBackend::Sqlite, 
-                        "SELECT name FROM collection ORDER BY id DESC LIMIT 1"
-                    )).await {
-                        if let Some(row) = rows.first() {
-                            row.try_get::<String>("", "name").unwrap_or("未知合集".to_string())
-                        } else {
-                            "未知合集".to_string()
-                        }
-                    } else {
-                        "未知合集".to_string()
-                    }
-                },
-                "favorite" => {
-                    // 收藏夹：从favorite表获取最新记录名称
-                    if let Ok(rows) = db.query_all(sea_orm::Statement::from_string(
-                        sea_orm::DatabaseBackend::Sqlite, 
-                        "SELECT name FROM favorite ORDER BY id DESC LIMIT 1"
-                    )).await {
-                        if let Some(row) = rows.first() {
-                            row.try_get::<String>("", "name").unwrap_or("未知收藏夹".to_string())
-                        } else {
-                            "未知收藏夹".to_string()
-                        }
-                    } else {
-                        "未知收藏夹".to_string()
-                    }
-                },
-                "submission" => {
-                    // UP主投稿：从submission表获取最新记录名称
-                    if let Ok(rows) = db.query_all(sea_orm::Statement::from_string(
-                        sea_orm::DatabaseBackend::Sqlite, 
-                        "SELECT upper_name FROM submission ORDER BY id DESC LIMIT 1"
-                    )).await {
-                        if let Some(row) = rows.first() {
-                            row.try_get::<String>("", "upper_name").unwrap_or("未知UP主".to_string())
-                        } else {
-                            "未知UP主".to_string()
-                        }
-                    } else {
-                        "未知UP主".to_string()
-                    }
-                },
-                "watch_later" => {
-                    // 稍后观看：固定名称
-                    "稍后观看".to_string()
-                },
-                _ => "未知类型".to_string()
-            };
-            
-            let verification_result = verify_video_source_in_main_db(&result, &source_name).await;
-            match verification_result {
-                Ok(exists) => {
-                    if !exists {
-                        warn!("{}添加后验证失败：记录未在主数据库中找到（可能是WAL模式延迟，数据实际已保存）", result.source_type);
-                        // 不返回错误，因为数据实际已经保存成功
-                        // 这只是验证查询的技术问题，不影响实际功能
-                    } else {
-                        info!("{}添加验证成功：记录已存在于主数据库中", result.source_type);
-                    }
-                }
-                Err(e) => {
-                    warn!("{}添加验证过程出错: {}", result.source_type, e);
-                    // 验证失败不阻塞操作，但记录警告
-                }
+            } else {
+                info!("{}数据同步完成", result.source_type);
             }
         }
     }

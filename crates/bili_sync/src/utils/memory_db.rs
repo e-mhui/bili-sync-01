@@ -656,10 +656,7 @@ impl MemoryDbOptimizer {
             return Ok(false);
         }
 
-        // 对于video_source表，使用业务字段而非自增ID来判断记录是否存在
-        if table_name == "video_source" {
-            return self.check_video_source_exists(row, db).await;
-        }
+        // 所有表都使用标准的主键检查逻辑，确保一致性
 
         let mut conditions = Vec::new();
         let mut values = Vec::new();
@@ -692,66 +689,6 @@ impl MemoryDbOptimizer {
         }
     }
 
-    /// 专门用于检查video_source记录是否存在的方法
-    /// 使用业务字段（season_id、media_id等）而非自增ID来判断
-    async fn check_video_source_exists(
-        &self,
-        row: &sea_orm::QueryResult,
-        db: &DatabaseConnection,
-    ) -> Result<bool> {
-        // 提取关键业务字段
-        let name = row.try_get::<String>("", "name").unwrap_or_default();
-        let type_val = row.try_get::<i32>("", "type").unwrap_or(0);
-        let season_id = row.try_get::<Option<String>>("", "season_id").unwrap_or(None);
-        let media_id = row.try_get::<Option<String>>("", "media_id").unwrap_or(None);
-        let _ep_id = row.try_get::<Option<String>>("", "ep_id").unwrap_or(None);
-
-        // 构建查询条件：根据番剧类型和标识符判断
-        let mut conditions = vec!["type = ?".to_string(), "name = ?".to_string()];
-        let mut values = vec![type_val.into(), name.clone().into()];
-
-        // 如果有season_id，使用season_id作为主要判断条件
-        if let Some(ref season_id_val) = season_id {
-            if !season_id_val.is_empty() {
-                conditions.push("season_id = ?".to_string());
-                values.push(season_id_val.clone().into());
-            }
-        }
-
-        // 如果有media_id，也作为判断条件
-        if let Some(ref media_id_val) = media_id {
-            if !media_id_val.is_empty() {
-                conditions.push("media_id = ?".to_string());
-                values.push(media_id_val.clone().into());
-            }
-        }
-
-        let check_sql = format!(
-            "SELECT COUNT(*) as count FROM video_source WHERE {}",
-            conditions.join(" AND ")
-        );
-
-        debug!("检查video_source记录存在性: name={}, type={}, season_id={:?}, media_id={:?}", 
-            name, type_val, season_id, media_id);
-
-        let result = db
-            .query_one(Statement::from_sql_and_values(
-                DatabaseBackend::Sqlite,
-                &check_sql,
-                values,
-            ))
-            .await?;
-
-        if let Some(result_row) = result {
-            let count: i64 = result_row.try_get("", "count")?;
-            let exists = count > 0;
-            debug!("video_source存在性检查结果: {} (count={})", exists, count);
-            Ok(exists)
-        } else {
-            debug!("video_source存在性检查: 查询无结果");
-            Ok(false)
-        }
-    }
 
     /// 构建UPDATE SQL语句
     fn build_update_sql(
