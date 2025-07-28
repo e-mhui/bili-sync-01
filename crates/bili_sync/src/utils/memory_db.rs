@@ -34,8 +34,8 @@ impl MemoryDbOptimizer {
         info!("启动内存数据库模式以优化扫描性能");
 
         // 创建共享内存数据库连接
-        // 使用SQLite标准的共享内存数据库语法
-        let memory_db_url = "sqlite:file::memory:?cache=shared";
+        // 使用命名的共享内存数据库确保连接稳定性
+        let memory_db_url = "sqlite:file:bili_sync_memory?mode=memory&cache=shared";
         let memory_db = sea_orm::Database::connect(memory_db_url)
             .await
             .context("连接共享内存数据库失败")?;
@@ -64,7 +64,8 @@ impl MemoryDbOptimizer {
             "PRAGMA temp_store = MEMORY",      // 临时存储使用内存
             "PRAGMA cache_size = -64000",      // 缓存大小64MB
             "PRAGMA page_size = 4096",         // 页面大小4KB
-            "PRAGMA locking_mode = EXCLUSIVE", // 独占锁定模式
+            "PRAGMA locking_mode = NORMAL",    // 使用NORMAL模式而非EXCLUSIVE，避免锁定问题
+            "PRAGMA cache = shared",           // 确保缓存共享
         ];
 
         for pragma in performance_pragmas {
@@ -803,6 +804,38 @@ impl MemoryDbOptimizer {
         }
 
         Ok(should_use)
+    }
+
+    /// 检查内存数据库中的关键表是否存在
+    pub async fn verify_memory_db_tables(&self) -> Result<bool> {
+        if !self.is_memory_mode {
+            return Ok(true); // 非内存模式始终返回true
+        }
+
+        if let Some(ref memory_db) = self.memory_db {
+            let check_sql = "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name IN ('collection','favorite','submission','watch_later','video_source','video','page')";
+            let result = memory_db
+                .query_one(Statement::from_string(DatabaseBackend::Sqlite, check_sql))
+                .await?;
+
+            if let Some(row) = result {
+                let count: i64 = row.try_get("", "count")?;
+                let is_valid = count >= 7;
+                
+                if !is_valid {
+                    warn!("内存数据库表验证失败：发现 {}/7 个关键表", count);
+                } else {
+                    debug!("内存数据库表验证成功：发现 {}/7 个关键表", count);
+                }
+                
+                Ok(is_valid)
+            } else {
+                warn!("无法验证内存数据库表状态");
+                Ok(false)
+            }
+        } else {
+            Ok(false)
+        }
     }
 
 }

@@ -256,8 +256,12 @@ impl BiliClient {
             task_id: Uuid::new_v4().to_string(),
         };
 
-        // 将任务加入队列
-        let db = crate::database::setup_database().await;
+        // 将任务加入队列 - 使用全局内存优化器的数据库连接
+        let db = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
+            optimized_conn
+        } else {
+            Arc::new(crate::database::setup_database().await)
+        };
         crate::task::enqueue_reload_task(reload_task, &db).await?;
 
         Ok(())

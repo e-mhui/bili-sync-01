@@ -123,6 +123,7 @@ fn get_config_path() -> Result<PathBuf> {
         .map(|dir| dir.join("bili-sync").join("config.toml"))
 }
 
+
 /// 列出所有视频来源
 #[utoipa::path(
     get,

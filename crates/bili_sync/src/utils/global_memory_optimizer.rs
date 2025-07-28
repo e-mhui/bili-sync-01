@@ -101,13 +101,20 @@ impl GlobalMemoryOptimizer {
         let config = crate::config::reload_config();
         let should_use_memory = config.enable_memory_optimization;
 
-        // 检测配置变化
-        if should_use_memory != self.is_memory_mode_enabled {
-            info!("检测到内存优化配置变化：{} -> {}", 
-                self.is_memory_mode_enabled, should_use_memory);
+        // 检测配置变化或内存数据库是否需要重建
+        let needs_reconfigure = should_use_memory != self.is_memory_mode_enabled || 
+                               (self.is_memory_mode_enabled && self.needs_memory_rebuild().await);
+
+        if needs_reconfigure {
+            if should_use_memory != self.is_memory_mode_enabled {
+                info!("检测到内存优化配置变化：{} -> {}", 
+                    self.is_memory_mode_enabled, should_use_memory);
+            } else {
+                info!("检测到内存数据库需要重建");
+            }
 
             if should_use_memory {
-                // 需要切换到内存模式
+                // 需要切换到内存模式或重建内存数据库
                 self.switch_to_memory_mode(db).await?;
             } else {
                 // 需要切换到常规模式
@@ -117,6 +124,22 @@ impl GlobalMemoryOptimizer {
         }
         
         Ok(false) // 无需切换
+    }
+
+    /// 检查内存数据库是否需要重建
+    async fn needs_memory_rebuild(&self) -> bool {
+        if let Some(ref optimizer) = self.optimizer {
+            // 使用专门的验证方法
+            match optimizer.verify_memory_db_tables().await {
+                Ok(is_valid) => !is_valid, // 如果无效则需要重建
+                Err(e) => {
+                    warn!("内存数据库验证失败: {}，需要重建", e);
+                    true
+                }
+            }
+        } else {
+            false
+        }
     }
 
     /// 切换到内存优化模式

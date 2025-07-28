@@ -8,7 +8,7 @@ use axum::routing::{delete, get, post, put};
 use axum::{middleware, Extension, Router, ServiceExt};
 use reqwest::StatusCode;
 use rust_embed::Embed;
-use sea_orm::DatabaseConnection;
+use sea_orm::{DatabaseConnection, ConnectionTrait, Statement, DatabaseBackend};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::{Config, SwaggerUi};
 
@@ -82,11 +82,69 @@ use crate::api::ws;
 #[folder = "../../web/build"]
 struct Asset;
 
+/// 测试数据库连接是否有效
+async fn test_db_connection(db: &DatabaseConnection) -> bool {
+    match db.execute(Statement::from_string(DatabaseBackend::Sqlite, "SELECT 1")).await {
+        Ok(_) => {
+            debug!("数据库连接测试成功");
+            
+            // 进一步检查关键表是否存在
+            let table_check_sql = "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('collection','favorite','submission','watch_later','video_source','video','page')";
+            match db.query_all(Statement::from_string(DatabaseBackend::Sqlite, table_check_sql)).await {
+                Ok(tables) => {
+                    debug!("数据库中发现 {} 个关键表", tables.len());
+                    if tables.len() < 7 {
+                        warn!("数据库连接有效但缺少关键表，发现表数量: {}/7", tables.len());
+                        false
+                    } else {
+                        true
+                    }
+                }
+                Err(e) => {
+                    warn!("检查数据库表失败: {}", e);
+                    false
+                }
+            }
+        }
+        Err(e) => {
+            warn!("数据库连接测试失败: {}", e);
+            false
+        }
+    }
+}
+
 pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Result<()> {
     // 获取优化的数据库连接（内存模式或常规模式）
     let optimized_connection = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
-        optimized_conn
+        info!("发现全局内存优化器连接，进行连接有效性测试");
+        
+        // 验证内存优化器连接是否有效
+        if test_db_connection(&optimized_conn).await {
+            info!("内存优化器数据库连接验证成功，使用内存优化连接");
+            optimized_conn
+        } else {
+            warn!("内存优化器连接验证失败，这可能导致API错误");
+            warn!("回退使用主数据库连接");
+            
+            // 也测试主数据库连接
+            if test_db_connection(&_database_connection).await {
+                info!("主数据库连接验证成功");
+                _database_connection
+            } else {
+                error!("主数据库连接也无效，HTTP服务器可能无法正常工作");
+                _database_connection
+            }
+        }
     } else {
+        info!("未发现全局内存优化器连接，使用主数据库连接");
+        
+        // 验证主数据库连接
+        if test_db_connection(&_database_connection).await {
+            info!("主数据库连接验证成功");
+        } else {
+            warn!("主数据库连接验证失败，HTTP服务器可能无法正常工作");
+        }
+        
         _database_connection
     };
     let app = Router::new()
@@ -184,7 +242,7 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
         .route("/api/videos/{video_id}/bvid", get(get_video_bvid))
         .route("/api/videos/proxy-stream", get(proxy_video_stream))
         // 先应用认证中间件
-        .layer(Extension(optimized_connection))
+        .layer(Extension(optimized_connection.clone()))
         .layer(middleware::from_fn(auth::auth))
         // WebSocket API需要在认证中间件之后
         .merge(ws::router())
@@ -200,6 +258,51 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
         )
         .fallback_service(get(frontend_files));
     // 使用动态配置而非静态CONFIG
+    // 启动周期性数据库连接健康检查
+    let health_check_connection = optimized_connection.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(300)); // 每5分钟检查一次
+        loop {
+            interval.tick().await;
+            
+            if !test_db_connection(&health_check_connection).await {
+                error!("数据库连接健康检查失败！HTTP API可能无法正常工作");
+                
+                // 检查是否是内存数据库表丢失的问题
+                if crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
+                    warn!("检测到内存优化模式下的连接问题，尝试重建内存数据库");
+                    
+                    // 尝试通过重新配置全局内存优化器来恢复
+                    let main_db = crate::database::setup_database().await;
+                    let main_db_arc = std::sync::Arc::new(main_db);
+                    match crate::utils::global_memory_optimizer::reconfigure_global_memory_optimizer(main_db_arc).await {
+                        Ok(reconfigured) => {
+                            if reconfigured {
+                                info!("内存数据库已重新配置，尝试获取新连接");
+                                if let Some(new_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
+                                    if test_db_connection(&new_conn).await {
+                                        info!("内存数据库重建成功，连接恢复正常");
+                                    } else {
+                                        error!("内存数据库重建后连接仍然无效");
+                                    }
+                                }
+                            } else {
+                                warn!("内存优化器未发生重新配置");
+                            }
+                        }
+                        Err(e) => {
+                            error!("重新配置全局内存优化器失败: {}", e);
+                        }
+                    }
+                } else {
+                    error!("非内存优化模式下的连接问题，建议检查主数据库状态或重启服务");
+                }
+            } else {
+                debug!("数据库连接健康检查通过");
+            }
+        }
+    });
+
     let config = crate::config::reload_config();
     let listener = tokio::net::TcpListener::bind(&config.bind_address)
         .await
