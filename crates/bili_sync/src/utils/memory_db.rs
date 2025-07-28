@@ -33,11 +33,12 @@ impl MemoryDbOptimizer {
 
         info!("启动内存数据库模式以优化扫描性能");
 
-        // 创建内存数据库连接
-        let memory_db_url = "sqlite::memory:";
+        // 创建共享内存数据库连接
+        // 使用SQLite标准的共享内存数据库语法
+        let memory_db_url = "sqlite:file::memory:?cache=shared";
         let memory_db = sea_orm::Database::connect(memory_db_url)
             .await
-            .context("连接内存数据库失败")?;
+            .context("连接共享内存数据库失败")?;
 
         // 配置内存数据库以获得最佳性能
         self.configure_memory_db(&memory_db).await?;
@@ -340,7 +341,7 @@ impl MemoryDbOptimizer {
             "config_changes",
         ];
 
-        info!("开始完整同步 {} 个表的变更到主数据库（支持增删改）", tables_to_sync.len());
+        debug!("开始完整同步 {} 个表的变更到主数据库（支持增删改）", tables_to_sync.len());
 
         for table_name in tables_to_sync {
             // 使用完整同步方法，支持删除操作
@@ -350,10 +351,10 @@ impl MemoryDbOptimizer {
                 if let Err(e2) = self.sync_table_changes(table_name, memory_db, &txn).await {
                     debug!("表 {} 增量同步也失败: {}", table_name, e2);
                 } else {
-                    debug!("{}表增量同步完成", table_name);
+                    debug!("表 {} 增量同步完成", table_name);
                 }
             } else {
-                debug!("{}表完整同步完成", table_name);
+                debug!("表 {} 完整同步完成", table_name);
             }
         }
 
@@ -372,13 +373,13 @@ impl MemoryDbOptimizer {
         memory_db: &DatabaseConnection,
         txn: &sea_orm::DatabaseTransaction,
     ) -> Result<()> {
-        // 为video_source表添加详细的数据状态检查
+        // 为video_source表添加详细的数据状态检查（调试时使用）
         if table_name == "video_source" {
             let count_sql = "SELECT COUNT(*) as count FROM video_source";
             if let Ok(count_rows) = memory_db.query_all(Statement::from_string(DatabaseBackend::Sqlite, count_sql)).await {
                 if let Some(count_row) = count_rows.first() {
                     if let Ok(count) = count_row.try_get::<i64>("", "count") {
-                        info!("内存数据库中video_source表总记录数: {}", count);
+                        debug!("内存数据库中video_source表总记录数: {}", count);
                     }
                 }
             }
@@ -386,12 +387,12 @@ impl MemoryDbOptimizer {
             // 检查最新的几条记录
             let latest_sql = "SELECT id, name, season_id FROM video_source ORDER BY id DESC LIMIT 5";
             if let Ok(latest_rows) = memory_db.query_all(Statement::from_string(DatabaseBackend::Sqlite, latest_sql)).await {
-                info!("内存数据库中video_source表最新5条记录:");
+                debug!("内存数据库中video_source表最新5条记录:");
                 for row in latest_rows {
                     let id = row.try_get::<i32>("", "id").unwrap_or(0);
                     let name = row.try_get::<String>("", "name").unwrap_or_default();
                     let season_id = row.try_get::<Option<String>>("", "season_id").unwrap_or(None);
-                    info!("  - id={}, name={}, season_id={:?}", id, name, season_id);
+                    debug!("  - id={}, name={}, season_id={:?}", id, name, season_id);
                 }
             }
         }
@@ -407,7 +408,7 @@ impl MemoryDbOptimizer {
             return Ok(());
         }
 
-        info!("表 {} 开始同步 {} 条记录到主数据库", table_name, rows.len());
+        debug!("表 {} 开始同步 {} 条记录到主数据库", table_name, rows.len());
 
         // 获取表的列名
         let columns = self.get_table_columns(table_name).await?;
@@ -447,13 +448,13 @@ impl MemoryDbOptimizer {
                 (insert_sql, "INSERT")
             };
 
-            // 为video_source表添加详细日志
+            // 为video_source表添加详细日志（调试时使用）
             if table_name == "video_source" {
                 if let Ok(id_value) = row.try_get::<i32>("", "id") {
                     let name_value = row.try_get::<String>("", "name").unwrap_or_default();
                     let season_id = row.try_get::<Option<String>>("", "season_id").unwrap_or(None);
                     let type_val = row.try_get::<i32>("", "type").unwrap_or(0);
-                    info!("同步video_source记录: id={}, name={}, type={}, season_id={:?}, 操作={}, 已存在={}", 
+                    debug!("同步video_source记录: id={}, name={}, type={}, season_id={:?}, 操作={}, 已存在={}", 
                         id_value, name_value, type_val, season_id, operation, record_exists);
                 }
             }
@@ -482,8 +483,12 @@ impl MemoryDbOptimizer {
             }
         }
 
-        info!("表 {} 同步完成，成功同步 {} 条记录（新增: {}, 更新: {}）", 
-            table_name, sync_count, insert_count, update_count);
+        if sync_count > 0 {
+            info!("表 {} 同步完成，成功同步 {} 条记录（新增: {}, 更新: {}）", 
+                table_name, sync_count, insert_count, update_count);
+        } else {
+            debug!("表 {} 无数据需要同步", table_name);
+        }
         Ok(())
     }
 
@@ -494,7 +499,7 @@ impl MemoryDbOptimizer {
         memory_db: &DatabaseConnection,
         txn: &sea_orm::DatabaseTransaction,
     ) -> Result<()> {
-        info!("开始完整同步表: {}", table_name);
+        debug!("开始完整同步表: {}", table_name);
 
         // 获取表的主键列名
         let primary_keys = self.get_table_primary_keys(table_name).await?;
@@ -525,7 +530,7 @@ impl MemoryDbOptimizer {
         // 同步所有内存数据库中的记录（新增和修改）
         self.sync_table_changes(table_name, memory_db, txn).await?;
 
-        info!("表 {} 完整同步完成", table_name);
+        debug!("表 {} 完整同步完成", table_name);
         Ok(())
     }
 
