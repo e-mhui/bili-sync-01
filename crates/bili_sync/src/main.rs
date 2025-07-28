@@ -101,6 +101,12 @@ async fn main() -> Result<()> {
         }
     }
 
+    // 在启动HTTP服务器之前初始化全局内存优化器
+    // 这确保HTTP API能使用正确的优化连接
+    if let Err(e) = crate::utils::global_memory_optimizer::initialize_global_memory_optimizer(connection.clone()).await {
+        warn!("初始化全局内存优化器失败: {}", e);
+    }
+
     let token = CancellationToken::new();
     let tracker = TaskTracker::new();
 

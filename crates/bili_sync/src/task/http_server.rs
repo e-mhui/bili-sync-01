@@ -82,7 +82,13 @@ use crate::api::ws;
 #[folder = "../../web/build"]
 struct Asset;
 
-pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result<()> {
+pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Result<()> {
+    // 获取优化的数据库连接（内存模式或常规模式）
+    let optimized_connection = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
+        optimized_conn
+    } else {
+        _database_connection
+    };
     let app = Router::new()
         .route("/api/video-sources", get(get_video_sources))
         .route("/api/video-sources", post(add_video_source))
@@ -178,7 +184,7 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route("/api/videos/{video_id}/bvid", get(get_video_bvid))
         .route("/api/videos/proxy-stream", get(proxy_video_stream))
         // 先应用认证中间件
-        .layer(Extension(database_connection))
+        .layer(Extension(optimized_connection))
         .layer(middleware::from_fn(auth::auth))
         // WebSocket API需要在认证中间件之后
         .merge(ws::router())
