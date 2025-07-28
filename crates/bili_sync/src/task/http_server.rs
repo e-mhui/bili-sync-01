@@ -261,7 +261,7 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
     // 启动周期性数据库连接健康检查
     let health_check_connection = optimized_connection.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(300)); // 每5分钟检查一次
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(120)); // 每2分钟检查一次，更快发现问题
         loop {
             interval.tick().await;
             

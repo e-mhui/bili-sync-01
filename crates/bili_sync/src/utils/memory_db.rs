@@ -10,6 +10,8 @@ pub struct MemoryDbOptimizer {
     main_db: Arc<DatabaseConnection>,
     /// 内存数据库连接（扫描期间使用）
     memory_db: Option<Arc<DatabaseConnection>>,
+    /// 守护连接（确保内存数据库不被GC回收）
+    keeper_connection: Option<Arc<DatabaseConnection>>,
     /// 是否正在使用内存模式
     is_memory_mode: bool,
 }
@@ -20,6 +22,7 @@ impl MemoryDbOptimizer {
         Self {
             main_db,
             memory_db: None,
+            keeper_connection: None,
             is_memory_mode: false,
         }
     }
@@ -36,9 +39,27 @@ impl MemoryDbOptimizer {
         // 创建共享内存数据库连接
         // 使用命名的共享内存数据库确保连接稳定性
         let memory_db_url = "sqlite:file:bili_sync_memory?mode=memory&cache=shared";
-        let memory_db = sea_orm::Database::connect(memory_db_url)
+        
+        // 配置内存数据库连接选项
+        let mut memory_db_options = sea_orm::ConnectOptions::new(memory_db_url);
+        memory_db_options
+            .max_connections(10)  // 最大连接数
+            .min_connections(2)   // 最小连接数，确保至少有守护连接
+            .acquire_timeout(std::time::Duration::from_secs(10))
+            .idle_timeout(std::time::Duration::from_secs(600)) // 10分钟空闲超时
+            .max_lifetime(std::time::Duration::from_secs(3600)) // 1小时最大生命周期
+            .sqlx_logging(false); // 禁用详细日志
+        
+        let memory_db = sea_orm::Database::connect(memory_db_options)
             .await
             .context("连接共享内存数据库失败")?;
+
+        // 创建守护连接，使用单独的连接确保持久性
+        let keeper_connection = sea_orm::Database::connect(memory_db_url)
+            .await
+            .context("创建守护连接失败")?;
+        
+        info!("已创建内存数据库守护连接，确保数据库持久性");
 
         // 配置内存数据库以获得最佳性能
         self.configure_memory_db(&memory_db).await?;
@@ -50,10 +71,37 @@ impl MemoryDbOptimizer {
         self.copy_essential_data(&memory_db).await?;
 
         self.memory_db = Some(Arc::new(memory_db));
+        self.keeper_connection = Some(Arc::new(keeper_connection.clone()));
         self.is_memory_mode = true;
 
-        info!("内存数据库模式启动完成");
+        // 启动守护连接心跳机制
+        self.start_keeper_heartbeat(Arc::new(keeper_connection)).await;
+
+        info!("内存数据库模式启动完成，守护连接已激活");
         Ok(())
+    }
+
+    /// 启动守护连接心跳机制
+    async fn start_keeper_heartbeat(&self, keeper_conn: Arc<DatabaseConnection>) {
+        info!("启动内存数据库守护连接心跳机制");
+        
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                
+                // 执行心跳查询，保持连接活跃
+                match keeper_conn.execute(Statement::from_string(DatabaseBackend::Sqlite, "SELECT 1")).await {
+                    Ok(_) => {
+                        debug!("守护连接心跳正常");
+                    }
+                    Err(e) => {
+                        error!("守护连接心跳失败: {}，内存数据库可能不稳定", e);
+                        // 这里可以触发重建机制，但由于已有健康检查，暂时只记录错误
+                    }
+                }
+            }
+        });
     }
 
     /// 配置内存数据库以获得最佳性能
@@ -299,11 +347,12 @@ impl MemoryDbOptimizer {
             self.sync_changes_to_main_db(memory_db).await?;
         }
 
-        // 清理内存数据库
+        // 清理内存数据库和守护连接（守护连接最后释放）
         self.memory_db = None;
+        self.keeper_connection = None; // 守护连接最后释放，确保内存数据库正确清理
         self.is_memory_mode = false;
 
-        info!("内存数据库模式已停止，变更已写回主数据库");
+        info!("内存数据库模式已停止，变更已写回主数据库，守护连接已释放");
         Ok(())
     }
 
@@ -812,28 +861,34 @@ impl MemoryDbOptimizer {
             return Ok(true); // 非内存模式始终返回true
         }
 
-        if let Some(ref memory_db) = self.memory_db {
-            let check_sql = "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name IN ('collection','favorite','submission','watch_later','video_source','video','page')";
-            let result = memory_db
-                .query_one(Statement::from_string(DatabaseBackend::Sqlite, check_sql))
-                .await?;
-
-            if let Some(row) = result {
-                let count: i64 = row.try_get("", "count")?;
-                let is_valid = count >= 7;
-                
-                if !is_valid {
-                    warn!("内存数据库表验证失败：发现 {}/7 个关键表", count);
-                } else {
-                    debug!("内存数据库表验证成功：发现 {}/7 个关键表", count);
-                }
-                
-                Ok(is_valid)
-            } else {
-                warn!("无法验证内存数据库表状态");
-                Ok(false)
-            }
+        // 优先使用守护连接进行验证，确保验证的可靠性
+        let connection_to_verify = if let Some(ref keeper_conn) = self.keeper_connection {
+            keeper_conn
+        } else if let Some(ref memory_db) = self.memory_db {
+            memory_db
         } else {
+            return Ok(false);
+        };
+
+        let check_sql = "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name IN ('collection','favorite','submission','watch_later','video_source','video','page')";
+        let result = connection_to_verify
+            .query_one(Statement::from_string(DatabaseBackend::Sqlite, check_sql))
+            .await?;
+
+        if let Some(row) = result {
+            let count: i64 = row.try_get("", "count")?;
+            let is_valid = count >= 7;
+            
+            if !is_valid {
+                warn!("内存数据库表验证失败：发现 {}/7 个关键表（使用{}连接验证）", 
+                    count, if self.keeper_connection.is_some() { "守护" } else { "业务" });
+            } else {
+                debug!("内存数据库表验证成功：发现 {}/7 个关键表", count);
+            }
+            
+            Ok(is_valid)
+        } else {
+            warn!("无法验证内存数据库表状态");
             Ok(false)
         }
     }
