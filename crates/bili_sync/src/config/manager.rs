@@ -360,6 +360,20 @@ impl ConfigManager {
             debug!("ConfigManager: 使用原始连接记录配置变更");
             self.db.execute(stmt).await?;
         }
+        
+        // 记录当前config_changes表的记录数，用于监控
+        let count_sql = "SELECT COUNT(*) as count FROM config_changes";
+        let count_stmt = sea_orm::Statement::from_string(sea_orm::DatabaseBackend::Sqlite, count_sql);
+        let count_result = if let Some(ref conn) = optimized_conn {
+            conn.query_one(count_stmt).await?
+        } else {
+            self.db.query_one(count_stmt).await?
+        };
+        
+        if let Some(row) = count_result {
+            let count: i64 = row.try_get("", "count")?;
+            debug!("config_changes表当前记录数: {}", count);
+        }
 
         Ok(())
     }

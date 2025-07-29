@@ -221,10 +221,24 @@ impl MemoryDbOptimizer {
         info!("开始复制配置和状态表数据");
         for table_name in config_tables {
             // 这些表可能为空，忽略复制错误
-            if let Err(e) = self.copy_table_data(table_name, memory_db).await {
-                debug!("表 {} 数据复制失败（可能为空表）: {}", table_name, e);
-            } else {
-                debug!("已复制表数据: {}", table_name);
+            match self.copy_table_data(table_name, memory_db).await {
+                Ok(()) => {
+                    // 特别记录config_changes表的复制情况
+                    if table_name == "config_changes" {
+                        let count_sql = "SELECT COUNT(*) as count FROM config_changes";
+                        if let Ok(rows) = memory_db.query_all(Statement::from_string(DatabaseBackend::Sqlite, count_sql)).await {
+                            if let Some(row) = rows.first() {
+                                if let Ok(count) = row.try_get::<i64>("", "count") {
+                                    info!("已复制config_changes表数据: {} 条记录", count);
+                                }
+                            }
+                        }
+                    }
+                    debug!("已复制表数据: {}", table_name);
+                }
+                Err(e) => {
+                    debug!("表 {} 数据复制失败（可能为空表）: {}", table_name, e);
+                }
             }
         }
 
@@ -459,6 +473,11 @@ impl MemoryDbOptimizer {
         }
 
         debug!("表 {} 开始同步 {} 条记录到主数据库", table_name, rows.len());
+        
+        // 特别记录config_changes表的同步情况
+        if table_name == "config_changes" {
+            info!("config_changes表准备同步 {} 条记录到主数据库", rows.len());
+        }
 
         // 获取表的列名
         let columns = self.get_table_columns(table_name).await?;
