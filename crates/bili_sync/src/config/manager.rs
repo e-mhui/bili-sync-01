@@ -82,7 +82,15 @@ impl ConfigManager {
 
     /// 从数据库加载配置
     async fn load_from_database(&self) -> Result<Config> {
-        let config_items: Vec<config_item::Model> = ConfigItem::find().all(&self.db).await?;
+        // 检查是否有内存优化连接可用
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+        let config_items: Vec<config_item::Model> = if let Some(ref conn) = optimized_conn {
+            debug!("ConfigManager: 使用内存优化连接加载配置");
+            ConfigItem::find().all(conn.as_ref()).await?
+        } else {
+            debug!("ConfigManager: 使用原始连接加载配置");
+            ConfigItem::find().all(&self.db).await?
+        };
 
         if config_items.is_empty() {
             return Err(anyhow!("数据库中没有配置项"));
@@ -159,6 +167,9 @@ impl ConfigManager {
 
     /// 将配置保存到数据库
     pub async fn save_config(&self, config: &Config) -> Result<()> {
+        // 检查是否有内存优化连接可用
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+
         // 将配置对象序列化为键值对
         let config_json = serde_json::to_value(config)?;
         let config_map = self.flatten_config_json(config_json)?;
@@ -168,10 +179,19 @@ impl ConfigManager {
             let value_json = serde_json::to_string(&value)?;
 
             // 查找现有配置项
-            let existing = ConfigItem::find()
-                .filter(config_item::Column::KeyName.eq(&key))
-                .one(&self.db)
-                .await?;
+            let existing = if let Some(ref conn) = optimized_conn {
+                debug!("ConfigManager: 使用内存优化连接查询配置项");
+                ConfigItem::find()
+                    .filter(config_item::Column::KeyName.eq(&key))
+                    .one(conn.as_ref())
+                    .await?
+            } else {
+                debug!("ConfigManager: 使用原始连接查询配置项");
+                ConfigItem::find()
+                    .filter(config_item::Column::KeyName.eq(&key))
+                    .one(&self.db)
+                    .await?
+            };
 
             if let Some(existing_model) = existing {
                 // 记录变更历史
@@ -186,7 +206,11 @@ impl ConfigManager {
                 let mut active_model: config_item::ActiveModel = existing_model.into();
                 active_model.value_json = Set(value_json);
                 active_model.updated_at = Set(now_standard_string());
-                active_model.update(&self.db).await?;
+                if let Some(ref conn) = optimized_conn {
+                    active_model.update(conn.as_ref()).await?;
+                } else {
+                    active_model.update(&self.db).await?;
+                }
             } else {
                 // 记录变更历史（新增）
                 if let Err(e) = self.record_config_change(&key, None, &value_json).await {
@@ -199,7 +223,11 @@ impl ConfigManager {
                     value_json: Set(value_json),
                     updated_at: Set(now_standard_string()),
                 };
-                new_model.insert(&self.db).await?;
+                if let Some(ref conn) = optimized_conn {
+                    new_model.insert(conn.as_ref()).await?;
+                } else {
+                    new_model.insert(&self.db).await?;
+                }
             }
         }
 
@@ -209,13 +237,25 @@ impl ConfigManager {
 
     /// 更新单个配置项
     pub async fn update_config_item(&self, key: &str, value: Value) -> Result<()> {
+        // 检查是否有内存优化连接可用
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+
         let value_json = serde_json::to_string(&value)?;
 
         // 查找现有配置项
-        let existing = ConfigItem::find()
-            .filter(config_item::Column::KeyName.eq(key))
-            .one(&self.db)
-            .await?;
+        let existing = if let Some(ref conn) = optimized_conn {
+            debug!("ConfigManager: 使用内存优化连接更新配置项");
+            ConfigItem::find()
+                .filter(config_item::Column::KeyName.eq(key))
+                .one(conn.as_ref())
+                .await?
+        } else {
+            debug!("ConfigManager: 使用原始连接更新配置项");
+            ConfigItem::find()
+                .filter(config_item::Column::KeyName.eq(key))
+                .one(&self.db)
+                .await?
+        };
 
         if let Some(existing_model) = existing {
             // 记录变更历史
@@ -230,7 +270,11 @@ impl ConfigManager {
             let mut active_model: config_item::ActiveModel = existing_model.into();
             active_model.value_json = Set(value_json);
             active_model.updated_at = Set(now_standard_string());
-            active_model.update(&self.db).await?;
+            if let Some(ref conn) = optimized_conn {
+                active_model.update(conn.as_ref()).await?;
+            } else {
+                active_model.update(&self.db).await?;
+            }
         } else {
             // 记录变更历史
             if let Err(e) = self.record_config_change(key, None, &value_json).await {
@@ -243,7 +287,11 @@ impl ConfigManager {
                 value_json: Set(value_json),
                 updated_at: Set(now_standard_string()),
             };
-            new_model.insert(&self.db).await?;
+            if let Some(ref conn) = optimized_conn {
+                new_model.insert(conn.as_ref()).await?;
+            } else {
+                new_model.insert(&self.db).await?;
+            }
         }
 
         debug!("配置项 {} 已更新", key);
@@ -276,6 +324,9 @@ impl ConfigManager {
 
     /// 记录配置变更历史 (使用原生SQL)
     async fn record_config_change(&self, key: &str, old_value: Option<&str>, new_value: &str) -> Result<()> {
+        // 检查是否有内存优化连接可用
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+
         let sql = "INSERT INTO config_changes (key_name, old_value, new_value, changed_at) VALUES (?, ?, ?, ?)";
 
         let stmt = sea_orm::Statement::from_sql_and_values(
@@ -288,7 +339,14 @@ impl ConfigManager {
                 now_standard_string().into(),
             ],
         );
-        self.db.execute(stmt).await?;
+        
+        if let Some(ref conn) = optimized_conn {
+            debug!("ConfigManager: 使用内存优化连接记录配置变更");
+            conn.execute(stmt).await?;
+        } else {
+            debug!("ConfigManager: 使用原始连接记录配置变更");
+            self.db.execute(stmt).await?;
+        }
 
         Ok(())
     }
@@ -299,6 +357,9 @@ impl ConfigManager {
         key: Option<&str>,
         limit: Option<u64>,
     ) -> Result<Vec<config_item::ConfigChangeModel>> {
+        // 检查是否有内存优化连接可用
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+
         let mut sql = "SELECT id, key_name, old_value, new_value, changed_at FROM config_changes".to_string();
         let mut values = Vec::new();
 
@@ -316,7 +377,13 @@ impl ConfigManager {
 
         let stmt = sea_orm::Statement::from_sql_and_values(sea_orm::DatabaseBackend::Sqlite, &sql, values);
 
-        let query_result = self.db.query_all(stmt).await?;
+        let query_result = if let Some(ref conn) = optimized_conn {
+            debug!("ConfigManager: 使用内存优化连接获取配置历史");
+            conn.query_all(stmt).await?
+        } else {
+            debug!("ConfigManager: 使用原始连接获取配置历史");
+            self.db.query_all(stmt).await?
+        };
 
         let mut changes = Vec::new();
         for row in query_result {
