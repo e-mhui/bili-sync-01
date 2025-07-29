@@ -39,13 +39,16 @@ impl TaskStatusNotifier {
         let last_run = last_status.last_run;
         drop(last_status);
 
-        // 简化实现，使用固定的2小时间隔
+        // 从配置中获取实际的扫描间隔
+        let config = crate::config::reload_config();
+        let interval_seconds = config.interval as i64;
+        
         let now = chrono::Local::now();
         let _ = self.tx.send(Arc::new(TaskStatus {
             is_running: false,
             last_run,
             last_finish: Some(now),
-            next_run: now.checked_add_signed(chrono::Duration::hours(2)),
+            next_run: now.checked_add_signed(chrono::Duration::seconds(interval_seconds)),
         }));
     }
 
