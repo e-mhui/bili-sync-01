@@ -188,6 +188,15 @@ impl DeleteTaskQueue {
         task: &DeleteVideoSourceTask,
         connection: &DatabaseConnection,
     ) -> Result<()> {
+        // 检查是否在内存模式，如果是则使用内存数据库连接
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+        let db_conn = if let Some(ref conn) = optimized_conn {
+            info!("使用内存数据库连接更新DeleteVideoSource任务完成状态");
+            conn.as_ref()
+        } else {
+            connection
+        };
+
         let task_data = serde_json::to_string(task)?;
 
         // 查找并更新数据库中的任务状态
@@ -195,13 +204,13 @@ impl DeleteTaskQueue {
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideoSource))
             .filter(task_queue::Column::TaskData.eq(&task_data))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .one(connection)
+            .one(db_conn)
             .await?
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Completed);
             active_model.updated_at = Set(now_standard_string());
-            active_model.update(connection).await?;
+            active_model.update(db_conn).await?;
         }
 
         Ok(())
@@ -209,6 +218,15 @@ impl DeleteTaskQueue {
 
     /// 标记任务为失败（更新数据库状态）
     pub async fn mark_task_failed(&self, task: &DeleteVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
+        // 检查是否在内存模式，如果是则使用内存数据库连接
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+        let db_conn = if let Some(ref conn) = optimized_conn {
+            info!("使用内存数据库连接更新DeleteVideoSource任务失败状态");
+            conn.as_ref()
+        } else {
+            connection
+        };
+
         let task_data = serde_json::to_string(task)?;
 
         // 查找并更新数据库中的任务状态
@@ -216,7 +234,7 @@ impl DeleteTaskQueue {
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideoSource))
             .filter(task_queue::Column::TaskData.eq(&task_data))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .one(connection)
+            .one(db_conn)
             .await?
         {
             let retry_count = db_task.retry_count;
@@ -224,7 +242,7 @@ impl DeleteTaskQueue {
             active_model.status = Set(TaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
             active_model.updated_at = Set(now_standard_string());
-            active_model.update(connection).await?;
+            active_model.update(db_conn).await?;
         }
 
         Ok(())
@@ -402,6 +420,15 @@ impl VideoDeleteTaskQueue {
 
     /// 标记任务为已完成（更新数据库状态）
     pub async fn mark_task_completed(&self, task: &DeleteVideoTask, connection: &DatabaseConnection) -> Result<()> {
+        // 检查是否在内存模式，如果是则使用内存数据库连接
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+        let db_conn = if let Some(ref conn) = optimized_conn {
+            info!("使用内存数据库连接更新DeleteVideo任务完成状态");
+            conn.as_ref()
+        } else {
+            connection
+        };
+
         let task_data = serde_json::to_string(task)?;
 
         // 查找并更新数据库中的任务状态
@@ -409,13 +436,13 @@ impl VideoDeleteTaskQueue {
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
             .filter(task_queue::Column::TaskData.eq(&task_data))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .one(connection)
+            .one(db_conn)
             .await?
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Completed);
             active_model.updated_at = Set(now_standard_string());
-            active_model.update(connection).await?;
+            active_model.update(db_conn).await?;
         }
 
         Ok(())
@@ -423,6 +450,15 @@ impl VideoDeleteTaskQueue {
 
     /// 标记任务为失败（更新数据库状态）
     pub async fn mark_task_failed(&self, task: &DeleteVideoTask, connection: &DatabaseConnection) -> Result<()> {
+        // 检查是否在内存模式，如果是则使用内存数据库连接
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+        let db_conn = if let Some(ref conn) = optimized_conn {
+            info!("使用内存数据库连接更新DeleteVideo任务失败状态");
+            conn.as_ref()
+        } else {
+            connection
+        };
+
         let task_data = serde_json::to_string(task)?;
 
         // 查找并更新数据库中的任务状态
@@ -430,7 +466,7 @@ impl VideoDeleteTaskQueue {
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
             .filter(task_queue::Column::TaskData.eq(&task_data))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .one(connection)
+            .one(db_conn)
             .await?
         {
             let retry_count = db_task.retry_count;
@@ -438,7 +474,7 @@ impl VideoDeleteTaskQueue {
             active_model.status = Set(TaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
             active_model.updated_at = Set(now_standard_string());
-            active_model.update(connection).await?;
+            active_model.update(db_conn).await?;
         }
 
         Ok(())
@@ -880,6 +916,15 @@ impl AddTaskQueue {
 
     /// 标记任务为已完成（更新数据库状态）
     pub async fn mark_task_completed(&self, task: &AddVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
+        // 检查是否在内存模式，如果是则使用内存数据库连接
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+        let db_conn = if let Some(ref conn) = optimized_conn {
+            info!("使用内存数据库连接更新AddVideoSource任务完成状态");
+            conn.as_ref()
+        } else {
+            connection
+        };
+
         let task_data = serde_json::to_string(task)?;
 
         // 查找并更新数据库中的任务状态
@@ -887,13 +932,13 @@ impl AddTaskQueue {
             .filter(task_queue::Column::TaskType.eq(TaskType::AddVideoSource))
             .filter(task_queue::Column::TaskData.eq(&task_data))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .one(connection)
+            .one(db_conn)
             .await?
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Completed);
             active_model.updated_at = Set(now_standard_string());
-            active_model.update(connection).await?;
+            active_model.update(db_conn).await?;
         }
 
         Ok(())
@@ -901,6 +946,15 @@ impl AddTaskQueue {
 
     /// 标记任务为失败（更新数据库状态）
     pub async fn mark_task_failed(&self, task: &AddVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
+        // 检查是否在内存模式，如果是则使用内存数据库连接
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+        let db_conn = if let Some(ref conn) = optimized_conn {
+            info!("使用内存数据库连接更新AddVideoSource任务失败状态");
+            conn.as_ref()
+        } else {
+            connection
+        };
+
         let task_data = serde_json::to_string(task)?;
 
         // 查找并更新数据库中的任务状态
@@ -908,7 +962,7 @@ impl AddTaskQueue {
             .filter(task_queue::Column::TaskType.eq(TaskType::AddVideoSource))
             .filter(task_queue::Column::TaskData.eq(&task_data))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .one(connection)
+            .one(db_conn)
             .await?
         {
             let retry_count = db_task.retry_count;
@@ -916,7 +970,7 @@ impl AddTaskQueue {
             active_model.status = Set(TaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
             active_model.updated_at = Set(now_standard_string());
-            active_model.update(connection).await?;
+            active_model.update(db_conn).await?;
         }
 
         Ok(())

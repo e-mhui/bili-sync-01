@@ -696,7 +696,16 @@ pub async fn fetch_video_details(
                 videos_without_season.len()
             );
             for video_model in videos_without_season {
-                let txn = connection.begin().await?;
+                // 检查是否在内存模式，如果是则使用内存数据库连接
+                let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+                let db_conn = if let Some(ref conn) = optimized_conn {
+                    info!("使用内存数据库连接处理番剧视频");
+                    conn.as_ref()
+                } else {
+                    connection
+                };
+                
+                let txn = db_conn.begin().await?;
 
                 let (actual_cid, duration) = if let Some(ep_id) = &video_model.ep_id {
                     match get_bangumi_info_from_api(bili_client, ep_id, token.clone()).await {
@@ -920,7 +929,16 @@ pub async fn fetch_video_details(
                                 debug!("视频 {} 没有staff信息", video_model.bvid);
                             }
 
-                            let txn = connection.begin().await?;
+                            // 检查是否在内存模式，如果是则使用内存数据库连接
+                            let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+                            let db_conn = if let Some(ref conn) = optimized_conn {
+                                info!("使用内存数据库连接处理普通视频");
+                                conn.as_ref()
+                            } else {
+                                connection
+                            };
+                            
+                            let txn = db_conn.begin().await?;
                             // 将分页信息写入数据库
                             create_pages(pages, &video_model_mut, &txn).await?;
                             let mut video_active_model = view_info.into_detail_model(video_model_mut.clone());
@@ -3896,7 +3914,16 @@ async fn process_bangumi_video(
     connection: &DatabaseConnection,
     video_source: &VideoSourceEnum,
 ) -> Result<()> {
-    let txn = connection.begin().await?;
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+    let db_conn = if let Some(ref conn) = optimized_conn {
+        debug!("使用内存数据库连接处理番剧视频");
+        conn.as_ref()
+    } else {
+        connection
+    };
+    
+    let txn = db_conn.begin().await?;
 
     let (actual_cid, duration) = if let Some(ep_id) = &video_model.ep_id {
         match episodes_map.get(ep_id) {
@@ -3972,7 +3999,16 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
     let mut resetted_videos = 0;
     let mut resetted_pages = 0;
 
-    let txn = connection.begin().await?;
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+    let db_conn = if let Some(ref conn) = optimized_conn {
+        info!("使用内存数据库连接重置风控失败任务");
+        conn.as_ref()
+    } else {
+        connection
+    };
+
+    let txn = db_conn.begin().await?;
 
     // 重置视频失败、进行中和未完成状态
     for (id, name, download_status) in all_videos {
@@ -4370,6 +4406,7 @@ mod tests {
     #[cfg(test)]
     mod auto_delete_tests {
         use crate::error::{ClassifiedError, ErrorType, ExecutionStatus};
+        use crate::utils::time_format::now_standard_string;
         use bili_sync_entity::video;
 
         #[tokio::test]

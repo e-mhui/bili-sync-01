@@ -1999,6 +1999,13 @@ pub async fn update_video_source_enabled_internal(
     id: i32,
     enabled: bool,
 ) -> Result<crate::api::response::UpdateVideoSourceEnabledResponse, ApiError> {
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let db = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
+        info!("使用内存数据库连接更新视频源启用状态");
+        optimized_conn
+    } else {
+        db
+    };
     let txn = db.begin().await?;
 
     let result = match source_type.as_str() {
@@ -2507,6 +2514,13 @@ pub async fn delete_video_source_internal(
     id: i32,
     delete_local_files: bool,
 ) -> Result<crate::api::response::DeleteVideoSourceResponse, ApiError> {
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let db = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
+        info!("使用内存数据库连接删除视频源");
+        optimized_conn
+    } else {
+        db
+    };
     let txn = db.begin().await?;
 
     // 根据不同类型的视频源执行不同的删除操作
@@ -3025,6 +3039,14 @@ pub async fn update_video_source_scan_deleted_internal(
     id: i32,
     scan_deleted_videos: bool,
 ) -> Result<crate::api::response::UpdateVideoSourceScanDeletedResponse, ApiError> {
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let db = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
+        info!("使用内存数据库连接更新视频源扫描已删除视频设置");
+        optimized_conn
+    } else {
+        db
+    };
+    
     let txn = db.begin().await?;
 
     let result = match source_type.as_str() {
@@ -3283,6 +3305,14 @@ pub async fn reset_video_source_path_internal(
     id: i32,
     request: ResetVideoSourcePathRequest,
 ) -> Result<ResetVideoSourcePathResponse, ApiError> {
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let db = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
+        info!("使用内存数据库连接重设视频源路径");
+        optimized_conn
+    } else {
+        db
+    };
+    
     // 在开始操作前进行安全验证
     let txn = db.begin().await?;
     validate_path_reset_safety(&txn, &source_type, id, &request.new_path).await?;
