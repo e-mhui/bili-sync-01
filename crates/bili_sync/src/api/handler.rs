@@ -1382,6 +1382,14 @@ pub async fn add_video_source_internal(
     db: Arc<DatabaseConnection>,
     params: AddVideoSourceRequest,
 ) -> Result<AddVideoSourceResponse, ApiError> {
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let db = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
+        info!("使用内存数据库连接处理添加视频源任务");
+        optimized_conn
+    } else {
+        db
+    };
+    
     let txn = db.begin().await?;
 
     let result = match params.source_type.as_str() {
