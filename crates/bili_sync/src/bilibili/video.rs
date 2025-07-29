@@ -614,7 +614,19 @@ impl<'a> Video<'a> {
         tracing::debug!("请求参数: {:?}", params);
 
         let request_url = "https://api.bilibili.com/pgc/player/web/playurl";
-        tracing::debug!("请求URL: {}", request_url);
+        
+        // 构建完整的URL用于日志显示
+        let mut full_url = format!("{}?", request_url);
+        for (i, (key, value)) in params.iter().enumerate() {
+            if i > 0 {
+                full_url.push('&');
+            }
+            full_url.push_str(&format!("{}={}", key, value));
+        }
+        
+        tracing::debug!("==================== 番剧API请求 ====================");
+        tracing::debug!("完整请求URL: {}", full_url);
+        tracing::debug!("==================================================");
 
         let res = self
             .client

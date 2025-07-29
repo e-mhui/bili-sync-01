@@ -27,7 +27,7 @@ pub enum VideoQuality {
 pub enum AudioQuality {
     Quality64k = 30216,
     Quality132k = 30232,
-    QualityDolby = 30250,
+    QualityDolby = 30255,
     QualityHiRES = 30251,
     Quality192k = 30280,
 }
@@ -269,7 +269,7 @@ impl PageAnalyzer {
             .enumerate()
         {
             let (Some(url), Some(quality_id), Some(codecs_id)) = (
-                video["baseUrl"].as_str(),
+                video["base_url"].as_str(),
                 video["id"].as_u64(),
                 video["codecid"].as_u64(),
             ) else {
@@ -324,7 +324,7 @@ impl PageAnalyzer {
 
             streams.push(Stream::DashVideo {
                 url: url.to_string(),
-                backup_url: serde_json::from_value(video["backupUrl"].take()).unwrap_or_default(),
+                backup_url: serde_json::from_value(video["backup_url"].take()).unwrap_or_default(),
                 quality,
                 codecs,
             });
@@ -356,7 +356,7 @@ impl PageAnalyzer {
         }
         if let Some(audios) = self.info.pointer_mut("/dash/audio").and_then(|a| a.as_array_mut()) {
             for audio in audios.iter_mut() {
-                let (Some(url), Some(quality)) = (audio["baseUrl"].as_str(), audio["id"].as_u64()) else {
+                let (Some(url), Some(quality)) = (audio["base_url"].as_str(), audio["id"].as_u64()) else {
                     continue;
                 };
                 let quality = AudioQuality::from_repr(quality as usize).context("invalid audio stream quality")?;
@@ -365,44 +365,58 @@ impl PageAnalyzer {
                 }
                 streams.push(Stream::DashAudio {
                     url: url.to_string(),
-                    backup_url: serde_json::from_value(audio["backupUrl"].take()).unwrap_or_default(),
+                    backup_url: serde_json::from_value(audio["backup_url"].take()).unwrap_or_default(),
                     quality,
                 });
             }
         }
         if !filter_option.no_hires {
             if let Some(flac) = self.info.pointer_mut("/dash/flac/audio") {
-                let (Some(url), Some(quality)) = (flac["baseUrl"].as_str(), flac["id"].as_u64()) else {
+                let (Some(url), Some(quality)) = (flac["base_url"].as_str(), flac["id"].as_u64()) else {
                     bail!("invalid flac stream");
                 };
                 let quality = AudioQuality::from_repr(quality as usize).context("invalid flac stream quality")?;
                 if quality >= filter_option.audio_min_quality && quality <= filter_option.audio_max_quality {
                     streams.push(Stream::DashAudio {
                         url: url.to_string(),
-                        backup_url: serde_json::from_value(flac["backupUrl"].take()).unwrap_or_default(),
+                        backup_url: serde_json::from_value(flac["backup_url"].take()).unwrap_or_default(),
                         quality,
                     });
                 }
             }
         }
         if !filter_option.no_dolby_audio {
-            if let Some(dolby_audio) = self
+            // 首先检查dolby音频数组是否存在且非空
+            if let Some(dolby_audio_array) = self
                 .info
-                .pointer_mut("/dash/dolby/audio/0")
-                .and_then(|a| a.as_object_mut())
+                .pointer_mut("/dash/dolby/audio")
+                .and_then(|a| a.as_array_mut())
             {
-                let (Some(url), Some(quality)) = (dolby_audio["baseUrl"].as_str(), dolby_audio["id"].as_u64()) else {
-                    bail!("invalid dolby audio stream");
-                };
-                let quality =
-                    AudioQuality::from_repr(quality as usize).context("invalid dolby audio stream quality")?;
-                if quality >= filter_option.audio_min_quality && quality <= filter_option.audio_max_quality {
-                    streams.push(Stream::DashAudio {
-                        url: url.to_string(),
-                        backup_url: serde_json::from_value(dolby_audio["backupUrl"].take()).unwrap_or_default(),
-                        quality,
-                    });
+                if !dolby_audio_array.is_empty() {
+                    // 只有当dolby音频数组非空时才尝试处理
+                    tracing::debug!("发现dolby音频流，数量: {}", dolby_audio_array.len());
+                    if let Some(dolby_audio) = dolby_audio_array.get_mut(0).and_then(|a| a.as_object_mut()) {
+                        let (Some(url), Some(quality)) = (
+                            dolby_audio.get("base_url").and_then(|v| v.as_str()),
+                            dolby_audio.get("id").and_then(|v| v.as_u64())
+                        ) else {
+                            bail!("invalid dolby audio stream");
+                        };
+                        let quality =
+                            AudioQuality::from_repr(quality as usize).context("invalid dolby audio stream quality")?;
+                        if quality >= filter_option.audio_min_quality && quality <= filter_option.audio_max_quality {
+                            streams.push(Stream::DashAudio {
+                                url: url.to_string(),
+                                backup_url: serde_json::from_value(dolby_audio["backup_url"].take()).unwrap_or_default(),
+                                quality,
+                            });
+                        }
+                    }
+                } else {
+                    tracing::debug!("dolby音频数组为空，跳过dolby处理");
                 }
+            } else {
+                tracing::debug!("未找到dolby音频数组");
             }
         }
         Ok(streams)
