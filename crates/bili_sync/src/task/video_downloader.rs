@@ -673,6 +673,16 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             if let Err(e) = crate::task::process_config_tasks(connection.clone()).await {
                 error!("处理配置任务队列失败: {:#}", e);
             }
+
+            // 处理完所有任务队列后，同步内存数据库到主数据库
+            if crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
+                info!("任务队列处理完成，同步内存数据库到主数据库");
+                if let Err(e) = crate::utils::global_memory_optimizer::sync_to_main_db().await {
+                    error!("任务队列处理后同步失败: {}", e);
+                } else {
+                    info!("任务队列状态已同步到主数据库");
+                }
+            }
         } else {
             debug!("任务已暂停，跳过后处理阶段");
         }

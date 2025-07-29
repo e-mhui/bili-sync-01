@@ -27,8 +27,9 @@ pub enum VideoQuality {
 pub enum AudioQuality {
     Quality64k = 30216,
     Quality132k = 30232,
-    QualityDolby = 30255,
+    QualityDolby = 30250,
     QualityHiRES = 30251,
+    QualityDolbyBangumi = 30255,
     Quality192k = 30280,
 }
 
@@ -48,7 +49,7 @@ impl AudioQuality {
     pub fn as_sort_key(&self) -> isize {
         match self {
             // 这可以让 Dolby 和 Hi-RES 排在 192k 之后，且 Dolby 和 Hi-RES 之间的顺序不变
-            Self::QualityHiRES | Self::QualityDolby => (*self as isize) + 40,
+            Self::QualityHiRES | Self::QualityDolby | Self::QualityDolbyBangumi => (*self as isize) + 40,
             _ => *self as isize,
         }
     }
@@ -520,6 +521,7 @@ mod tests {
             AudioQuality::Quality132k,
             AudioQuality::Quality192k,
             AudioQuality::QualityDolby,
+            AudioQuality::QualityDolbyBangumi,
             AudioQuality::QualityHiRES,
         ]
         .is_sorted());

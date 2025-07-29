@@ -7396,7 +7396,7 @@ fn get_audio_quality_description(quality: crate::bilibili::AudioQuality) -> Stri
         AudioQuality::Quality64k => "64K".to_string(),
         AudioQuality::Quality132k => "132K".to_string(),
         AudioQuality::Quality192k => "192K".to_string(),
-        AudioQuality::QualityDolby => "杜比全景声".to_string(),
+        AudioQuality::QualityDolby | AudioQuality::QualityDolbyBangumi => "杜比全景声".to_string(),
         AudioQuality::QualityHiRES => "Hi-Res无损".to_string(),
     }
 }
