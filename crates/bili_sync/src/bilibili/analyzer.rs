@@ -356,11 +356,14 @@ impl PageAnalyzer {
             }
         }
         if let Some(audios) = self.info.pointer_mut("/dash/audio").and_then(|a| a.as_array_mut()) {
-            for audio in audios.iter_mut() {
+            tracing::debug!("发现音频流数组，共{}个音频流", audios.len());
+            for (index, audio) in audios.iter_mut().enumerate() {
                 let (Some(url), Some(quality)) = (audio["base_url"].as_str(), audio["id"].as_u64()) else {
+                    tracing::warn!("音频流{}缺少base_url或id字段", index);
                     continue;
                 };
-                let quality = AudioQuality::from_repr(quality as usize).context("invalid audio stream quality")?;
+                tracing::debug!("处理音频流{} - ID: {}, URL前缀: {}", index, quality, &url[..url.len().min(50)]);
+                let quality = AudioQuality::from_repr(quality as usize).context(format!("invalid audio stream quality: {}", quality))?;
                 if quality < filter_option.audio_min_quality || quality > filter_option.audio_max_quality {
                     continue;
                 }
@@ -373,10 +376,13 @@ impl PageAnalyzer {
         }
         if !filter_option.no_hires {
             if let Some(flac) = self.info.pointer_mut("/dash/flac/audio") {
+                tracing::debug!("发现FLAC音频流");
                 let (Some(url), Some(quality)) = (flac["base_url"].as_str(), flac["id"].as_u64()) else {
+                    tracing::error!("FLAC音频流缺少base_url或id字段");
                     bail!("invalid flac stream");
                 };
-                let quality = AudioQuality::from_repr(quality as usize).context("invalid flac stream quality")?;
+                tracing::debug!("处理FLAC音频流 - ID: {}, URL前缀: {}", quality, &url[..url.len().min(50)]);
+                let quality = AudioQuality::from_repr(quality as usize).context(format!("invalid flac stream quality: {}", quality))?;
                 if quality >= filter_option.audio_min_quality && quality <= filter_option.audio_max_quality {
                     streams.push(Stream::DashAudio {
                         url: url.to_string(),
@@ -396,15 +402,23 @@ impl PageAnalyzer {
                 if !dolby_audio_array.is_empty() {
                     // 只有当dolby音频数组非空时才尝试处理
                     tracing::debug!("发现dolby音频流，数量: {}", dolby_audio_array.len());
+                    // 记录完整的dolby音频数组信息
+                    for (i, dolby_item) in dolby_audio_array.iter().enumerate() {
+                        if let Some(id) = dolby_item.get("id").and_then(|v| v.as_u64()) {
+                            tracing::debug!("Dolby音频流{} - ID: {}", i, id);
+                        }
+                    }
                     if let Some(dolby_audio) = dolby_audio_array.get_mut(0).and_then(|a| a.as_object_mut()) {
                         let (Some(url), Some(quality)) = (
                             dolby_audio.get("base_url").and_then(|v| v.as_str()),
                             dolby_audio.get("id").and_then(|v| v.as_u64())
                         ) else {
+                            tracing::error!("Dolby音频流缺少base_url或id字段");
                             bail!("invalid dolby audio stream");
                         };
+                        tracing::debug!("处理Dolby音频流 - ID: {}, URL前缀: {}", quality, &url[..url.len().min(50)]);
                         let quality =
-                            AudioQuality::from_repr(quality as usize).context("invalid dolby audio stream quality")?;
+                            AudioQuality::from_repr(quality as usize).context(format!("invalid dolby audio stream quality: {}", quality))?;
                         if quality >= filter_option.audio_min_quality && quality <= filter_option.audio_max_quality {
                             streams.push(Stream::DashAudio {
                                 url: url.to_string(),

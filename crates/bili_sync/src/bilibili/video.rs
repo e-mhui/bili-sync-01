@@ -437,6 +437,51 @@ impl<'a> Video<'a> {
             tracing::debug!("API返回的可用质量列表: {:?}", qualities);
         }
 
+        // 记录音频流信息
+        if let Some(audio_array) = res["data"]["dash"]["audio"].as_array() {
+            tracing::debug!("=== 普通视频音频流信息 ===");
+            tracing::debug!("普通视频音频流数量: {}", audio_array.len());
+            for (i, audio) in audio_array.iter().enumerate() {
+                if let Some(id) = audio["id"].as_u64() {
+                    let codec = audio["codecs"].as_str().unwrap_or("unknown");
+                    let bandwidth = audio["bandwidth"].as_u64().unwrap_or(0);
+                    tracing::debug!("普通视频音频流{}: ID={}, codec={}, bandwidth={}", i, id, codec, bandwidth);
+                }
+            }
+            tracing::debug!("=== 普通视频音频流信息结束 ===");
+        }
+
+        // 记录杜比音频流信息
+        if let Some(dolby) = res["data"]["dash"]["dolby"].as_object() {
+            tracing::debug!("=== 普通视频Dolby音频信息 ===");
+            if let Some(dolby_type) = dolby["type"].as_u64() {
+                tracing::debug!("Dolby类型: {}", dolby_type);
+            }
+            if let Some(dolby_audio) = dolby["audio"].as_array() {
+                tracing::debug!("Dolby音频流数量: {}", dolby_audio.len());
+                for (i, audio) in dolby_audio.iter().enumerate() {
+                    if let Some(id) = audio["id"].as_u64() {
+                        tracing::debug!("Dolby音频流{}: ID={}", i, id);
+                    }
+                }
+            }
+            tracing::debug!("=== 普通视频Dolby音频信息结束 ===");
+        }
+
+        // 记录FLAC音频流信息
+        if let Some(flac) = res["data"]["dash"]["flac"].as_object() {
+            tracing::debug!("=== 普通视频FLAC音频信息 ===");
+            if let Some(flac_display) = flac["display"].as_bool() {
+                tracing::debug!("FLAC显示状态: {}", flac_display);
+            }
+            if let Some(flac_audio) = flac["audio"].as_object() {
+                if let Some(id) = flac_audio["id"].as_u64() {
+                    tracing::debug!("FLAC音频流ID: {}", id);
+                }
+            }
+            tracing::debug!("=== 普通视频FLAC音频信息结束 ===");
+        }
+
         // 检查是否存在VIP要求
         if let Some(vip_status) = res["data"]["vip_status"].as_i64() {
             tracing::debug!("VIP状态要求: {}", vip_status);
@@ -666,6 +711,51 @@ impl<'a> Video<'a> {
         }
         if let Some(vip_type) = res["result"]["vip_type"].as_i64() {
             tracing::debug!("番剧VIP类型: {}", vip_type);
+        }
+
+        // 记录音频流信息
+        if let Some(audio_array) = res["result"]["dash"]["audio"].as_array() {
+            tracing::debug!("=== 番剧音频流信息 ===");
+            tracing::debug!("番剧音频流数量: {}", audio_array.len());
+            for (i, audio) in audio_array.iter().enumerate() {
+                if let Some(id) = audio["id"].as_u64() {
+                    let codec = audio["codecs"].as_str().unwrap_or("unknown");
+                    let bandwidth = audio["bandwidth"].as_u64().unwrap_or(0);
+                    tracing::debug!("番剧音频流{}: ID={}, codec={}, bandwidth={}", i, id, codec, bandwidth);
+                }
+            }
+            tracing::debug!("=== 番剧音频流信息结束 ===");
+        }
+
+        // 记录杜比音频流信息
+        if let Some(dolby) = res["result"]["dash"]["dolby"].as_object() {
+            tracing::debug!("=== 番剧Dolby音频信息 ===");
+            if let Some(dolby_type) = dolby["type"].as_u64() {
+                tracing::debug!("Dolby类型: {}", dolby_type);
+            }
+            if let Some(dolby_audio) = dolby["audio"].as_array() {
+                tracing::debug!("Dolby音频流数量: {}", dolby_audio.len());
+                for (i, audio) in dolby_audio.iter().enumerate() {
+                    if let Some(id) = audio["id"].as_u64() {
+                        tracing::debug!("Dolby音频流{}: ID={}", i, id);
+                    }
+                }
+            }
+            tracing::debug!("=== 番剧Dolby音频信息结束 ===");
+        }
+
+        // 记录FLAC音频流信息
+        if let Some(flac) = res["result"]["dash"]["flac"].as_object() {
+            tracing::debug!("=== 番剧FLAC音频信息 ===");
+            if let Some(flac_display) = flac["display"].as_bool() {
+                tracing::debug!("FLAC显示状态: {}", flac_display);
+            }
+            if let Some(flac_audio) = flac["audio"].as_object() {
+                if let Some(id) = flac_audio["id"].as_u64() {
+                    tracing::debug!("FLAC音频流ID: {}", id);
+                }
+            }
+            tracing::debug!("=== 番剧FLAC音频信息结束 ===");
         }
 
         tracing::debug!("=== 番剧API响应调试结束 ===");
