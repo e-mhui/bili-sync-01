@@ -116,11 +116,11 @@ async fn test_db_connection(db: &DatabaseConnection) -> bool {
 pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Result<()> {
     // 获取优化的数据库连接（内存模式或常规模式）
     let optimized_connection = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
-        info!("发现全局内存优化器连接，进行连接有效性测试");
+        debug!("发现全局内存优化器连接，进行连接有效性测试");
         
         // 验证内存优化器连接是否有效
         if test_db_connection(&optimized_conn).await {
-            info!("内存优化器数据库连接验证成功，使用内存优化连接");
+            debug!("内存优化器数据库连接验证成功，使用内存优化连接");
             optimized_conn
         } else {
             warn!("内存优化器连接验证失败，这可能导致API错误");
@@ -128,7 +128,7 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
             
             // 也测试主数据库连接
             if test_db_connection(&_database_connection).await {
-                info!("主数据库连接验证成功");
+                debug!("主数据库连接验证成功");
                 _database_connection
             } else {
                 error!("主数据库连接也无效，HTTP服务器可能无法正常工作");
@@ -136,11 +136,11 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
             }
         }
     } else {
-        info!("未发现全局内存优化器连接，使用主数据库连接");
+        debug!("未发现全局内存优化器连接，使用主数据库连接");
         
         // 验证主数据库连接
         if test_db_connection(&_database_connection).await {
-            info!("主数据库连接验证成功");
+            debug!("主数据库连接验证成功");
         } else {
             warn!("主数据库连接验证失败，HTTP服务器可能无法正常工作");
         }
@@ -278,10 +278,10 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
                     match crate::utils::global_memory_optimizer::reconfigure_global_memory_optimizer(main_db_arc).await {
                         Ok(reconfigured) => {
                             if reconfigured {
-                                info!("内存数据库已重新配置，尝试获取新连接");
+                                debug!("内存数据库已重新配置，尝试获取新连接");
                                 if let Some(new_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
                                     if test_db_connection(&new_conn).await {
-                                        info!("内存数据库重建成功，连接恢复正常");
+                                        debug!("内存数据库重建成功，连接恢复正常");
                                     } else {
                                         error!("内存数据库重建后连接仍然无效");
                                     }

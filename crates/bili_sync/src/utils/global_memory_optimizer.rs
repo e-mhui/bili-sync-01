@@ -2,7 +2,7 @@ use anyhow::Result;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
+use tracing::{debug, info, warn, error};
 use once_cell::sync::Lazy;
 
 use crate::utils::memory_db::MemoryDbOptimizer;
@@ -36,11 +36,11 @@ impl GlobalMemoryOptimizer {
     /// 这应该在程序启动时就调用，确保所有后续的数据库操作都能享受优化
     pub async fn initialize(&mut self, db: Arc<DatabaseConnection>) -> Result<()> {
         if self.is_initialized {
-            info!("全局内存优化器已经初始化，跳过重复初始化");
+            debug!("全局内存优化器已经初始化，跳过重复初始化");
             return Ok(());
         }
 
-        info!("开始初始化全局内存数据库优化器");
+        debug!("开始初始化全局内存数据库优化器");
 
         // 创建内存数据库优化器
         let mut optimizer = MemoryDbOptimizer::new(db.clone());
@@ -69,7 +69,7 @@ impl GlobalMemoryOptimizer {
         }
 
         self.is_initialized = true;
-        info!("全局内存优化器初始化完成");
+        debug!("全局内存优化器初始化完成");
         Ok(())
     }
 
@@ -228,12 +228,12 @@ impl GlobalMemoryOptimizer {
             return Ok(());
         }
         
-        info!("开始同步全局内存优化器的变更（保持内存模式）");
+        debug!("开始同步全局内存优化器的变更（保持内存模式）");
         
         if let Some(ref optimizer) = self.optimizer {
             // 调用底层的同步方法
             optimizer.sync_to_main_db_keep_memory().await?;
-            info!("全局内存优化器数据同步完成");
+            debug!("全局内存优化器数据同步完成");
         }
         
         Ok(())

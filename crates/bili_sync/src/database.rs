@@ -1,7 +1,7 @@
 use anyhow::Result;
 use bili_sync_migration::{Migrator, MigratorTrait};
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
-use tracing::info;
+use tracing::debug;
 
 use crate::config::CONFIG_DIR;
 
@@ -38,7 +38,7 @@ async fn database_connection() -> Result<DatabaseConnection> {
     connection.execute_unprepared("PRAGMA busy_timeout = 30000;").await?; // 30秒忙等超时
     connection.execute_unprepared("PRAGMA optimize;").await?; // 启用查询优化器
 
-    info!("SQLite WAL 模式已启用，性能优化参数已应用");
+    debug!("SQLite WAL 模式已启用，性能优化参数已应用");
 
     Ok(connection)
 }
@@ -47,9 +47,9 @@ async fn migrate_database() -> Result<()> {
     // 检查数据库文件是否存在，不存在则会在连接时自动创建
     let db_path = CONFIG_DIR.join("data.sqlite");
     if !db_path.exists() {
-        info!("数据库文件不存在，将创建新的数据库");
+        debug!("数据库文件不存在，将创建新的数据库");
     } else {
-        info!("检测到现有数据库文件，将在必要时应用迁移");
+        debug!("检测到现有数据库文件，将在必要时应用迁移");
     }
 
     // 注意此处使用内部构造的 DatabaseConnection，而不是通过 database_connection() 获取

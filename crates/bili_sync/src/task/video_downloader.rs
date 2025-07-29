@@ -180,11 +180,11 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
     // 在程序启动阶段就初始化全局内存优化器
     // 这确保了所有后续的数据库操作都能享受到内存优化
-    info!("开始初始化全局内存数据库优化器");
+    debug!("开始初始化全局内存数据库优化器");
     if let Err(e) = initialize_global_memory_optimizer(connection.clone()).await {
         warn!("初始化全局内存优化器失败，将使用常规模式: {}", e);
     } else {
-        info!("全局内存数据库优化器初始化完成");
+        debug!("全局内存数据库优化器初始化完成");
     }
 
     // 在启动时初始化所有视频源 - 使用动态配置而非静态CONFIG
@@ -199,7 +199,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
     if let Err(e) = init_all_sources(&config, &startup_connection).await {
         error!("启动时初始化视频源失败: {}", e);
     } else {
-        info!("启动时视频源初始化成功");
+        debug!("启动时视频源初始化成功");
     }
 
     loop {
@@ -220,7 +220,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
         let optimized_connection = match crate::utils::global_memory_optimizer::get_optimized_connection().await {
             Some(conn) => {
                 let is_memory_optimized = crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await;
-                info!("使用全局内存优化器，性能模式: {}", 
+                debug!("使用全局内存优化器，性能模式: {}", 
                     if is_memory_optimized { "内存优化" } else { "常规" });
                 conn
             }
@@ -594,9 +594,9 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             // 如果使用了内存优化模式，在扫描完成后立即同步数据到主数据库
             let is_memory_optimized = crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await;
             if is_memory_optimized {
-                info!("开始将本轮扫描的数据同步到主数据库...");
+                debug!("开始将本轮扫描的数据同步到主数据库...");
                 match crate::utils::global_memory_optimizer::sync_to_main_db().await {
-                    Ok(_) => info!("数据同步完成，所有变更已保存到主数据库"),
+                    Ok(_) => debug!("数据同步完成，所有变更已保存到主数据库"),
                     Err(e) => error!("数据同步失败: {}，可能导致数据丢失", e),
                 }
             }
@@ -605,7 +605,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             info!("本轮扫描完成 - 模式: {}, 视频源数量: {}", mode, ordered_sources.len());
             
             if is_memory_optimized {
-                info!("内存优化模式有效减少了数据库I/O开销，提升了扫描性能");
+                debug!("内存优化模式有效减少了数据库I/O开销，提升了扫描性能");
             }
 
             // 生成扫描摘要并发送推送通知
@@ -676,11 +676,11 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
             // 处理完所有任务队列后，同步内存数据库到主数据库
             if crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
-                info!("任务队列处理完成，同步内存数据库到主数据库");
+                debug!("任务队列处理完成，同步内存数据库到主数据库");
                 if let Err(e) = crate::utils::global_memory_optimizer::sync_to_main_db().await {
                     error!("任务队列处理后同步失败: {}", e);
                 } else {
-                    info!("任务队列状态已同步到主数据库");
+                    debug!("任务队列状态已同步到主数据库");
                 }
             }
         } else {

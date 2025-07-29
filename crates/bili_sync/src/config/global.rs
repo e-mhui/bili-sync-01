@@ -23,7 +23,7 @@ static CONFIG_MANAGER: Lazy<RwLock<Option<crate::config::ConfigManager>>> = Lazy
 pub fn set_config_manager(manager: crate::config::ConfigManager) {
     let mut guard = CONFIG_MANAGER.write().unwrap();
     *guard = Some(manager);
-    info!("配置管理器已设置");
+    debug!("配置管理器已设置");
 }
 
 /// 获取配置管理器（用于credential刷新等场景）
@@ -63,7 +63,7 @@ pub async fn reload_config_bundle() -> Result<()> {
 
     // 原子性更新配置包
     CONFIG_BUNDLE.store(Arc::new(new_bundle));
-    info!("配置包已重新加载并验证");
+    debug!("配置包已重新加载并验证");
     Ok(())
 }
 
@@ -106,7 +106,7 @@ fn verify_template_registration(bundle: &ConfigBundle) -> Result<()> {
         }
     }
 
-    info!("所有模板验证通过");
+    debug!("所有模板验证通过");
     Ok(())
 }
 

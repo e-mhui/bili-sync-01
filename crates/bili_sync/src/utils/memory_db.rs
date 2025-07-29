@@ -205,7 +205,7 @@ impl MemoryDbOptimizer {
             "page",       // 分页表
         ];
 
-        info!("开始复制核心业务表数据");
+        debug!("开始复制核心业务表数据");
         for table_name in core_tables {
             self.copy_table_data(table_name, memory_db).await?;
             debug!("已复制表数据: {}", table_name);
@@ -218,7 +218,7 @@ impl MemoryDbOptimizer {
             "task_queue",
         ];
 
-        info!("开始复制配置和状态表数据");
+        debug!("开始复制配置和状态表数据");
         for table_name in config_tables {
             // 这些表可能为空，忽略复制错误
             match self.copy_table_data(table_name, memory_db).await {
@@ -229,7 +229,7 @@ impl MemoryDbOptimizer {
                         if let Ok(rows) = memory_db.query_all(Statement::from_string(DatabaseBackend::Sqlite, count_sql)).await {
                             if let Some(row) = rows.first() {
                                 if let Ok(count) = row.try_get::<i64>("", "count") {
-                                    info!("已复制config_changes表数据: {} 条记录", count);
+                                    debug!("已复制config_changes表数据: {} 条记录", count);
                                 }
                             }
                         }
@@ -242,7 +242,7 @@ impl MemoryDbOptimizer {
             }
         }
 
-        info!("所有表数据复制到内存数据库完成");
+        debug!("所有表数据复制到内存数据库完成");
         Ok(())
     }
 
@@ -476,7 +476,7 @@ impl MemoryDbOptimizer {
         
         // 特别记录config_changes表的同步情况
         if table_name == "config_changes" {
-            info!("config_changes表准备同步 {} 条记录到主数据库", rows.len());
+            debug!("config_changes表准备同步 {} 条记录到主数据库", rows.len());
         }
 
         // 获取表的列名
@@ -553,8 +553,14 @@ impl MemoryDbOptimizer {
         }
 
         if sync_count > 0 {
-            info!("表 {} 同步完成，成功同步 {} 条记录（新增: {}, 更新: {}）", 
-                table_name, sync_count, insert_count, update_count);
+            // 只有在有新增记录时才使用info级别
+            if insert_count > 0 {
+                info!("表 {} 同步完成，成功同步 {} 条记录（新增: {}, 更新: {}）", 
+                    table_name, sync_count, insert_count, update_count);
+            } else {
+                debug!("表 {} 同步完成，成功同步 {} 条记录（新增: {}, 更新: {}）", 
+                    table_name, sync_count, insert_count, update_count);
+            }
         } else {
             debug!("表 {} 无数据需要同步", table_name);
         }

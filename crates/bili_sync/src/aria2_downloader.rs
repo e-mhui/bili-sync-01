@@ -116,7 +116,7 @@ impl Aria2Downloader {
 
         // 确定进程数量：根据系统资源动态计算
         let instance_count = Self::calculate_optimal_instance_count();
-        info!("创建 {} 个aria2进程实例", instance_count);
+        debug!("创建 {} 个aria2进程实例", instance_count);
 
         let mut downloader = Self {
             client,
@@ -133,7 +133,7 @@ impl Aria2Downloader {
         let config = crate::config::with_config(|bundle| bundle.config.clone());
 
         if config.enable_aria2_health_check {
-            info!("aria2健康检查已启用，启动监控任务");
+            debug!("aria2健康检查已启用，启动监控任务");
 
             // 智能健康检查监控任务
             let instances = Arc::clone(&downloader.aria2_instances);
@@ -152,7 +152,7 @@ impl Aria2Downloader {
                 // 使用用户配置的检查间隔，并进行合理范围限制
                 let health_check_interval = check_interval.clamp(30, 600);
 
-                info!(
+                debug!(
                     "健康检查间隔设置为 {} 秒（用户配置: {} 秒，自动重启: {}）",
                     health_check_interval, check_interval, enable_auto_restart
                 );
@@ -211,7 +211,7 @@ impl Aria2Downloader {
                                     Ok(new_instance) => {
                                         let mut instances_guard = instances.lock().await;
                                         instances_guard.push(new_instance);
-                                        info!("成功恢复第{}个aria2实例", i + 1);
+                                        debug!("成功恢复第{}个aria2实例", i + 1);
                                     }
                                     Err(e) => {
                                         error!("恢复第{}个aria2实例失败: {:#}", i + 1, e);
@@ -235,9 +235,9 @@ impl Aria2Downloader {
                 }
             });
 
-            info!("aria2实例监控任务已启动");
+            debug!("aria2实例监控任务已启动");
         } else {
-            info!("aria2健康检查已禁用，跳过监控任务启动");
+            debug!("aria2健康检查已禁用，跳过监控任务启动");
         }
 
         Ok(downloader)
@@ -257,7 +257,7 @@ impl Aria2Downloader {
             _ => std::cmp::min(8, (total_threads as f64 / 6.0).ceil() as usize), // 超大线程数动态计算，更多进程
         };
 
-        info!(
+        debug!(
             "智能分析 - 总线程数: {}, 计算出最优进程数: {}, 决策依据: {}",
             total_threads,
             optimal_count,
@@ -274,7 +274,7 @@ impl Aria2Downloader {
 
     /// 清理所有aria2进程 (Windows兼容)
     async fn cleanup_all_aria2_processes() {
-        info!("清理所有旧的aria2进程...");
+        debug!("清理所有旧的aria2进程...");
 
         #[cfg(target_os = "windows")]
         {
@@ -288,7 +288,7 @@ impl Aria2Downloader {
                 Ok(result) => {
                     if result.status.success() {
                         // Windows taskkill 输出使用系统默认编码，不直接解码以避免乱码
-                        info!("Windows aria2进程清理完成");
+                        debug!("Windows aria2进程清理完成");
                     } else {
                         debug!("Windows aria2进程清理出现问题，但进程可能已终止");
                     }
@@ -310,7 +310,7 @@ impl Aria2Downloader {
             match output {
                 Ok(result) => {
                     if result.status.success() {
-                        info!("Linux aria2进程清理完成");
+                        debug!("Linux aria2进程清理完成");
                     } else {
                         debug!("Linux aria2进程清理: 没有找到运行中的aria2进程");
                     }
@@ -332,7 +332,7 @@ impl Aria2Downloader {
             match output {
                 Ok(result) => {
                     if result.status.success() {
-                        info!("macOS aria2进程清理完成");
+                        debug!("macOS aria2进程清理完成");
                     } else {
                         debug!("macOS aria2进程清理: 没有找到运行中的aria2进程");
                     }
