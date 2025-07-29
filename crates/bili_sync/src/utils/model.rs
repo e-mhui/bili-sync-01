@@ -174,6 +174,15 @@ pub async fn create_videos(
 ) -> Result<()> {
     use sea_orm::{Set, Unchanged};
 
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+    let db_conn = if let Some(ref conn) = optimized_conn {
+        debug!("使用内存数据库连接批量创建视频");
+        conn.as_ref()
+    } else {
+        connection
+    };
+
     // 检查是否启用了扫描已删除视频
     let scan_deleted = video_source.scan_deleted_videos();
 
@@ -238,7 +247,7 @@ pub async fn create_videos(
             let existing_video = video::Entity::find()
                 .filter(video::Column::Bvid.eq(model.bvid.as_ref()))
                 .filter(video_source.filter_expr())
-                .one(connection)
+                .one(db_conn)
                 .await?;
 
             if let Some(existing) = existing_video {
@@ -256,14 +265,14 @@ pub async fn create_videos(
                         tags: model.tags.clone(),
                         ..Default::default()
                     };
-                    update_model.save(connection).await?;
+                    update_model.save(db_conn).await?;
 
                     // 同时重置该视频的所有页面状态，强制重新下载
                     page::Entity::update_many()
                         .col_expr(page::Column::DownloadStatus, sea_orm::prelude::Expr::value(0)) // 重置为未开始状态
                         .col_expr(page::Column::Path, sea_orm::prelude::Expr::value(Option::<String>::None)) // 清空文件路径
                         .filter(page::Column::VideoId.eq(existing.id))
-                        .exec(connection)
+                        .exec(db_conn)
                         .await?;
 
                     info!("恢复已删除的视频并重置下载状态: {}", existing.name);
@@ -390,7 +399,7 @@ pub async fn create_videos(
                             existing.name, update_model.actors, update_model.share_copy, update_model.show_season_type
                         );
 
-                        update_model.save(connection).await?;
+                        update_model.save(db_conn).await?;
                         info!("更新视频 {} 的字段完成", existing.name);
                     } else {
                         tracing::debug!(
@@ -408,7 +417,7 @@ pub async fn create_videos(
                 video::Entity::insert(model)
                     .on_conflict(OnConflict::new().do_nothing().to_owned())
                     .do_nothing()
-                    .exec(connection)
+                    .exec(db_conn)
                     .await?;
             }
         }
@@ -473,7 +482,7 @@ pub async fn create_videos(
             let insert_result = video::Entity::insert(model.clone())
                 .on_conflict(OnConflict::new().do_nothing().to_owned())
                 .do_nothing()
-                .exec(connection)
+                .exec(db_conn)
                 .await;
 
             // 如果插入没有影响任何行（即记录已存在），检查是否需要更新 share_copy
@@ -489,7 +498,7 @@ pub async fn create_videos(
                     let existing_video = video::Entity::find()
                         .filter(video::Column::Bvid.eq(model.bvid.as_ref()))
                         .filter(video_source.filter_expr())
-                        .one(connection)
+                        .one(db_conn)
                         .await?;
 
                     if let Some(existing) = existing_video {
@@ -615,7 +624,7 @@ pub async fn create_videos(
                                 existing.name, update_model.actors, update_model.share_copy, update_model.show_season_type
                             );
 
-                            update_model.save(connection).await?;
+                            update_model.save(db_conn).await?;
                             info!("更新视频 {} 的字段完成(未启用扫描删除)", existing.name);
                         } else {
                             tracing::debug!(

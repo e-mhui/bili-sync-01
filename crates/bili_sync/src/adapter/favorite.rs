@@ -183,6 +183,15 @@ pub(super) async fn favorite_from<'a>(
     VideoSourceEnum,
     Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
 )> {
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+    let db_conn = if let Some(ref conn) = optimized_conn {
+        debug!("使用内存数据库连接初始化收藏夹源");
+        conn.as_ref()
+    } else {
+        connection
+    };
+
     let favorite = FavoriteList::new(bili_client, fid.to_owned());
     let favorite_info = favorite.get_info().await?;
     favorite::Entity::insert(favorite::ActiveModel {
@@ -200,12 +209,12 @@ pub(super) async fn favorite_from<'a>(
             .update_columns([favorite::Column::Name, favorite::Column::Path])
             .to_owned(),
     )
-    .exec(connection)
+    .exec(db_conn)
     .await?;
     Ok((
         favorite::Entity::find()
             .filter(favorite::Column::FId.eq(favorite_info.id))
-            .one(connection)
+            .one(db_conn)
             .await?
             .context("favorite not found")?
             .into(),

@@ -218,6 +218,15 @@ pub(super) async fn collection_from<'a>(
     VideoSourceEnum,
     Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
 )> {
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+    let db_conn = if let Some(ref conn) = optimized_conn {
+        debug!("使用内存数据库连接初始化合集源");
+        conn.as_ref()
+    } else {
+        connection
+    };
+
     let collection = Collection::new(bili_client, collection_item);
     let collection_info = collection.get_info().await?;
     collection::Entity::insert(collection::ActiveModel {
@@ -241,7 +250,7 @@ pub(super) async fn collection_from<'a>(
         .update_columns([collection::Column::Name, collection::Column::Path])
         .to_owned(),
     )
-    .exec(connection)
+    .exec(db_conn)
     .await?;
     Ok((
         collection::Entity::find()
@@ -251,7 +260,7 @@ pub(super) async fn collection_from<'a>(
                     .and(collection::Column::MId.eq(collection_item.mid.clone()))
                     .and(collection::Column::Type.eq(Into::<i32>::into(collection_item.collection_type.clone()))),
             )
-            .one(connection)
+            .one(db_conn)
             .await?
             .context("collection not found")?
             .into(),
