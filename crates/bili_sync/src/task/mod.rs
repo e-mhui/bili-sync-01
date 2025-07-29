@@ -148,6 +148,15 @@ impl DeleteTaskQueue {
 
     /// 添加删除任务到队列（同时保存到数据库）
     pub async fn enqueue_task(&self, task: DeleteVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
+        // 检查是否在内存模式，如果是则使用内存数据库连接
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+        let db_conn = if let Some(ref conn) = optimized_conn {
+            info!("使用内存数据库连接插入DeleteVideoSource任务");
+            conn.as_ref()
+        } else {
+            connection
+        };
+
         // 保存到数据库
         let task_data = serde_json::to_string(&task)?;
         let active_model = task_queue::ActiveModel {
@@ -160,7 +169,7 @@ impl DeleteTaskQueue {
             ..Default::default()
         };
 
-        let result = active_model.insert(connection).await?;
+        let result = active_model.insert(db_conn).await?;
 
         // 添加到内存队列
         let mut queue = self.queue.lock().await;
@@ -349,10 +358,19 @@ impl VideoDeleteTaskQueue {
 
     /// 检查视频是否已有待处理的删除任务
     pub async fn has_pending_delete_task(&self, video_id: i32, connection: &DatabaseConnection) -> Result<bool> {
+        // 检查是否在内存模式，如果是则使用内存数据库连接
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+        let db_conn = if let Some(ref conn) = optimized_conn {
+            debug!("使用内存数据库连接查询DeleteVideo待处理任务");
+            conn.as_ref()
+        } else {
+            connection
+        };
+
         let count = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .count(connection)
+            .count(db_conn)
             .await?;
 
         if count == 0 {
@@ -363,7 +381,7 @@ impl VideoDeleteTaskQueue {
         let pending_tasks = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .all(connection)
+            .all(db_conn)
             .await?;
 
         for task_record in pending_tasks {
@@ -385,6 +403,15 @@ impl VideoDeleteTaskQueue {
             return Ok(());
         }
 
+        // 检查是否在内存模式，如果是则使用内存数据库连接
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+        let db_conn = if let Some(ref conn) = optimized_conn {
+            info!("使用内存数据库连接插入DeleteVideo任务");
+            conn.as_ref()
+        } else {
+            connection
+        };
+
         // 保存到数据库
         let task_data = serde_json::to_string(&task)?;
         let active_model = task_queue::ActiveModel {
@@ -397,7 +424,7 @@ impl VideoDeleteTaskQueue {
             ..Default::default()
         };
 
-        let result = active_model.insert(connection).await?;
+        let result = active_model.insert(db_conn).await?;
 
         // 添加到内存队列
         let mut queue = self.queue.lock().await;
@@ -880,6 +907,15 @@ impl AddTaskQueue {
 
     /// 添加添加任务到队列（同时保存到数据库）
     pub async fn enqueue_task(&self, task: AddVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
+        // 检查是否在内存模式，如果是则使用内存数据库连接
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+        let db_conn = if let Some(ref conn) = optimized_conn {
+            info!("使用内存数据库连接插入AddVideoSource任务");
+            conn.as_ref()
+        } else {
+            connection
+        };
+
         // 保存到数据库
         let task_data = serde_json::to_string(&task)?;
         let active_model = task_queue::ActiveModel {
@@ -892,7 +928,7 @@ impl AddTaskQueue {
             ..Default::default()
         };
 
-        let result = active_model.insert(connection).await?;
+        let result = active_model.insert(db_conn).await?;
 
         // 添加到内存队列
         let mut queue = self.queue.lock().await;
@@ -1085,6 +1121,15 @@ impl ConfigTaskQueue {
 
     /// 添加更新配置任务到队列（同时保存到数据库）
     pub async fn enqueue_update_task(&self, task: UpdateConfigTask, connection: &DatabaseConnection) -> Result<()> {
+        // 检查是否在内存模式，如果是则使用内存数据库连接
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+        let db_conn = if let Some(ref conn) = optimized_conn {
+            info!("使用内存数据库连接插入UpdateConfig任务");
+            conn.as_ref()
+        } else {
+            connection
+        };
+
         // 保存到数据库
         let task_data = serde_json::to_string(&task)?;
         let active_model = task_queue::ActiveModel {
@@ -1097,7 +1142,7 @@ impl ConfigTaskQueue {
             ..Default::default()
         };
 
-        let result = active_model.insert(connection).await?;
+        let result = active_model.insert(db_conn).await?;
 
         // 添加到内存队列
         let mut queue = self.update_queue.lock().await;
@@ -1113,6 +1158,15 @@ impl ConfigTaskQueue {
 
     /// 添加重载配置任务到队列（同时保存到数据库）
     pub async fn enqueue_reload_task(&self, task: ReloadConfigTask, connection: &DatabaseConnection) -> Result<()> {
+        // 检查是否在内存模式，如果是则使用内存数据库连接
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+        let db_conn = if let Some(ref conn) = optimized_conn {
+            info!("使用内存数据库连接插入ReloadConfig任务");
+            conn.as_ref()
+        } else {
+            connection
+        };
+
         // 保存到数据库
         let task_data = serde_json::to_string(&task)?;
         let active_model = task_queue::ActiveModel {
@@ -1125,7 +1179,7 @@ impl ConfigTaskQueue {
             ..Default::default()
         };
 
-        let result = active_model.insert(connection).await?;
+        let result = active_model.insert(db_conn).await?;
 
         // 添加到内存队列
         let mut queue = self.reload_queue.lock().await;
@@ -1279,32 +1333,59 @@ impl ConfigTaskQueue {
 
     /// 查询数据库中待处理的更新配置任务数量
     pub async fn get_pending_update_tasks_count(&self, connection: &DatabaseConnection) -> Result<u64, anyhow::Error> {
+        // 检查是否在内存模式，如果是则使用内存数据库连接
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+        let db_conn = if let Some(ref conn) = optimized_conn {
+            debug!("使用内存数据库连接查询UpdateConfig待处理任务数量");
+            conn.as_ref()
+        } else {
+            connection
+        };
+
         let count = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::UpdateConfig))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .count(connection)
+            .count(db_conn)
             .await?;
         Ok(count)
     }
 
     /// 查询数据库中待处理的重载配置任务数量
     pub async fn get_pending_reload_tasks_count(&self, connection: &DatabaseConnection) -> Result<u64, anyhow::Error> {
+        // 检查是否在内存模式，如果是则使用内存数据库连接
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+        let db_conn = if let Some(ref conn) = optimized_conn {
+            debug!("使用内存数据库连接查询ReloadConfig待处理任务数量");
+            conn.as_ref()
+        } else {
+            connection
+        };
+
         let count = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::ReloadConfig))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .count(connection)
+            .count(db_conn)
             .await?;
         Ok(count)
     }
 
     /// 从数据库恢复配置任务到内存队列
     pub async fn recover_config_tasks_from_db(&self, connection: &DatabaseConnection) -> Result<u32, anyhow::Error> {
+        // 检查是否在内存模式，如果是则使用内存数据库连接
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+        let db_conn = if let Some(ref conn) = optimized_conn {
+            info!("使用内存数据库连接恢复配置任务");
+            conn.as_ref()
+        } else {
+            connection
+        };
+
         // 查询所有待处理的配置任务
         let pending_tasks = TaskQueueEntity::find()
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
             .filter(task_queue::Column::TaskType.is_in([TaskType::UpdateConfig, TaskType::ReloadConfig]))
             .order_by_asc(task_queue::Column::CreatedAt)
-            .all(connection)
+            .all(db_conn)
             .await?;
 
         let mut recovered_count = 0u32;
@@ -1785,11 +1866,20 @@ pub async fn process_video_delete_tasks(db: Arc<DatabaseConnection>) -> Result<u
 pub async fn recover_pending_tasks(connection: &DatabaseConnection) -> Result<(), anyhow::Error> {
     info!("开始恢复数据库中的待处理任务到内存队列");
 
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+    let db_conn = if let Some(ref conn) = optimized_conn {
+        info!("使用内存数据库连接恢复待处理任务");
+        conn.as_ref()
+    } else {
+        connection
+    };
+
     // 查询所有待处理状态的任务
     let pending_tasks = TaskQueueEntity::find()
         .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
         .order_by_asc(task_queue::Column::CreatedAt) // 按创建时间排序
-        .all(connection)
+        .all(db_conn)
         .await?;
 
     let mut recovered_count = 0;

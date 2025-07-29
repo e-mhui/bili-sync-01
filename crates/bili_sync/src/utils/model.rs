@@ -633,24 +633,42 @@ pub async fn create_pages(
 
 /// 更新视频 model 的下载状态
 pub async fn update_videos_model(videos: Vec<video::ActiveModel>, connection: &DatabaseConnection) -> Result<()> {
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+    let db_conn = if let Some(ref conn) = optimized_conn {
+        debug!("使用内存数据库连接更新视频下载状态");
+        conn.as_ref()
+    } else {
+        connection
+    };
+
     video::Entity::insert_many(videos)
         .on_conflict(
             OnConflict::column(video::Column::Id)
                 .update_columns([video::Column::DownloadStatus, video::Column::Path])
                 .to_owned(),
         )
-        .exec(connection)
+        .exec(db_conn)
         .await?;
     Ok(())
 }
 
 /// 更新视频页 model 的下载状态
 pub async fn update_pages_model(pages: Vec<page::ActiveModel>, connection: &DatabaseConnection) -> Result<()> {
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+    let db_conn = if let Some(ref conn) = optimized_conn {
+        debug!("使用内存数据库连接更新视频页下载状态");
+        conn.as_ref()
+    } else {
+        connection
+    };
+
     let query = page::Entity::insert_many(pages).on_conflict(
         OnConflict::column(page::Column::Id)
             .update_columns([page::Column::DownloadStatus, page::Column::Path])
             .to_owned(),
     );
-    query.exec(connection).await?;
+    query.exec(db_conn).await?;
     Ok(())
 }

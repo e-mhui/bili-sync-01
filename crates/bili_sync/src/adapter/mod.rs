@@ -158,21 +158,30 @@ pub enum _ActiveModel {
 
 impl _ActiveModel {
     pub async fn save(self, connection: &DatabaseConnection) -> Result<()> {
+        // 检查是否在内存模式，如果是则使用内存数据库连接
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+        let db_conn = if let Some(ref conn) = optimized_conn {
+            info!("使用内存数据库连接保存ActiveModel");
+            conn.as_ref()
+        } else {
+            connection
+        };
+
         match self {
             _ActiveModel::Favorite(model) => {
-                model.save(connection).await?;
+                model.save(db_conn).await?;
             }
             _ActiveModel::Collection(model) => {
-                model.save(connection).await?;
+                model.save(db_conn).await?;
             }
             _ActiveModel::Submission(model) => {
-                model.save(connection).await?;
+                model.save(db_conn).await?;
             }
             _ActiveModel::WatchLater(model) => {
-                model.save(connection).await?;
+                model.save(db_conn).await?;
             }
             _ActiveModel::Bangumi(model) => {
-                model.save(connection).await?;
+                model.save(db_conn).await?;
             }
         }
         Ok(())
