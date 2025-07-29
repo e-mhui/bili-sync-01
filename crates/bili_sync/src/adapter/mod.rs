@@ -199,6 +199,15 @@ pub async fn bangumi_from<'a>(
     VideoSourceEnum,
     Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
 )> {
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+    let db_conn = if let Some(ref conn) = optimized_conn {
+        debug!("使用内存数据库连接查询番剧源");
+        conn.as_ref()
+    } else {
+        connection
+    };
+
     // 使用可用的ID构建查询条件
     let mut query =
         bili_sync_entity::video_source::Entity::find().filter(bili_sync_entity::video_source::Column::Type.eq(1));
@@ -217,7 +226,7 @@ pub async fn bangumi_from<'a>(
     }
 
     // 从数据库中获取现有的番剧源
-    let bangumi_model = query.one(connection).await?;
+    let bangumi_model = query.one(db_conn).await?;
 
     // 如果数据库中存在，则使用数据库中的ID；否则使用默认ID
     let bangumi_source = if let Some(model) = bangumi_model {

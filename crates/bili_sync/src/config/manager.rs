@@ -24,6 +24,9 @@ impl ConfigManager {
     pub async fn ensure_tables_exist(&self) -> Result<()> {
         info!("检查配置表是否存在...");
 
+        // 获取优化连接
+        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+
         // 创建config_items表
         let create_config_items = "
             CREATE TABLE IF NOT EXISTS config_items (
@@ -43,15 +46,25 @@ impl ConfigManager {
             )";
 
         // 执行SQL创建表
-        self.db
-            .execute_unprepared(create_config_items)
-            .await
-            .context("创建config_items表失败")?;
-
-        self.db
-            .execute_unprepared(create_config_changes)
-            .await
-            .context("创建config_changes表失败")?;
+        if let Some(ref conn) = optimized_conn {
+            debug!("ConfigManager: 使用内存优化连接创建配置表");
+            conn.execute_unprepared(create_config_items)
+                .await
+                .context("创建config_items表失败")?;
+            conn.execute_unprepared(create_config_changes)
+                .await
+                .context("创建config_changes表失败")?;
+        } else {
+            debug!("ConfigManager: 使用原始连接创建配置表");
+            self.db
+                .execute_unprepared(create_config_items)
+                .await
+                .context("创建config_items表失败")?;
+            self.db
+                .execute_unprepared(create_config_changes)
+                .await
+                .context("创建config_changes表失败")?;
+        }
 
         info!("配置表检查完成");
         Ok(())

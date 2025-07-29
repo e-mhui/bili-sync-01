@@ -35,6 +35,15 @@ pub async fn filter_unfilled_videos(
     additional_expr: SimpleExpr,
     conn: &DatabaseConnection,
 ) -> Result<Vec<video::Model>> {
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+    let db_conn = if let Some(ref conn) = optimized_conn {
+        debug!("使用内存数据库连接筛选未填充视频");
+        conn.as_ref()
+    } else {
+        conn
+    };
+    
     video::Entity::find()
         .filter(
             video::Column::Valid
@@ -46,7 +55,7 @@ pub async fn filter_unfilled_videos(
                 .and(video::Column::AutoDownload.eq(true))  // 只处理设置为自动下载的视频
                 .and(additional_expr),
         )
-        .all(conn)
+        .all(db_conn)
         .await
         .context("filter unfilled videos failed")
 }
@@ -56,6 +65,15 @@ pub async fn filter_unhandled_video_pages(
     additional_expr: SimpleExpr,
     connection: &DatabaseConnection,
 ) -> Result<Vec<(video::Model, Vec<page::Model>)>> {
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+    let db_conn = if let Some(ref conn) = optimized_conn {
+        debug!("使用内存数据库连接筛选未处理视频页");
+        conn.as_ref()
+    } else {
+        connection
+    };
+    
     video::Entity::find()
         .filter(
             video::Column::Valid
@@ -68,7 +86,7 @@ pub async fn filter_unhandled_video_pages(
                 .and(additional_expr),
         )
         .find_with_related(page::Entity)
-        .all(connection)
+        .all(db_conn)
         .await
         .context("filter unhandled video pages failed")
 }
@@ -79,6 +97,15 @@ pub async fn get_failed_videos_in_current_cycle(
     connection: &DatabaseConnection,
 ) -> Result<Vec<(video::Model, Vec<page::Model>)>> {
     use crate::utils::status::STATUS_COMPLETED;
+
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+    let db_conn = if let Some(ref conn) = optimized_conn {
+        debug!("使用内存数据库连接获取失败视频");
+        conn.as_ref()
+    } else {
+        connection
+    };
 
     let all_videos = video::Entity::find()
         .filter(
@@ -93,7 +120,7 @@ pub async fn get_failed_videos_in_current_cycle(
                 .and(additional_expr),
         )
         .find_with_related(page::Entity)
-        .all(connection)
+        .all(db_conn)
         .await?;
 
     // 获取所有待处理的删除任务中的视频ID
@@ -103,7 +130,7 @@ pub async fn get_failed_videos_in_current_cycle(
     let pending_delete_tasks = task_queue::Entity::find()
         .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
         .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-        .all(connection)
+        .all(db_conn)
         .await?;
 
     let mut videos_in_delete_queue = std::collections::HashSet::new();
