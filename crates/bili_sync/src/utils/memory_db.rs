@@ -497,26 +497,47 @@ impl MemoryDbOptimizer {
                 values.push(value);
             }
 
-            // 对video表使用特殊的唯一索引检查
-            let (record_exists, existing_id) = if table_name == "video" {
-                match self.check_video_exists_by_unique_index(&row, &self.main_db).await? {
-                    Some(id) => (true, Some(id)),
-                    None => (false, None),
+            // 根据不同表使用不同的唯一性检查策略
+            let (record_exists, existing_id) = match table_name {
+                "video" => {
+                    match self.check_video_exists_by_unique_index(&row, &self.main_db).await? {
+                        Some(id) => (true, Some(id)),
+                        None => (false, None),
+                    }
                 }
-            } else {
-                // 其他表使用原有的主键检查
-                let exists = if !primary_keys.is_empty() {
-                    self.check_record_exists(table_name, &primary_keys, &row, &self.main_db).await?
-                } else {
-                    false
-                };
-                (exists, None)
+                "favorite" => {
+                    match self.check_favorite_exists_by_unique_index(&row, &self.main_db).await? {
+                        Some(id) => (true, Some(id)),
+                        None => (false, None),
+                    }
+                }
+                "collection" => {
+                    match self.check_collection_exists_by_unique_index(&row, &self.main_db).await? {
+                        Some(id) => (true, Some(id)),
+                        None => (false, None),
+                    }
+                }
+                "page" => {
+                    match self.check_page_exists_by_unique_index(&row, &self.main_db).await? {
+                        Some(id) => (true, Some(id)),
+                        None => (false, None),
+                    }
+                }
+                _ => {
+                    // 其他表使用原有的主键检查
+                    let exists = if !primary_keys.is_empty() {
+                        self.check_record_exists(table_name, &primary_keys, &row, &self.main_db).await?
+                    } else {
+                        false
+                    };
+                    (exists, None)
+                }
             };
 
             let (sql, operation) = if record_exists {
                 // 记录存在，使用UPDATE
-                if table_name == "video" && existing_id.is_some() {
-                    // 对于video表，使用查到的真实ID进行更新
+                if existing_id.is_some() {
+                    // 对于有唯一约束的表，使用查到的真实ID进行更新
                     let real_id = existing_id.unwrap();
                     // 替换values中的id值
                     if let Some(id_index) = columns.iter().position(|c| c == "id") {
@@ -551,6 +572,38 @@ impl MemoryDbOptimizer {
                     let mem_id = row.try_get::<i32>("", "id").unwrap_or(0);
                     debug!("同步video记录: bvid={}, 内存DB id={}, 主DB id={:?}, 操作={}", 
                         bvid, mem_id, existing_id, operation);
+                }
+            }
+            
+            // 为favorite表添加详细日志
+            if table_name == "favorite" {
+                if let Ok(f_id) = row.try_get::<i64>("", "f_id") {
+                    let mem_id = row.try_get::<i32>("", "id").unwrap_or(0);
+                    let name = row.try_get::<String>("", "name").unwrap_or_default();
+                    debug!("同步favorite记录: f_id={}, name={}, 内存DB id={}, 主DB id={:?}, 操作={}", 
+                        f_id, name, mem_id, existing_id, operation);
+                }
+            }
+            
+            // 为collection表添加详细日志
+            if table_name == "collection" {
+                if let Ok(m_id) = row.try_get::<i64>("", "m_id") {
+                    let mem_id = row.try_get::<i32>("", "id").unwrap_or(0);
+                    let s_id = row.try_get::<i64>("", "s_id").unwrap_or(0);
+                    let name = row.try_get::<String>("", "name").unwrap_or_default();
+                    debug!("同步collection记录: m_id={}, name={}, s_id={}, 内存DB id={}, 主DB id={:?}, 操作={}", 
+                        m_id, name, s_id, mem_id, existing_id, operation);
+                }
+            }
+            
+            // 为page表添加详细日志
+            if table_name == "page" {
+                if let Ok(cid) = row.try_get::<i64>("", "cid") {
+                    let mem_id = row.try_get::<i32>("", "id").unwrap_or(0);
+                    let video_id = row.try_get::<i32>("", "video_id").unwrap_or(0);
+                    let name = row.try_get::<String>("", "name").unwrap_or_default();
+                    debug!("同步page记录: cid={}, name={}, video_id={}, 内存DB id={}, 主DB id={:?}, 操作={}", 
+                        cid, name, video_id, mem_id, existing_id, operation);
                 }
             }
 
@@ -826,6 +879,87 @@ impl MemoryDbOptimizer {
             source_id.unwrap_or(-1).into(),
             bvid.into(),
         ];
+
+        let result = db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                check_sql,
+                values,
+            ))
+            .await?;
+
+        if let Some(result_row) = result {
+            let id: i32 = result_row.try_get("", "id")?;
+            Ok(Some(id))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// 专门检查favorite表记录是否存在（基于f_id唯一约束）
+    async fn check_favorite_exists_by_unique_index(
+        &self,
+        row: &sea_orm::QueryResult,
+        db: &DatabaseConnection,
+    ) -> Result<Option<i32>> {
+        let f_id = row.try_get::<i64>("", "f_id")?;
+
+        let check_sql = "SELECT id FROM favorite WHERE f_id = ?";
+        let values = vec![f_id.into()];
+
+        let result = db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                check_sql,
+                values,
+            ))
+            .await?;
+
+        if let Some(result_row) = result {
+            let id: i32 = result_row.try_get("", "id")?;
+            Ok(Some(id))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// 专门检查collection表记录是否存在（基于m_id唯一约束）
+    async fn check_collection_exists_by_unique_index(
+        &self,
+        row: &sea_orm::QueryResult,
+        db: &DatabaseConnection,
+    ) -> Result<Option<i32>> {
+        let m_id = row.try_get::<i64>("", "m_id")?;
+
+        let check_sql = "SELECT id FROM collection WHERE m_id = ?";
+        let values = vec![m_id.into()];
+
+        let result = db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                check_sql,
+                values,
+            ))
+            .await?;
+
+        if let Some(result_row) = result {
+            let id: i32 = result_row.try_get("", "id")?;
+            Ok(Some(id))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// 专门检查page表记录是否存在（基于cid唯一约束）
+    async fn check_page_exists_by_unique_index(
+        &self,
+        row: &sea_orm::QueryResult,
+        db: &DatabaseConnection,
+    ) -> Result<Option<i32>> {
+        let cid = row.try_get::<i64>("", "cid")?;
+
+        let check_sql = "SELECT id FROM page WHERE cid = ?";
+        let values = vec![cid.into()];
 
         let result = db
             .query_one(Statement::from_sql_and_values(
