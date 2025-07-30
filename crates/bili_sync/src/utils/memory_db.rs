@@ -688,30 +688,68 @@ impl MemoryDbOptimizer {
     ) -> Result<()> {
         debug!("开始完整同步表: {}", table_name);
 
-        // 获取表的主键列名
-        let primary_keys = self.get_table_primary_keys(table_name).await?;
-        if primary_keys.is_empty() {
-            warn!("表 {} 没有主键，使用传统同步方法", table_name);
-            return self.sync_table_changes(table_name, memory_db, txn).await;
-        }
-
-        // 获取主数据库中当前的所有记录ID
-        let main_ids = self.get_table_record_ids(table_name, &primary_keys, &self.main_db).await?;
+        // 重要：内存数据库是程序启动时的快照，其自增ID与主数据库不对应
+        // 必须基于业务唯一键来判断记录是否相同，而不能基于自增ID
         
-        // 获取内存数据库中的所有记录ID
-        let memory_ids = self.get_table_record_ids(table_name, &primary_keys, memory_db).await?;
+        // 根据表的唯一约束获取用于比较的字段
+        let unique_key_columns: Vec<String> = match table_name {
+            "video" => vec!["collection_id", "favorite_id", "watch_later_id", "submission_id", "source_id", "bvid"]
+                .into_iter().map(|s| s.to_string()).collect(),
+            "collection" => vec!["s_id", "m_id", "type"]
+                .into_iter().map(|s| s.to_string()).collect(),
+            "page" => vec!["video_id", "pid"]
+                .into_iter().map(|s| s.to_string()).collect(),
+            "favorite" => vec!["f_id"]
+                .into_iter().map(|s| s.to_string()).collect(),
+            "submission" => vec!["upper_id"]
+                .into_iter().map(|s| s.to_string()).collect(),
+            "config_items" => vec!["key_name"]
+                .into_iter().map(|s| s.to_string()).collect(),
+            _ => {
+                // 其他表没有业务唯一键，不支持删除操作，只做增量同步
+                debug!("表 {} 没有定义业务唯一键，跳过删除检查，只做增量同步", table_name);
+                return self.sync_table_changes(table_name, memory_db, txn).await;
+            }
+        };
+
+        // 基于唯一键获取主数据库的记录
+        let main_unique_keys = self.get_table_record_ids(table_name, &unique_key_columns, &self.main_db).await?;
+        
+        // 基于唯一键获取内存数据库的记录
+        let memory_unique_keys = self.get_table_record_ids(table_name, &unique_key_columns, memory_db).await?;
 
         // 找出需要删除的记录（在主数据库中但不在内存数据库中）
-        let to_delete: Vec<_> = main_ids.difference(&memory_ids).collect();
+        let to_delete: Vec<_> = main_unique_keys.difference(&memory_unique_keys).collect();
         let delete_count = to_delete.len();
         
         // 删除不存在的记录
-        for id_values in to_delete {
-            self.delete_record_by_primary_key(table_name, &primary_keys, id_values, txn).await?;
-        }
-
         if delete_count > 0 {
-            debug!("表 {} 删除了 {} 条记录", table_name, delete_count);
+            warn!("表 {} 检测到 {} 条记录需要删除（基于唯一键: {:?}）", table_name, delete_count, unique_key_columns);
+            for unique_values in to_delete {
+                debug!("删除记录: 表={}, 唯一键值={:?}", table_name, unique_values);
+                // 基于唯一键构建删除条件
+                let conditions: Vec<String> = unique_key_columns
+                    .iter()
+                    .zip(unique_values.iter())
+                    .map(|(col, val)| {
+                        if val == "NULL" {
+                            format!("{} IS NULL", col)
+                        } else {
+                            format!("{} = '{}'", col, val)
+                        }
+                    })
+                    .collect();
+                
+                let delete_sql = format!(
+                    "DELETE FROM {} WHERE {}",
+                    table_name,
+                    conditions.join(" AND ")
+                );
+                
+                txn.execute(Statement::from_string(DatabaseBackend::Sqlite, &delete_sql))
+                    .await?;
+            }
+            info!("表 {} 基于唯一键删除了 {} 条记录", table_name, delete_count);
         }
 
         // 同步所有内存数据库中的记录（新增和修改）

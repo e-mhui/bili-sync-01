@@ -1,5 +1,17 @@
 # 更新记录
 
+## v2.7.6.4.2 (2025-07-30)
+- **修复内存数据库完整同步时误删主数据库记录的严重bug**
+- 重写sync_table_changes_full方法，基于业务唯一键而非自增ID进行记录匹配
+- 防止因内存数据库与主数据库ID不一致导致的数据丢失
+- 各表使用其真实唯一约束进行删除判断：
+  - collection表: s_id + m_id + type
+  - page表: video_id + pid
+  - favorite表: f_id
+  - submission表: upper_id
+  - config_items表: key_name
+  - video表: 6字段组合唯一约束
+
 ## v2.7.6.4.1 (2025-07-30)
 - **完全修复内存数据库同步时的UNIQUE约束冲突问题**
 - 基于数据库真实约束定义重新设计所有表的唯一性检查方法：
