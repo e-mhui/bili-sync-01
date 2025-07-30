@@ -497,15 +497,32 @@ impl MemoryDbOptimizer {
                 values.push(value);
             }
 
-            // 检查记录是否已存在于主数据库中
-            let record_exists = if !primary_keys.is_empty() {
-                self.check_record_exists(table_name, &primary_keys, &row, &self.main_db).await?
+            // 对video表使用特殊的唯一索引检查
+            let (record_exists, existing_id) = if table_name == "video" {
+                match self.check_video_exists_by_unique_index(&row, &self.main_db).await? {
+                    Some(id) => (true, Some(id)),
+                    None => (false, None),
+                }
             } else {
-                false
+                // 其他表使用原有的主键检查
+                let exists = if !primary_keys.is_empty() {
+                    self.check_record_exists(table_name, &primary_keys, &row, &self.main_db).await?
+                } else {
+                    false
+                };
+                (exists, None)
             };
 
             let (sql, operation) = if record_exists {
                 // 记录存在，使用UPDATE
+                if table_name == "video" && existing_id.is_some() {
+                    // 对于video表，使用查到的真实ID进行更新
+                    let real_id = existing_id.unwrap();
+                    // 替换values中的id值
+                    if let Some(id_index) = columns.iter().position(|c| c == "id") {
+                        values[id_index] = real_id.into();
+                    }
+                }
                 let update_sql = self.build_update_sql(table_name, &columns, &primary_keys)?;
                 let update_values = self.reorder_values_for_update(&columns, &values, &primary_keys)?;
                 values = update_values;
@@ -525,6 +542,15 @@ impl MemoryDbOptimizer {
                     let type_val = row.try_get::<i32>("", "type").unwrap_or(0);
                     debug!("同步video_source记录: id={}, name={}, type={}, season_id={:?}, 操作={}, 已存在={}", 
                         id_value, name_value, type_val, season_id, operation, record_exists);
+                }
+            }
+            
+            // 为video表添加详细日志
+            if table_name == "video" {
+                if let Ok(bvid) = row.try_get::<String>("", "bvid") {
+                    let mem_id = row.try_get::<i32>("", "id").unwrap_or(0);
+                    debug!("同步video记录: bvid={}, 内存DB id={}, 主DB id={:?}, 操作={}", 
+                        bvid, mem_id, existing_id, operation);
                 }
             }
 
@@ -766,6 +792,54 @@ impl MemoryDbOptimizer {
             Ok(count > 0)
         } else {
             Ok(false)
+        }
+    }
+
+    /// 专门检查video表记录是否存在（基于唯一索引）
+    async fn check_video_exists_by_unique_index(
+        &self,
+        row: &sea_orm::QueryResult,
+        db: &DatabaseConnection,
+    ) -> Result<Option<i32>> {
+        // 提取唯一索引的字段值
+        let collection_id = row.try_get::<Option<i32>>("", "collection_id").unwrap_or(None);
+        let favorite_id = row.try_get::<Option<i32>>("", "favorite_id").unwrap_or(None);
+        let watch_later_id = row.try_get::<Option<i32>>("", "watch_later_id").unwrap_or(None);
+        let submission_id = row.try_get::<Option<i32>>("", "submission_id").unwrap_or(None);
+        let source_id = row.try_get::<Option<i32>>("", "source_id").unwrap_or(None);
+        let bvid = row.try_get::<String>("", "bvid")?;
+
+        // 构建查询条件，使用IFNULL来匹配索引定义
+        let check_sql = "SELECT id FROM video WHERE 
+            IFNULL(collection_id, -1) = ? AND 
+            IFNULL(favorite_id, -1) = ? AND 
+            IFNULL(watch_later_id, -1) = ? AND 
+            IFNULL(submission_id, -1) = ? AND 
+            IFNULL(source_id, -1) = ? AND 
+            bvid = ?";
+
+        let values = vec![
+            collection_id.unwrap_or(-1).into(),
+            favorite_id.unwrap_or(-1).into(),
+            watch_later_id.unwrap_or(-1).into(),
+            submission_id.unwrap_or(-1).into(),
+            source_id.unwrap_or(-1).into(),
+            bvid.into(),
+        ];
+
+        let result = db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                check_sql,
+                values,
+            ))
+            .await?;
+
+        if let Some(result_row) = result {
+            let id: i32 = result_row.try_get("", "id")?;
+            Ok(Some(id))
+        } else {
+            Ok(None)
         }
     }
 
