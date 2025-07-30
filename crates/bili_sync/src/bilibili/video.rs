@@ -261,7 +261,7 @@ impl<'a> Video<'a> {
                     };
 
                     if !is_charging_video_error {
-                        tracing::warn!("× 质量 qn={} 获取失败: {}", qn, e);
+                        tracing::debug!("× 质量 qn={} 获取失败: {}", qn, e);
                     } else if attempt == 0 && is_trial_video {
                         // 只在第一次尝试时记录试看视频信息
                         tracing::info!("检测到试看视频，需要充电才能观看完整版");
@@ -525,7 +525,7 @@ impl<'a> Video<'a> {
                     };
 
                     if !is_charging_video_error {
-                        tracing::warn!("× 番剧质量 qn={} 获取失败: {}", qn, e);
+                        tracing::debug!("× 番剧质量 qn={} 获取失败: {}", qn, e);
                     } else {
                         tracing::debug!("× 番剧质量 qn={} 获取失败: 充电专享视频", qn);
                     }

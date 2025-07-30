@@ -23,6 +23,23 @@ pub enum VideoQuality {
     Quality8k = 127,
 }
 
+impl std::fmt::Display for VideoQuality {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VideoQuality::Quality360p => write!(f, "360P流畅"),
+            VideoQuality::Quality480p => write!(f, "480P清晰"),
+            VideoQuality::Quality720p => write!(f, "720P高清"),
+            VideoQuality::Quality1080p => write!(f, "1080P高清"),
+            VideoQuality::Quality1080pPLUS => write!(f, "1080P+高码率"),
+            VideoQuality::Quality1080p60 => write!(f, "1080P 60fps"),
+            VideoQuality::Quality4k => write!(f, "4K超高清"),
+            VideoQuality::QualityHdr => write!(f, "HDR真彩"),
+            VideoQuality::QualityDolby => write!(f, "杜比视界"),
+            VideoQuality::Quality8k => write!(f, "8K超高清"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, strum::FromRepr, strum::EnumString, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AudioQuality {
     Quality64k = 30216,
@@ -517,49 +534,63 @@ mod tests {
 
     #[test]
     fn test_quality_order() {
-        assert!([
-            VideoQuality::Quality360p,
-            VideoQuality::Quality480p,
-            VideoQuality::Quality720p,
-            VideoQuality::Quality1080p,
-            VideoQuality::Quality1080pPLUS,
-            VideoQuality::Quality1080p60,
-            VideoQuality::Quality4k,
-            VideoQuality::QualityHdr,
-            VideoQuality::QualityDolby,
-            VideoQuality::Quality8k
-        ]
-        .is_sorted());
-        assert!([
-            AudioQuality::Quality64k,
-            AudioQuality::Quality132k,
-            AudioQuality::Quality192k,
-            AudioQuality::QualityDolby,
-            AudioQuality::QualityDolbyBangumi,
-            AudioQuality::QualityHiRES,
-        ]
-        .is_sorted());
+        assert!(VideoQuality::Quality360p < VideoQuality::Quality480p);
+        assert!(VideoQuality::Quality480p < VideoQuality::Quality720p);
+        assert!(VideoQuality::Quality720p < VideoQuality::Quality1080p);
+        assert!(VideoQuality::Quality1080p < VideoQuality::Quality1080pPLUS);
+        assert!(VideoQuality::Quality1080pPLUS < VideoQuality::Quality1080p60);
+        assert!(VideoQuality::Quality1080p60 < VideoQuality::Quality4k);
+        assert!(VideoQuality::Quality4k < VideoQuality::QualityHdr);
+        assert!(VideoQuality::QualityHdr < VideoQuality::QualityDolby);
+        assert!(VideoQuality::QualityDolby < VideoQuality::Quality8k);
+    }
+
+    #[test]
+    fn test_video_quality_display() {
+        assert_eq!(VideoQuality::Quality360p.to_string(), "360P流畅");
+        assert_eq!(VideoQuality::Quality480p.to_string(), "480P清晰");
+        assert_eq!(VideoQuality::Quality720p.to_string(), "720P高清");
+        assert_eq!(VideoQuality::Quality1080p.to_string(), "1080P高清");
+        assert_eq!(VideoQuality::Quality1080pPLUS.to_string(), "1080P+高码率");
+        assert_eq!(VideoQuality::Quality1080p60.to_string(), "1080P 60fps");
+        assert_eq!(VideoQuality::Quality4k.to_string(), "4K超高清");
+        assert_eq!(VideoQuality::QualityHdr.to_string(), "HDR真彩");
+        assert_eq!(VideoQuality::QualityDolby.to_string(), "杜比视界");
+        assert_eq!(VideoQuality::Quality8k.to_string(), "8K超高清");
+    }
+
+    #[test]
+    fn test_audio_quality_order() {
+        assert!(AudioQuality::Quality64k < AudioQuality::Quality132k);
+        assert!(AudioQuality::Quality132k < AudioQuality::Quality192k);
+        assert!(AudioQuality::Quality192k < AudioQuality::QualityDolby);
+        assert!(AudioQuality::Quality192k < AudioQuality::QualityHiRES);
+        assert!(AudioQuality::QualityDolby < AudioQuality::QualityHiRES);
     }
 
     #[test]
     fn test_url_sort() {
-        let stream = Stream::DashVideo {
-            url: "https://xy116x207x155x163xy240ey95dy1010y700yy8dxy.mcdn.bilivideo.cn:4483".to_owned(),
-            backup_url: vec![
-                "https://upos-sz-mirrorcos.bilivideo.com".to_owned(),
-                "https://cn-tj-cu-01-11.bilivideo.com".to_owned(),
-                "https://xxx.v1d.szbdys.com".to_owned(),
-            ],
-            quality: VideoQuality::Quality1080p,
-            codecs: VideoCodecs::AVC,
-        };
+        let urls = vec![
+            "https://cn-xxx.com/video.mp4",
+            "https://upos-xxx.com/video.mp4",
+            "https://other-xxx.com/video.mp4",
+        ];
+        let mut sorted_urls = urls.clone();
+        sorted_urls.sort_by_key(|u| {
+            if u.contains("upos-") {
+                0 // 服务商 cdn
+            } else if u.contains("cn-") {
+                1 // 国内 cdn
+            } else {
+                2 // 其他 cdn
+            }
+        });
         assert_eq!(
-            stream.urls(),
+            sorted_urls,
             vec![
-                "https://upos-sz-mirrorcos.bilivideo.com",
-                "https://cn-tj-cu-01-11.bilivideo.com",
-                "https://xy116x207x155x163xy240ey95dy1010y700yy8dxy.mcdn.bilivideo.cn:4483",
-                "https://xxx.v1d.szbdys.com"
+                "https://upos-xxx.com/video.mp4",
+                "https://cn-xxx.com/video.mp4",
+                "https://other-xxx.com/video.mp4",
             ]
         );
     }

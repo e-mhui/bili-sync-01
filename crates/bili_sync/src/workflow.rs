@@ -2777,22 +2777,22 @@ pub async fn fetch_page_video(
                 let quality_value = *quality as u32;
                 let requested_quality = filter_option.video_max_quality as u32;
 
-                info!("✓ 选择视频流: {:?}({}) {:?}", quality, quality_value, codecs);
+                info!("✓ 选择视频流: {} {:?}", quality, codecs);
 
                 // 质量对比分析
                 if quality_value < requested_quality {
                     let quality_gap = requested_quality - quality_value;
                     if requested_quality >= 120 && quality_value < 120 {
-                        debug!("⚠️  未获得4K+质量(请求{}，实际{})", requested_quality, quality_value);
+                        debug!("⚠️  未获得4K+质量(请求{}，实际{})", filter_option.video_max_quality, quality);
                     } else if quality_gap >= 40 {
                         warn!(
                             "⚠️  视频质量显著低于预期(请求{}，实际{}) - 视频源可能不支持更高质量",
-                            requested_quality, quality_value
+                            filter_option.video_max_quality, quality
                         );
                     } else {
                         info!(
                             "ℹ️  视频质量略低于预期(请求{}，实际{}) - 已选择可用的最高质量",
-                            requested_quality, quality_value
+                            filter_option.video_max_quality, quality
                         );
                     }
                 } else {
