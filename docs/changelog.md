@@ -1,12 +1,16 @@
 # 更新记录
 
-## v2.7.6.5 (2025-07-30)
-- 修复内存数据库同步时video表的UNIQUE约束冲突问题
-- 改进video表同步策略，使用唯一索引组合检查记录存在性
-- 优化内存数据库与主数据库的ID映射处理
-- 修复favorite、collection、page表的唯一约束冲突问题
-- 为各表添加基于唯一索引的专门检查方法（collection表使用m_id、page表使用cid作为唯一标识）
-- 增强同步过程的调试日志
+## v2.7.6.4.1 (2025-07-30)
+- **完全修复内存数据库同步时的UNIQUE约束冲突问题**
+- 基于数据库真实约束定义重新设计所有表的唯一性检查方法：
+  - video表: 实现复杂的6字段组合约束检查（collection_id+favorite_id+watch_later_id+submission_id+source_id+bvid，含NULL值处理）
+  - collection表: 使用s_id+m_id+type组合约束检查
+  - page表: 使用video_id+pid组合约束检查
+  - favorite表: 使用f_id单字段约束检查
+  - submission表: 使用upper_id单字段约束检查
+  - config_items表: 使用key_name主键约束检查
+- 优化内存数据库与主数据库的ID映射处理逻辑
+- 增强所有表同步过程的详细调试日志，便于问题追踪
 
 ## v2.7.6.4 (2025-07-29)
 - 修复扫描间隔配置在内存模式下无法即时生效的问题

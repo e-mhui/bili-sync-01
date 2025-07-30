@@ -523,6 +523,19 @@ impl MemoryDbOptimizer {
                         None => (false, None),
                     }
                 }
+                "submission" => {
+                    match self.check_submission_exists_by_unique_index(&row, &self.main_db).await? {
+                        Some(id) => (true, Some(id)),
+                        None => (false, None),
+                    }
+                }
+                "config_items" => {
+                    // config_items表使用字符串主键，需要特殊处理
+                    match self.check_config_items_exists_by_unique_index(&row, &self.main_db).await? {
+                        Some(_) => (true, None), // 存在，但不返回ID（使用字符串主键）
+                        None => (false, None),
+                    }
+                }
                 _ => {
                     // 其他表使用原有的主键检查
                     let exists = if !primary_keys.is_empty() {
@@ -587,23 +600,43 @@ impl MemoryDbOptimizer {
             
             // 为collection表添加详细日志
             if table_name == "collection" {
-                if let Ok(m_id) = row.try_get::<i64>("", "m_id") {
+                if let Ok(s_id) = row.try_get::<i64>("", "s_id") {
                     let mem_id = row.try_get::<i32>("", "id").unwrap_or(0);
-                    let s_id = row.try_get::<i64>("", "s_id").unwrap_or(0);
+                    let m_id = row.try_get::<i64>("", "m_id").unwrap_or(0);
+                    let r_type = row.try_get::<i32>("", "type").unwrap_or(0);
                     let name = row.try_get::<String>("", "name").unwrap_or_default();
-                    debug!("同步collection记录: m_id={}, name={}, s_id={}, 内存DB id={}, 主DB id={:?}, 操作={}", 
-                        m_id, name, s_id, mem_id, existing_id, operation);
+                    debug!("同步collection记录: s_id={}, m_id={}, type={}, name={}, 内存DB id={}, 主DB id={:?}, 操作={}", 
+                        s_id, m_id, r_type, name, mem_id, existing_id, operation);
                 }
             }
             
             // 为page表添加详细日志
             if table_name == "page" {
-                if let Ok(cid) = row.try_get::<i64>("", "cid") {
+                if let Ok(video_id) = row.try_get::<i32>("", "video_id") {
                     let mem_id = row.try_get::<i32>("", "id").unwrap_or(0);
-                    let video_id = row.try_get::<i32>("", "video_id").unwrap_or(0);
+                    let pid = row.try_get::<i32>("", "pid").unwrap_or(0);
+                    let cid = row.try_get::<i64>("", "cid").unwrap_or(0);
                     let name = row.try_get::<String>("", "name").unwrap_or_default();
-                    debug!("同步page记录: cid={}, name={}, video_id={}, 内存DB id={}, 主DB id={:?}, 操作={}", 
-                        cid, name, video_id, mem_id, existing_id, operation);
+                    debug!("同步page记录: video_id={}, pid={}, cid={}, name={}, 内存DB id={}, 主DB id={:?}, 操作={}", 
+                        video_id, pid, cid, name, mem_id, existing_id, operation);
+                }
+            }
+            
+            // 为submission表添加详细日志
+            if table_name == "submission" {
+                if let Ok(upper_id) = row.try_get::<i64>("", "upper_id") {
+                    let mem_id = row.try_get::<i32>("", "id").unwrap_or(0);
+                    let name = row.try_get::<String>("", "upper_name").unwrap_or_default();
+                    debug!("同步submission记录: upper_id={}, name={}, 内存DB id={}, 主DB id={:?}, 操作={}", 
+                        upper_id, name, mem_id, existing_id, operation);
+                }
+            }
+            
+            // 为config_items表添加详细日志
+            if table_name == "config_items" {
+                if let Ok(key_name) = row.try_get::<String>("", "key_name") {
+                    debug!("同步config_items记录: key_name={}, 操作={}", 
+                        key_name, operation);
                 }
             }
 
@@ -848,53 +881,6 @@ impl MemoryDbOptimizer {
         }
     }
 
-    /// 专门检查video表记录是否存在（基于唯一索引）
-    async fn check_video_exists_by_unique_index(
-        &self,
-        row: &sea_orm::QueryResult,
-        db: &DatabaseConnection,
-    ) -> Result<Option<i32>> {
-        // 提取唯一索引的字段值
-        let collection_id = row.try_get::<Option<i32>>("", "collection_id").unwrap_or(None);
-        let favorite_id = row.try_get::<Option<i32>>("", "favorite_id").unwrap_or(None);
-        let watch_later_id = row.try_get::<Option<i32>>("", "watch_later_id").unwrap_or(None);
-        let submission_id = row.try_get::<Option<i32>>("", "submission_id").unwrap_or(None);
-        let source_id = row.try_get::<Option<i32>>("", "source_id").unwrap_or(None);
-        let bvid = row.try_get::<String>("", "bvid")?;
-
-        // 构建查询条件，使用IFNULL来匹配索引定义
-        let check_sql = "SELECT id FROM video WHERE 
-            IFNULL(collection_id, -1) = ? AND 
-            IFNULL(favorite_id, -1) = ? AND 
-            IFNULL(watch_later_id, -1) = ? AND 
-            IFNULL(submission_id, -1) = ? AND 
-            IFNULL(source_id, -1) = ? AND 
-            bvid = ?";
-
-        let values = vec![
-            collection_id.unwrap_or(-1).into(),
-            favorite_id.unwrap_or(-1).into(),
-            watch_later_id.unwrap_or(-1).into(),
-            submission_id.unwrap_or(-1).into(),
-            source_id.unwrap_or(-1).into(),
-            bvid.into(),
-        ];
-
-        let result = db
-            .query_one(Statement::from_sql_and_values(
-                DatabaseBackend::Sqlite,
-                check_sql,
-                values,
-            ))
-            .await?;
-
-        if let Some(result_row) = result {
-            let id: i32 = result_row.try_get("", "id")?;
-            Ok(Some(id))
-        } else {
-            Ok(None)
-        }
-    }
 
     /// 专门检查favorite表记录是否存在（基于f_id唯一约束）
     async fn check_favorite_exists_by_unique_index(
@@ -923,16 +909,18 @@ impl MemoryDbOptimizer {
         }
     }
 
-    /// 专门检查collection表记录是否存在（基于m_id唯一约束）
+    /// 专门检查collection表记录是否存在（基于s_id+m_id+type组合约束）
     async fn check_collection_exists_by_unique_index(
         &self,
         row: &sea_orm::QueryResult,
         db: &DatabaseConnection,
     ) -> Result<Option<i32>> {
+        let s_id = row.try_get::<i64>("", "s_id")?;
         let m_id = row.try_get::<i64>("", "m_id")?;
+        let r_type = row.try_get::<i32>("", "type")?;
 
-        let check_sql = "SELECT id FROM collection WHERE m_id = ?";
-        let values = vec![m_id.into()];
+        let check_sql = "SELECT id FROM collection WHERE s_id = ? AND m_id = ? AND type = ?";
+        let values = vec![s_id.into(), m_id.into(), r_type.into()];
 
         let result = db
             .query_one(Statement::from_sql_and_values(
@@ -950,16 +938,17 @@ impl MemoryDbOptimizer {
         }
     }
 
-    /// 专门检查page表记录是否存在（基于cid唯一约束）
+    /// 专门检查page表记录是否存在（基于video_id+pid组合约束）
     async fn check_page_exists_by_unique_index(
         &self,
         row: &sea_orm::QueryResult,
         db: &DatabaseConnection,
     ) -> Result<Option<i32>> {
-        let cid = row.try_get::<i64>("", "cid")?;
+        let video_id = row.try_get::<i32>("", "video_id")?;
+        let pid = row.try_get::<i32>("", "pid")?;
 
-        let check_sql = "SELECT id FROM page WHERE cid = ?";
-        let values = vec![cid.into()];
+        let check_sql = "SELECT id FROM page WHERE video_id = ? AND pid = ?";
+        let values = vec![video_id.into(), pid.into()];
 
         let result = db
             .query_one(Statement::from_sql_and_values(
@@ -972,6 +961,108 @@ impl MemoryDbOptimizer {
         if let Some(result_row) = result {
             let id: i32 = result_row.try_get("", "id")?;
             Ok(Some(id))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// 专门检查video表记录是否存在（基于复杂的6字段组合约束）
+    async fn check_video_exists_by_unique_index(
+        &self,
+        row: &sea_orm::QueryResult,
+        db: &DatabaseConnection,
+    ) -> Result<Option<i32>> {
+        // 获取所有约束字段，使用NULL安全处理
+        let collection_id = row.try_get::<Option<i32>>("", "collection_id")?;
+        let favorite_id = row.try_get::<Option<i32>>("", "favorite_id")?;
+        let watch_later_id = row.try_get::<Option<i32>>("", "watch_later_id")?;
+        let submission_id = row.try_get::<Option<i32>>("", "submission_id")?;
+        let source_id = row.try_get::<Option<i32>>("", "source_id")?;
+        let bvid = row.try_get::<String>("", "bvid")?;
+
+        // 构建SQL查询，匹配数据库中的唯一索引逻辑
+        let check_sql = "SELECT id FROM video WHERE 
+            ifnull(collection_id, -1) = ifnull(?, -1) AND 
+            ifnull(favorite_id, -1) = ifnull(?, -1) AND 
+            ifnull(watch_later_id, -1) = ifnull(?, -1) AND 
+            ifnull(submission_id, -1) = ifnull(?, -1) AND 
+            ifnull(source_id, -1) = ifnull(?, -1) AND 
+            bvid = ?";
+
+        let values = vec![
+            collection_id.into(),
+            favorite_id.into(),
+            watch_later_id.into(),
+            submission_id.into(),
+            source_id.into(),
+            bvid.into(),
+        ];
+
+        let result = db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                check_sql,
+                values,
+            ))
+            .await?;
+
+        if let Some(result_row) = result {
+            let id: i32 = result_row.try_get("", "id")?;
+            Ok(Some(id))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// 专门检查submission表记录是否存在（基于upper_id唯一约束）
+    async fn check_submission_exists_by_unique_index(
+        &self,
+        row: &sea_orm::QueryResult,
+        db: &DatabaseConnection,
+    ) -> Result<Option<i32>> {
+        let upper_id = row.try_get::<i64>("", "upper_id")?;
+
+        let check_sql = "SELECT id FROM submission WHERE upper_id = ?";
+        let values = vec![upper_id.into()];
+
+        let result = db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                check_sql,
+                values,
+            ))
+            .await?;
+
+        if let Some(result_row) = result {
+            let id: i32 = result_row.try_get("", "id")?;
+            Ok(Some(id))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// 专门检查config_items表记录是否存在（基于key_name主键约束）
+    async fn check_config_items_exists_by_unique_index(
+        &self,
+        row: &sea_orm::QueryResult,
+        db: &DatabaseConnection,
+    ) -> Result<Option<String>> {
+        let key_name = row.try_get::<String>("", "key_name")?;
+
+        let check_sql = "SELECT key_name FROM config_items WHERE key_name = ?";
+        let values = vec![key_name.clone().into()];
+
+        let result = db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                check_sql,
+                values,
+            ))
+            .await?;
+
+        if let Some(result_row) = result {
+            let existing_key: String = result_row.try_get("", "key_name")?;
+            Ok(Some(existing_key))
         } else {
             Ok(None)
         }
