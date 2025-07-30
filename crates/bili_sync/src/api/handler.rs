@@ -902,12 +902,20 @@ pub async fn reset_all_videos(
             .all(db.as_ref())
     )?;
 
+    // 获取force参数，默认为false
+    let force_reset = params.force.unwrap_or(false);
+
     // 处理页面重置
     let resetted_pages_info = all_pages
         .into_iter()
         .filter_map(|(id, pid, name, download_status, video_id)| {
             let mut page_status = PageStatus::from(download_status);
-            if page_status.reset_failed() {
+            let should_reset = if force_reset {
+                page_status.reset_all()
+            } else {
+                page_status.reset_failed()
+            };
+            if should_reset {
                 let page_info = PageInfo::from((id, pid, name, page_status.into()));
                 Some((page_info, video_id))
             } else {
@@ -930,7 +938,11 @@ pub async fn reset_all_videos(
         .into_iter()
         .filter_map(|mut video_info| {
             let mut video_status = VideoStatus::from(video_info.download_status);
-            let mut video_resetted = video_status.reset_failed();
+            let mut video_resetted = if force_reset {
+                video_status.reset_all()
+            } else {
+                video_status.reset_failed()
+            };
             if video_ids_with_resetted_pages.contains(&video_info.id) {
                 video_status.set(4, 0); // 将"分P下载"重置为 0
                 video_resetted = true;

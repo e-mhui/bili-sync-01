@@ -13,6 +13,7 @@ pub struct VideosRequest {
     pub page: Option<u64>,
     pub page_size: Option<u64>,
     pub show_failed_only: Option<bool>,
+    pub force: Option<bool>,
 }
 
 #[derive(Deserialize, IntoParams)]

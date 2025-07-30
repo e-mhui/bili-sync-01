@@ -216,8 +216,11 @@
 				toast.success('重置成功', {
 					description: `已重置 ${data.resetted_videos_count} 个视频和 ${data.resetted_pages_count} 个分页`
 				});
-				const { query, currentPage, videoSource: currentVideoSource, showFailedOnly } = $appStateStore;
-				await loadVideos(query, currentPage, currentVideoSource, showFailedOnly);
+				// 延迟重新加载视频列表，避免与toast提示冲突
+				setTimeout(async () => {
+					const { query, currentPage, videoSource: currentVideoSource, showFailedOnly } = $appStateStore;
+					await loadVideos(query, currentPage, currentVideoSource, showFailedOnly);
+				}, 100);
 			} else {
 				toast.info('没有需要重置的视频');
 			}
