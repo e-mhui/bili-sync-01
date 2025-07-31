@@ -2,6 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use async_stream::try_stream;
 use futures::Stream;
 use serde_json::Value;
+use tracing::warn;
 
 use crate::bilibili::{BiliClient, Validate, VideoInfo};
 pub struct FavoriteList<'a> {
@@ -70,9 +71,20 @@ impl<'a> FavoriteList<'a> {
                     .get_videos(page)
                     .await
                     .with_context(|| format!("failed to get videos of favorite {} page {}", self.fid, page))?;
+                
+                let media_count = videos["data"]["info"]["media_count"].as_u64().unwrap_or(0);
                 let medias = &mut videos["data"]["medias"];
+                
                 if medias.as_array().is_none_or(|v| v.is_empty()) {
-                    Err(anyhow!("no medias found in favorite {} page {}", self.fid, page))?;
+                    if media_count > 0 {
+                        // 统计显示有视频但medias为空，说明内容被B站API过滤
+                        // 只记录警告，不抛出错误，正常结束扫描
+                        warn!("收藏夹 {} 中的 {} 个视频被B站API过滤，无法通过API获取（可能是番剧、纪录片等特殊内容类型）", self.fid, media_count);
+                        break;
+                    } else {
+                        // 正常的空页面情况
+                        break;
+                    }
                 }
                 let videos_info: Vec<VideoInfo> = serde_json::from_value(medias.take())
                     .with_context(|| format!("failed to parse videos of favorite {} page {}", self.fid, page))?;
