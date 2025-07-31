@@ -811,36 +811,6 @@ impl MemoryDbOptimizer {
         Ok(ids)
     }
 
-    /// 根据主键删除记录
-    async fn delete_record_by_primary_key(
-        &self,
-        table_name: &str,
-        primary_keys: &[String],
-        id_values: &[String],
-        txn: &sea_orm::DatabaseTransaction,
-    ) -> Result<()> {
-        if primary_keys.len() != id_values.len() {
-            return Err(anyhow::anyhow!("主键数量与值数量不匹配"));
-        }
-
-        let conditions: Vec<String> = primary_keys
-            .iter()
-            .zip(id_values.iter())
-            .map(|(key, value)| format!("{} = '{}'", key, value))
-            .collect();
-
-        let delete_sql = format!(
-            "DELETE FROM {} WHERE {}",
-            table_name,
-            conditions.join(" AND ")
-        );
-
-        txn.execute(Statement::from_string(DatabaseBackend::Sqlite, &delete_sql))
-            .await?;
-
-        debug!("删除记录: {} WHERE {}", table_name, conditions.join(" AND "));
-        Ok(())
-    }
 
     /// 从查询结果行中提取值并转换为字符串
     fn extract_value_as_string(&self, row: &sea_orm::QueryResult, column: &str) -> Result<String> {

@@ -101,6 +101,7 @@ pub enum VideoInfo {
         is_upower_play: Option<bool>,
         /// 是否为充电专享预览
         #[serde(default)]
+        #[allow(dead_code)]
         is_upower_preview: Option<bool>,
     },
     /// 从收藏夹接口获取的视频信息
