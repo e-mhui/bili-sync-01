@@ -6,7 +6,7 @@ use bili_sync_entity::*;
 use chrono::Utc;
 use futures::Stream;
 use sea_orm::entity::prelude::*;
-use sea_orm::sea_query::{OnConflict, SimpleExpr};
+use sea_orm::sea_query::SimpleExpr;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{DatabaseConnection, Unchanged};
 
@@ -104,8 +104,14 @@ pub(super) async fn watch_later_from<'a>(
     };
 
     let watch_later = WatchLater::new(bili_client);
-    watch_later::Entity::insert(watch_later::ActiveModel {
-        id: Set(1),
+    
+    // 检查是否已存在，如果存在直接返回
+    if let Some(existing) = watch_later::Entity::find().one(db_conn).await? {
+        return Ok((existing.into(), Box::pin(watch_later.into_video_stream())));
+    }
+    
+    // 不存在则创建新记录
+    let result = watch_later::Entity::insert(watch_later::ActiveModel {
         path: Set(path.to_string_lossy().to_string()),
         created_at: Set(crate::utils::time_format::now_standard_string()),
         latest_row_at: Set("1970-01-01 00:00:00".to_string()),
@@ -113,16 +119,11 @@ pub(super) async fn watch_later_from<'a>(
         scan_deleted_videos: Set(false),
         ..Default::default()
     })
-    .on_conflict(
-        OnConflict::column(watch_later::Column::Id)
-            .update_column(watch_later::Column::Path)
-            .to_owned(),
-    )
     .exec(db_conn)
     .await?;
+    
     Ok((
-        watch_later::Entity::find()
-            .filter(watch_later::Column::Id.eq(1))
+        watch_later::Entity::find_by_id(result.last_insert_id)
             .one(db_conn)
             .await?
             .context("watch_later not found")?

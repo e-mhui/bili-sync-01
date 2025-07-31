@@ -3018,6 +3018,22 @@ pub async fn delete_video_source_internal(
     };
 
     txn.commit().await?;
+    
+    // 在内存模式下，确保删除操作同步到主数据库
+    if let Some(_optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
+        // 检查是否在内存模式
+        if crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
+            info!("内存模式下同步{}删除操作到主数据库", result.source_type);
+            
+            // 强制同步内存数据库到主数据库
+            if let Err(e) = crate::utils::global_memory_optimizer::sync_to_main_db().await {
+                warn!("强制同步内存数据库失败: {}", e);
+            } else {
+                info!("{}删除操作同步完成", result.source_type);
+            }
+        }
+    }
+    
     Ok(result)
 }
 

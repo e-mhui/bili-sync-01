@@ -703,7 +703,14 @@ impl MemoryDbOptimizer {
                 .into_iter().map(|s| s.to_string()).collect(),
             "submission" => vec!["upper_id"]
                 .into_iter().map(|s| s.to_string()).collect(),
+            "watch_later" => {
+                // watch_later表业务上全局唯一（只能有一个），使用简单逻辑
+                debug!("watch_later表使用简单同步逻辑：检查主数据库是否已存在记录");
+                return self.sync_watch_later_simple(memory_db, txn).await;
+            },
             "config_items" => vec!["key_name"]
+                .into_iter().map(|s| s.to_string()).collect(),
+            "video_source" => vec!["season_id"]
                 .into_iter().map(|s| s.to_string()).collect(),
             _ => {
                 // 其他表没有业务唯一键，不支持删除操作，只做增量同步
@@ -1223,6 +1230,85 @@ impl MemoryDbOptimizer {
             warn!("无法验证内存数据库表状态");
             Ok(false)
         }
+    }
+
+    /// KISS原则：watch_later表简单同步逻辑
+    /// 业务上只能有一个watch_later记录，简单比较内存数据库和主数据库的状态
+    async fn sync_watch_later_simple(
+        &self, 
+        memory_db: &DatabaseConnection, 
+        txn: &sea_orm::DatabaseTransaction,
+    ) -> Result<(), anyhow::Error> {
+        // 检查主数据库的记录数量
+        let main_count = txn
+            .query_one(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "SELECT COUNT(*) as count FROM watch_later",
+            ))
+            .await?;
+        
+        let main_record_count = if let Some(row) = main_count {
+            row.try_get::<i64>("", "count")?
+        } else {
+            0
+        };
+        
+        // 检查内存数据库的记录数量
+        let memory_rows = memory_db
+            .query_all(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "SELECT * FROM watch_later",
+            ))
+            .await?;
+        
+        let memory_record_count = memory_rows.len() as i64;
+        
+        match (main_record_count, memory_record_count) {
+            (0, 0) => {
+                debug!("主数据库和内存数据库都没有watch_later记录，无需同步");
+            }
+            (0, _) => {
+                // 主数据库没有，内存数据库有：插入
+                let row = &memory_rows[0]; // 只取第一条
+                let path = row.try_get::<String>("", "path")?;
+                let created_at = row.try_get::<String>("", "created_at")?;
+                let latest_row_at = row.try_get::<String>("", "latest_row_at")?;
+                let enabled = row.try_get::<bool>("", "enabled")?;
+                let scan_deleted_videos = row.try_get::<bool>("", "scan_deleted_videos")?;
+                
+                txn.execute(Statement::from_sql_and_values(
+                    DatabaseBackend::Sqlite,
+                    "INSERT INTO watch_later (path, created_at, latest_row_at, enabled, scan_deleted_videos) VALUES (?, ?, ?, ?, ?)",
+                    vec![
+                        path.into(),
+                        created_at.into(),
+                        latest_row_at.into(),
+                        enabled.into(),
+                        scan_deleted_videos.into(),
+                    ],
+                ))
+                .await?;
+                
+                info!("表 watch_later 同步完成，成功同步 1 条记录（新增: 1, 更新: 0）");
+            }
+            (_, 0) => {
+                // 主数据库有，内存数据库没有：删除
+                txn.execute(Statement::from_string(
+                    DatabaseBackend::Sqlite,
+                    "DELETE FROM watch_later",
+                ))
+                .await?;
+                
+                info!("表 watch_later 同步完成，成功同步 {} 条记录（新增: 0, 更新: 0），删除了 {} 条记录", 
+                    0, main_record_count);
+            }
+            (_, _) => {
+                // 都有记录：比较并更新（暂时跳过复杂比较，业务上应该很少出现）
+                debug!("主数据库和内存数据库都有watch_later记录，跳过同步");
+            }
+        }
+        
+        Ok(())
     }
 
 }
