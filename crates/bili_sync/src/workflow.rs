@@ -792,9 +792,37 @@ pub async fn fetch_video_details(
                             }
                         }
                         Ok((tags, mut view_info)) => {
-                            let VideoInfo::Detail { pages, staff, .. } = &mut view_info else {
+                            let VideoInfo::Detail { pages, staff, ref is_upower_exclusive, ref is_upower_play, .. } = &mut view_info else {
                                 unreachable!()
                             };
+                            
+                            // 革命性充电视频检测：基于API返回的upower字段进行精确判断
+                            if let (Some(true), Some(false)) = (is_upower_exclusive, is_upower_play) {
+                                info!("「{}」检测到充电专享视频（未充电），将自动删除", &video_model.name);
+                                // 创建自动删除任务
+                                let delete_task = crate::task::DeleteVideoTask {
+                                    video_id: video_model.id,
+                                    task_id: format!("auto_delete_upower_{}", video_model.id),
+                                };
+                                
+                                if let Err(delete_err) = crate::task::VIDEO_DELETE_TASK_QUEUE.enqueue_task(delete_task, connection).await {
+                                    error!("创建充电视频删除任务失败「{}」: {:#}", &video_model.name, delete_err);
+                                } else {
+                                    debug!("充电视频删除任务已加入队列「{}」", &video_model.name);
+                                }
+                                
+                                // 跳过后续处理，返回成功完成这个视频的处理
+                                return Ok(());
+                            }
+                            
+                            // 日志记录upower字段状态（仅debug级别）
+                            if is_upower_exclusive.is_some() || is_upower_play.is_some() {
+                                debug!(
+                                    "视频「{}」upower状态: exclusive={:?}, play={:?}", 
+                                    &video_model.name, is_upower_exclusive, is_upower_play
+                                );
+                            }
+                            
                             let pages = std::mem::take(pages);
                             let pages_len = pages.len();
 
@@ -2175,28 +2203,43 @@ pub async fn dispatch_download_page(args: DownloadPageArgs<'_>, token: Cancellat
     }
 
     let current_config = crate::config::reload_config();
-    let child_semaphore = Semaphore::new(current_config.concurrent_limit.page);
+    let child_semaphore = Arc::new(Semaphore::new(current_config.concurrent_limit.page));
     let tasks = args
         .pages
         .into_iter()
         .map(|page_model| {
-            download_page(
-                args.bili_client,
-                args.video_source,
-                args.video_model,
-                page_model,
-                args.connection,
-                &child_semaphore,
-                args.downloader,
-                args.base_path,
-                token.clone(),
-            )
+            let page_pid = page_model.pid; // 保存分页ID
+            let page_name = page_model.name.clone(); // 保存分页名称
+            let semaphore_clone = child_semaphore.clone();
+            let token_clone = token.clone();
+            let bili_client = args.bili_client;
+            let video_source = args.video_source;
+            let video_model = args.video_model;
+            let connection = args.connection;
+            let downloader = args.downloader;
+            let base_path = args.base_path;
+            async move {
+                let result = download_page(
+                    bili_client,
+                    video_source,
+                    video_model,
+                    page_model,
+                    connection,
+                    semaphore_clone.as_ref(),
+                    downloader,
+                    base_path,
+                    token_clone,
+                ).await;
+                // 返回结果和分页信息
+                (result, page_pid, page_name)
+            }
         })
         .collect::<FuturesUnordered<_>>();
     let (mut download_aborted, mut target_status) = (false, STATUS_OK);
     let mut has_charging_video_error = false;
+    let mut failed_pages: Vec<String> = Vec::new(); // 收集失败的分页信息
     let mut stream = tasks;
-    while let Some(res) = stream.next().await {
+    while let Some((res, page_pid, page_name)) = stream.next().await {
         match res {
             Ok(model) => {
                 if download_aborted {
@@ -2215,40 +2258,61 @@ pub async fn dispatch_download_page(args: DownloadPageArgs<'_>, token: Cancellat
             }
             Err(e) => {
                 let error_msg = e.to_string();
+                debug!("分页下载错误原始信息 - 第{}页 {}: {}", page_pid, page_name, error_msg);
 
-                // 检查是否是暂停导致的失败，只有在任务暂停时才将 Download cancelled 视为暂停错误
+                // 1. 首先检查是否是用户暂停导致的错误
                 if error_msg.contains("任务已暂停")
                     || error_msg.contains("停止下载")
                     || error_msg.contains("用户主动暂停任务")
                     || (error_msg.contains("Download cancelled") && crate::task::TASK_CONTROLLER.is_paused())
                 {
-                    info!("分页下载任务因用户暂停而终止: {}", error_msg);
-                    continue; // 跳过暂停相关的错误，不触发风控
+                    info!("分页下载任务因用户暂停而终止 - 第{}页 {}: {}", page_pid, page_name, error_msg);
+                    continue; // 跳过暂停相关的错误，不触发风控或其他处理
                 }
 
-                if e.downcast_ref::<DownloadAbortError>().is_some() || error_msg.contains("Download cancelled") {
+                // 2. 检查是否是真正的风控错误（DownloadAbortError）
+                if e.downcast_ref::<DownloadAbortError>().is_some() {
+                    warn!("检测到真正的风控错误，中止所有下载任务 - 第{}页 {}", page_pid, page_name);
                     if !download_aborted {
                         token.cancel();
                         download_aborted = true;
                     }
-                } else {
-                    // 检查是否为暂停相关错误
-                    let error_msg = e.to_string();
-                    if error_msg.contains("用户主动暂停任务") || error_msg.contains("任务已暂停") {
-                        info!("分页下载因用户暂停而终止");
-                    } else {
-                        // 检查是否是充电专享视频错误
-                        let is_charging_video_error = error_msg.contains("status code: 87007")
-                            || error_msg.contains("status code: 87008")
-                            || error_msg.contains("充电专享视频");
+                    continue;
+                }
 
-                        if is_charging_video_error {
-                            debug!("分页下载失败: 充电专享视频");
-                            has_charging_video_error = true;
-                        } else {
-                            error!("下载分页子任务失败: {:#}", e);
-                        }
-                    }
+                // 3. 检查是否是充电专享视频错误（87007/87008）
+                let is_charging_video_error = error_msg.contains("status code: 87007")
+                    || error_msg.contains("status code: 87008")
+                    || error_msg.contains("充电专享视频");
+
+                if is_charging_video_error {
+                    debug!("分页下载失败 - 第{}页 {}: 充电专享视频", page_pid, page_name);
+                    has_charging_video_error = true;
+                    continue;
+                }
+
+                // 4. 处理其他类型的错误（包括普通的Download cancelled）
+                // 记录更详细的错误信息，包括错误链
+                error!("下载分页子任务失败 - 第{}页 {}: {:#}", page_pid, page_name, e);
+                
+                // 输出错误链中的所有错误信息
+                let mut error_chain = String::new();
+                let mut current_error: &dyn std::error::Error = &*e;
+                error_chain.push_str(&format!("错误: {}", current_error));
+                
+                while let Some(source) = current_error.source() {
+                    error_chain.push_str(&format!("\n  原因: {}", source));
+                    current_error = source;
+                }
+                
+                error!("完整错误链: {}", error_chain);
+                
+                // 收集失败信息，包含分页标识
+                failed_pages.push(format!("第{}页 {}: {}", page_pid, page_name, e));
+                
+                // 如果失败的任务没有达到 STATUS_OK，记录当前状态
+                if target_status != STATUS_OK {
+                    error!("当前分页下载状态: {}, 视频: {}", target_status, &args.video_model.name);
                 }
             }
         }
@@ -2272,7 +2336,26 @@ pub async fn dispatch_download_page(args: DownloadPageArgs<'_>, token: Cancellat
             return Ok(ExecutionStatus::ClassifiedFailed(classified_error));
         }
 
-        return Ok(ExecutionStatus::FixedFailed(target_status, ProcessPageError().into()));
+        // 提供更详细的错误信息，保留原始错误上下文
+        error!(
+            "视频「{}」分页下载失败，状态码: {}",
+            &args.video_model.name,
+            target_status
+        );
+        
+        // 构建详细的错误信息
+        let details = if !failed_pages.is_empty() {
+            format!("失败的分页: {}", failed_pages.join("; "))
+        } else {
+            "请检查网络连接、文件系统权限或重试下载。".to_string()
+        };
+        
+        // 返回ProcessPageError，携带详细信息
+        let process_error = ProcessPageError::new(
+            args.video_model.name.clone(),
+            target_status,
+        ).with_details(details);
+        return Err(process_error.into());
     }
     Ok(ExecutionStatus::Succeeded)
 }
@@ -2455,9 +2538,26 @@ pub async fn download_page(
     // 使用新的公共函数处理87007错误检测和自动删除
     let task_names = ["封面", "视频", "详情", "弹幕", "字幕"];
     let context_info = format!("第 {} 页", page_model.pid);
-    let _has_87007_error =
+    let has_87007_error =
         detect_and_handle_auto_delete_errors(&results, &task_names, video_model, connection, Some(&context_info))
             .await?;
+
+    // 如果检测到充电视频错误，需要向上层传播这个错误
+    if has_87007_error {
+        // 查找是哪个任务返回了充电视频错误
+        for (res, _) in results.iter().zip(task_names.iter()) {
+            if let ExecutionStatus::ClassifiedFailed(classified_error) = res {
+                if classified_error.should_auto_delete && 
+                   classified_error.error_type == crate::error::ErrorType::Permission {
+                    // 返回充电视频错误，这样dispatch_download_page可以正确处理
+                    return Err(crate::bilibili::BiliError::RequestFailed(
+                        87008, 
+                        classified_error.message.clone()
+                    ).into());
+                }
+            }
+        }
+    }
 
     results
         .iter()

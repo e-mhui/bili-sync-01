@@ -8,8 +8,44 @@ use thiserror::Error;
 pub struct DownloadAbortError();
 
 #[derive(Error, Debug)]
-#[error("Process page error")]
-pub struct ProcessPageError();
+pub struct ProcessPageError {
+    pub video_name: String,
+    pub status_code: u32,
+    pub details: Option<String>,
+}
+
+impl ProcessPageError {
+    pub fn new(video_name: String, status_code: u32) -> Self {
+        Self {
+            video_name,
+            status_code,
+            details: None,
+        }
+    }
+
+    pub fn with_details(mut self, details: String) -> Self {
+        self.details = Some(details);
+        self
+    }
+}
+
+impl std::fmt::Display for ProcessPageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ref details) = self.details {
+            write!(
+                f,
+                "视频「{}」分页下载失败，状态码: {}。{}",
+                self.video_name, self.status_code, details
+            )
+        } else {
+            write!(
+                f,
+                "视频「{}」分页下载失败，状态码: {}。请检查网络连接、文件系统权限或重试下载。",
+                self.video_name, self.status_code
+            )
+        }
+    }
+}
 
 /// 错误类型枚举，用于更精确的错误分类
 #[derive(Error, Debug, Clone, PartialEq)]
@@ -113,7 +149,24 @@ impl ErrorClassifier {
             return ClassifiedError::new(ErrorType::UserCancelled, "用户主动暂停任务".to_string());
         }
 
+        // 检查是否为充电专享视频相关错误（扩展检测，优先级最高）
+        if error_msg.contains("Request too frequently") 
+           || error_msg.contains("检测到试看视频，需要充电才能观看完整版")
+           || error_msg.contains("视频需要充电才能观看")
+           || error_msg.contains("所有质量级别都获取失败") {
+            return ClassifiedError::new(ErrorType::Permission, "充电专享视频，需要为UP主充电才能观看".to_string())
+                .with_retry_policy(false, true) // 不重试，可忽略
+                .with_auto_delete(true); // 需要自动删除
+        }
+
         for cause in err.chain() {
+            // DownloadAbortError（"Request too frequently"）特殊处理
+            if cause.downcast_ref::<DownloadAbortError>().is_some() {
+                return ClassifiedError::new(ErrorType::Permission, "充电专享视频，需要为UP主充电才能观看".to_string())
+                    .with_retry_policy(false, true) // 不重试，可忽略
+                    .with_auto_delete(true); // 需要自动删除
+            }
+
             // HTTP 状态码错误
             if let Some(reqwest_err) = cause.downcast_ref::<reqwest::Error>() {
                 return Self::classify_reqwest_error(reqwest_err);
@@ -130,12 +183,13 @@ impl ErrorClassifier {
             }
 
             // 分页错误处理
-            if cause.downcast_ref::<ProcessPageError>().is_some() {
+            if let Some(page_error) = cause.downcast_ref::<ProcessPageError>() {
                 // 如果在暂停状态下发生分页错误，很可能是因为用户暂停导致的
                 if crate::task::TASK_CONTROLLER.is_paused() {
                     return ClassifiedError::new(ErrorType::UserCancelled, "分页下载因用户暂停而终止".to_string());
                 }
-                return ClassifiedError::new(ErrorType::Unknown, "分页处理失败".to_string());
+                // 使用ProcessPageError自带的详细信息
+                return ClassifiedError::new(ErrorType::Unknown, page_error.to_string());
             }
 
             // JSON解析错误
@@ -162,11 +216,34 @@ impl ErrorClassifier {
 
         if let Some(status) = err.status() {
             let status_code = status.as_u16();
+            let error_message = err.to_string();
+            
+            // 特殊处理：412状态码的充电专享视频检测（优先级高于风控）
+            if status_code == 412 && (
+                error_message.contains("Request too frequently") ||
+                error_message.contains("检测到试看视频，需要充电才能观看完整版") ||
+                error_message.contains("视频需要充电才能观看") ||
+                error_message.contains("所有质量级别都获取失败") ||
+                error_message.contains("充电专享视频")
+            ) {
+                return ClassifiedError::new(ErrorType::Permission, "充电专享视频，需要为UP主充电才能观看".to_string())
+                    .with_status_code(status_code)
+                    .with_retry_policy(false, true) // 不重试，可忽略
+                    .with_auto_delete(true); // 需要自动删除
+            }
+            
             let error_type = match status_code {
                 401 => ErrorType::Authentication,
                 403 => ErrorType::Authorization,
                 404 => ErrorType::NotFound,
-                412 => ErrorType::RiskControl,
+                412 => {
+                    // 对于412状态码，默认当作充电视频处理，除非有明确的风控指示
+                    if error_message.contains("风控") && !error_message.contains("充电") {
+                        ErrorType::RiskControl
+                    } else {
+                        ErrorType::Permission // 默认当作充电视频
+                    }
+                },
                 429 => ErrorType::RateLimit,
                 500..=599 => ErrorType::ServerError,
                 400..=499 => ErrorType::ClientError,
@@ -177,13 +254,28 @@ impl ErrorClassifier {
                 401 => "认证失败，请检查登录状态".to_string(),
                 403 => "权限不足，无法访问该资源".to_string(),
                 404 => "请求的资源不存在".to_string(),
-                412 => "触发B站风控限制，请稍后重试".to_string(),
+                412 => {
+                    if error_message.contains("风控") && !error_message.contains("充电") {
+                        "触发B站风控限制，请稍后重试".to_string()
+                    } else {
+                        "充电专享视频，需要为UP主充电才能观看".to_string()
+                    }
+                },
                 429 => "请求过于频繁，请稍后重试".to_string(),
                 500..=599 => "服务器内部错误".to_string(),
                 _ => format!("HTTP错误: {}", status_code),
             };
 
-            return ClassifiedError::new(error_type, message).with_status_code(status_code);
+            let mut classified_error = ClassifiedError::new(error_type.clone(), message).with_status_code(status_code);
+            
+            // 如果412状态码被归类为Permission（充电视频），设置自动删除标志
+            if status_code == 412 && error_type == ErrorType::Permission {
+                classified_error = classified_error
+                    .with_retry_policy(false, true) // 不重试，可忽略
+                    .with_auto_delete(true); // 需要自动删除
+            }
+            
+            return classified_error;
         }
 
         ClassifiedError::new(ErrorType::Network, "网络请求失败".to_string())

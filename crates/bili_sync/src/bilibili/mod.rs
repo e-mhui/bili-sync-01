@@ -93,6 +93,15 @@ pub enum VideoInfo {
         show_title: Option<String>,
         #[serde(default)]
         staff: Option<Vec<StaffInfo>>,
+        /// 充电专享视频标识
+        #[serde(default)]
+        is_upower_exclusive: Option<bool>,
+        /// 用户是否有权限观看充电专享视频
+        #[serde(default)]
+        is_upower_play: Option<bool>,
+        /// 是否为充电专享预览
+        #[serde(default)]
+        is_upower_preview: Option<bool>,
     },
     /// 从收藏夹接口获取的视频信息
     Favorite {

@@ -253,10 +253,26 @@ impl<'a> Video<'a> {
                                 crate::bilibili::BiliError::RequestFailed(87007 | 87008, msg) => {
                                     (true, msg.contains("试看视频"))
                                 },
+                                crate::bilibili::BiliError::RequestFailed(code, msg) => {
+                                    // 检查其他可能的充电专享视频错误码或消息
+                                    let is_charging = msg.contains("充电专享") 
+                                        || msg.contains("需要充电") 
+                                        || msg.contains("试看视频")
+                                        || msg.contains("大会员专享")
+                                        || (*code == -403 && msg.contains("access denied"));
+                                    (is_charging, msg.contains("试看视频"))
+                                },
                                 _ => (false, false)
                             }
                         } else {
-                            (false, false)
+                            // 检查非BiliError类型的错误是否可能是充电专享视频错误
+                            let error_str = e.to_string().to_lowercase();
+                            let is_charging = error_str.contains("充电专享") 
+                                || error_str.contains("需要充电") 
+                                || error_str.contains("试看视频")
+                                || error_str.contains("大会员专享")
+                                || error_str.contains("access denied");
+                            (is_charging, error_str.contains("试看视频"))
                         }
                     };
 
@@ -273,8 +289,16 @@ impl<'a> Video<'a> {
                             if !is_trial_video {
                                 tracing::info!("视频需要充电才能观看");
                             }
+                            // 对于充电专享视频，统一返回87007错误以便上层正确处理
+                            return Err(crate::bilibili::BiliError::RequestFailed(87007, "充电专享视频，需要为UP主充电才能观看".to_string()).into());
                         } else {
                             tracing::error!("所有质量级别都获取失败");
+                            // 检查是否可能是隐蔽的充电专享视频（API成功但实际是试看片段）
+                            let error_str = e.to_string().to_lowercase();
+                            if error_str.contains("检测到试看") || error_str.contains("试看模式") || error_str.contains("试看片段") {
+                                tracing::info!("检测到隐蔽的充电专享视频（试看片段模式）");
+                                return Err(crate::bilibili::BiliError::RequestFailed(87008, "充电专享视频（试看片段），需要为UP主充电才能观看".to_string()).into());
+                            }
                         }
                         return Err(e);
                     }
@@ -362,6 +386,34 @@ impl<'a> Video<'a> {
                 serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string()));
             // 返回充电视频错误，触发自动删除
             return Err(crate::bilibili::BiliError::RequestFailed(87008, "试看视频，需要充电才能观看完整版".to_string()).into());
+        }
+        
+        // 检查是否为可疑的充电视频：API返回成功但可能是试看片段
+        if has_dash_video {
+            // 检查视频时长是否异常短（可能是试看片段）
+            if let Some(timelength) = res["data"]["timelength"].as_u64() {
+                // 如果视频时长小于30秒且同时存在durl字段，可能是试看视频
+                if timelength < 30000 && res["data"]["durl"].as_array().is_some_and(|v| !v.is_empty()) {
+                    tracing::debug!("检测到可疑的短视频片段，时长: {}ms，可能为充电专享视频的试看片段", timelength);
+                    tracing::debug!("可疑试看视频data字段: {}", 
+                        serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string()));
+                    return Err(crate::bilibili::BiliError::RequestFailed(87008, "检测到试看片段，可能为充电专享视频".to_string()).into());
+                }
+            }
+            
+            // 检查是否存在特定的充电专享视频标识字段
+            if let Some(result) = res["data"]["result"].as_str() {
+                if result == "suee" {
+                    // "suee" 可能是试看片段的标识，结合其他字段进一步判断
+                    let has_limited_content = res["data"]["durl"].as_array().is_some_and(|v| !v.is_empty());
+                    if has_limited_content {
+                        tracing::debug!("检测到result=suee且存在durl，可能为充电专享视频的试看模式");
+                        tracing::debug!("疑似充电专享视频data字段: {}", 
+                            serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string()));
+                        return Err(crate::bilibili::BiliError::RequestFailed(87008, "检测到试看模式，可能为充电专享视频".to_string()).into());
+                    }
+                }
+            }
         }
         
         if !has_dash_video {
@@ -518,9 +570,26 @@ impl<'a> Video<'a> {
                     // 检查是否为充电专享视频错误，如果是则不输出详细的质量级别失败日志
                     let is_charging_video_error = {
                         if let Some(bili_err) = e.downcast_ref::<crate::bilibili::BiliError>() {
-                            matches!(bili_err, crate::bilibili::BiliError::RequestFailed(87007 | 87008, _))
+                            match bili_err {
+                                crate::bilibili::BiliError::RequestFailed(87007 | 87008, _) => true,
+                                crate::bilibili::BiliError::RequestFailed(code, msg) => {
+                                    // 检查其他可能的充电专享视频错误码或消息
+                                    msg.contains("充电专享") 
+                                        || msg.contains("需要充电") 
+                                        || msg.contains("试看视频")
+                                        || msg.contains("大会员专享")
+                                        || (*code == -403 && msg.contains("access denied"))
+                                },
+                                _ => false
+                            }
                         } else {
-                            false
+                            // 检查非BiliError类型的错误是否可能是充电专享视频错误
+                            let error_str = e.to_string().to_lowercase();
+                            error_str.contains("充电专享") 
+                                || error_str.contains("需要充电") 
+                                || error_str.contains("试看视频")
+                                || error_str.contains("大会员专享")
+                                || error_str.contains("access denied")
                         }
                     };
 
@@ -533,7 +602,9 @@ impl<'a> Video<'a> {
                     if attempt == quality_levels.len() - 1 {
                         // 最后一次尝试也失败了
                         if is_charging_video_error {
-                            tracing::debug!("所有番剧质量级别都获取失败: 充电专享视频");
+                            tracing::info!("番剧需要充电才能观看");
+                            // 对于充电专享番剧，统一返回87007错误以便上层正确处理
+                            return Err(crate::bilibili::BiliError::RequestFailed(87007, "充电专享视频，需要为UP主充电才能观看".to_string()).into());
                         } else {
                             tracing::error!("所有番剧质量级别都获取失败");
                         }

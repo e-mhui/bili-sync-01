@@ -594,9 +594,18 @@ async fn delete_video_internal(db: Arc<DatabaseConnection>, video_id: i32) -> Re
     use bili_sync_entity::video;
     use sea_orm::*;
 
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+    let db_conn = if let Some(ref conn) = optimized_conn {
+        debug!("使用内存数据库连接查询待删除视频");
+        conn.as_ref()
+    } else {
+        db.as_ref()
+    };
+
     // 检查视频是否存在
     let video = video::Entity::find_by_id(video_id)
-        .one(db.as_ref())
+        .one(db_conn)
         .await
         .map_err(|e| anyhow::anyhow!("查询视频失败: {}", e))?;
 
@@ -646,7 +655,7 @@ async fn delete_video_internal(db: Arc<DatabaseConnection>, video_id: i32) -> Re
     video::Entity::update_many()
         .col_expr(video::Column::Deleted, sea_orm::prelude::Expr::value(1))
         .filter(video::Column::Id.eq(video_id))
-        .exec(db.as_ref())
+        .exec(db_conn)
         .await
         .map_err(|e| anyhow::anyhow!("更新视频删除状态失败: {}", e))?;
 
@@ -670,10 +679,19 @@ async fn delete_video_files_from_pages_task(
     use sea_orm::*;
     use tokio::fs;
 
+    // 检查是否在内存模式，如果是则使用内存数据库连接
+    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+    let db_conn = if let Some(ref conn) = optimized_conn {
+        debug!("使用内存数据库连接查询待删除视频的页面信息");
+        conn.as_ref()
+    } else {
+        db.as_ref()
+    };
+
     // 获取该视频的所有页面（分P）
     let pages = page::Entity::find()
         .filter(page::Column::VideoId.eq(video_id))
-        .all(db.as_ref())
+        .all(db_conn)
         .await
         .map_err(|e| anyhow::anyhow!("查询页面信息失败: {}", e))?;
 
@@ -726,7 +744,7 @@ async fn delete_video_files_from_pages_task(
 
     // 还要删除视频的NFO文件和其他可能的相关文件
     let video = video::Entity::find_by_id(video_id)
-        .one(db.as_ref())
+        .one(db_conn)
         .await
         .map_err(|e| anyhow::anyhow!("查询视频信息失败: {}", e))?;
 
@@ -734,7 +752,7 @@ async fn delete_video_files_from_pages_task(
         // 重新获取页面信息来删除基于视频文件名的相关文件
         let pages_for_cleanup = page::Entity::find()
             .filter(page::Column::VideoId.eq(video_id))
-            .all(db.as_ref())
+            .all(db_conn)
             .await
             .map_err(|e| anyhow::anyhow!("查询页面信息失败: {}", e))?;
 
@@ -839,7 +857,7 @@ async fn delete_video_files_from_pages_task(
                             let video_base_name = if is_collection && config.collection_use_season_structure {
                                 // 合集：使用合集名称
                                 match bili_sync_entity::collection::Entity::find_by_id(video.collection_id.unwrap_or(0))
-                                    .one(db.as_ref())
+                                    .one(db_conn)
                                     .await
                                 {
                                     Ok(Some(coll)) => coll.name,
