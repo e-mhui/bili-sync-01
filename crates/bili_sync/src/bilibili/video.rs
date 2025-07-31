@@ -86,6 +86,145 @@ impl<'a> Video<'a> {
         Ok(serde_json::from_value(res["data"].take())?)
     }
 
+    /// 调用视频详情API获取epid信息，用于API降级处理
+    /// 当普通视频API返回-404错误时，可以通过此方法获取epid，然后尝试番剧API降级
+    pub async fn get_video_detail_for_epid(&self) -> Result<Option<String>> {
+        tracing::debug!("调用视频详情API获取epid信息: BVID={}", self.bvid);
+        
+        let res = match self
+            .client
+            .request(Method::GET, "https://api.bilibili.com/x/web-interface/view")
+            .await
+            .query(&[("bvid", &self.bvid)])
+            .send()
+            .await
+        {
+            Ok(response) => response,
+            Err(e) => {
+                tracing::warn!("视频详情API网络请求失败: {}", e);
+                return Err(e.into());
+            }
+        };
+
+        let res = match res.error_for_status() {
+            Ok(response) => response,
+            Err(e) => {
+                tracing::warn!("视频详情API HTTP错误: {}", e);
+                return Err(e.into());
+            }
+        };
+
+        let json_res = match res.json::<serde_json::Value>().await {
+            Ok(json) => json,
+            Err(e) => {
+                tracing::warn!("视频详情API JSON解析失败: {}", e);
+                return Err(e.into());
+            }
+        };
+
+        // 记录API响应（仅在debug级别）
+        tracing::debug!("视频详情API响应: {}", serde_json::to_string_pretty(&json_res).unwrap_or_else(|_| "无法序列化".to_string()));
+
+        // 检查API返回是否成功
+        if let Some(code) = json_res["code"].as_i64() {
+            if code != 0 {
+                let message = json_res["message"].as_str().unwrap_or("未知错误");
+                tracing::warn!("视频详情API返回错误: code={}, message={}", code, message);
+                
+                // 对于特定的错误码，给出更详细的说明
+                match code {
+                    -404 => tracing::debug!("视频不存在或已被删除，无法获取epid"),
+                    -403 => tracing::debug!("无权限访问该视频，无法获取epid"),
+                    62002 => tracing::debug!("稿件不可见，无法获取epid"),
+                    _ => tracing::debug!("其他API错误，无法获取epid"),
+                }
+                
+                return Err(crate::bilibili::BiliError::RequestFailed(code, message.to_string()).into());
+            }
+        }
+
+        // 检查data字段是否存在
+        let data = match json_res.get("data") {
+            Some(data) if !data.is_null() => data,
+            _ => {
+                tracing::debug!("视频详情API返回的data字段为空，无法提取epid");
+                return Ok(None);
+            }
+        };
+
+        // 尝试从返回的JSON中提取epid字段，按优先级尝试不同的位置
+        let epid = data["redirect_url"]
+            .as_str()
+            .and_then(|url| {
+                tracing::debug!("检查redirect_url: {}", url);
+                // 从redirect_url中提取epid，格式通常为：https://www.bilibili.com/bangumi/play/ep123456
+                if url.contains("/bangumi/play/ep") {
+                    if let Some(ep_start) = url.find("/ep") {
+                        let ep_part = &url[ep_start + 3..]; // 跳过"/ep"
+                        // 提取数字部分，支持ep123456?参数的格式
+                        let epid_str: String = ep_part.chars()
+                            .take_while(|c| c.is_ascii_digit())
+                            .collect();
+                        if !epid_str.is_empty() {
+                            tracing::debug!("从redirect_url提取到epid: {}", epid_str);
+                            return Some(epid_str);
+                        }
+                    }
+                }
+                None
+            })
+            .or_else(|| {
+                // 尝试从season.episodes数组中获取epid
+                data["season"]["episodes"]
+                    .as_array()
+                    .and_then(|episodes| {
+                        tracing::debug!("检查season.episodes数组，共{}个分集", episodes.len());
+                        episodes.first()
+                    })
+                    .and_then(|ep| ep["id"].as_i64())
+                    .map(|id| {
+                        let epid_str = id.to_string();
+                        tracing::debug!("从season.episodes数组提取到epid: {}", epid_str);
+                        epid_str
+                    })
+            })
+            .or_else(|| {
+                // 检查是否有直接的epid字段
+                data["epid"]
+                    .as_i64()
+                    .or_else(|| data["episode_id"].as_i64())
+                    .map(|id| {
+                        let epid_str = id.to_string();
+                        tracing::debug!("从直接字段提取到epid: {}", epid_str);
+                        epid_str
+                    })
+            })
+            .or_else(|| {
+                // 尝试从ugc_season.episodes中获取（用户投稿番剧）
+                data["ugc_season"]["episodes"]
+                    .as_array()
+                    .and_then(|episodes| {
+                        tracing::debug!("检查ugc_season.episodes数组，共{}个分集", episodes.len());
+                        episodes.first()
+                    })
+                    .and_then(|ep| ep["id"].as_i64())
+                    .map(|id| {
+                        let epid_str = id.to_string();
+                        tracing::debug!("从ugc_season.episodes数组提取到epid: {}", epid_str);
+                        epid_str
+                    })
+            });
+
+        if let Some(ref epid_value) = epid {
+            tracing::info!("✓ 成功从视频详情API获取到epid: {}", epid_value);
+        } else {
+            tracing::debug!("视频详情API中未找到epid信息，可能不是番剧视频");
+            tracing::debug!("已检查的字段: redirect_url, season.episodes, epid, episode_id, ugc_season.episodes");
+        }
+
+        Ok(epid)
+    }
+
     #[allow(unused)]
     pub async fn get_pages(&self) -> Result<Vec<PageInfo>> {
         let mut res = self
@@ -310,6 +449,89 @@ impl<'a> Video<'a> {
 
         // 理论上不会到达这里
         Err(anyhow!("无法获取任何质量的视频流"))
+    }
+
+    /// 带API降级的视频流获取（普通视频->番剧API）
+    /// 当普通视频API返回 -404 "啥都木有" 时，自动尝试番剧API
+    /// 如果缺少ep_id，会先尝试从视频详情API获取epid信息
+    pub async fn get_page_analyzer_with_api_fallback(&self, page: &PageInfo, ep_id: Option<&str>) -> Result<PageAnalyzer> {
+        tracing::debug!("开始API降级获取视频流，BVID: {}, CID: {}", self.bvid, page.cid);
+
+        // 首先尝试普通视频API
+        match self.get_page_analyzer_with_fallback(page).await {
+            Ok(analyzer) => {
+                tracing::debug!("✓ 普通视频API成功获取播放地址");
+                return Ok(analyzer);
+            }
+            Err(e) => {
+                // 检查错误类型，判断是否需要降级到番剧API
+                let should_fallback_to_bangumi = if let Some(bili_err) = e.downcast_ref::<crate::bilibili::BiliError>() {
+                    match bili_err {
+                        crate::bilibili::BiliError::RequestFailed(-404, msg) => {
+                            // -404 错误，检查消息是否包含"啥都木有"或其他表示内容不存在的关键词
+                            let msg_lower = msg.to_lowercase();
+                            msg_lower.contains("啥都木有") 
+                                || msg_lower.contains("nothing found") 
+                                || msg_lower.contains("not found")
+                                || msg_lower.contains("无内容")
+                                || msg_lower.contains("视频不存在")
+                        }
+                        _ => false
+                    }
+                } else {
+                    false
+                };
+
+                if should_fallback_to_bangumi {
+                    tracing::info!("普通视频API返回-404错误，尝试降级到番剧API: {}", e);
+                    
+                    // 获取epid：优先使用传入的ep_id，如果没有则从视频详情API获取
+                    let epid_to_use = if let Some(provided_epid) = ep_id {
+                        tracing::debug!("使用提供的ep_id: {}", provided_epid);
+                        Some(provided_epid.to_string())
+                    } else {
+                        tracing::info!("缺少ep_id，尝试从视频详情API获取epid信息");
+                        match self.get_video_detail_for_epid().await {
+                            Ok(Some(epid)) => {
+                                tracing::info!("✓ 成功从视频详情API获取到epid: {}", epid);
+                                Some(epid)
+                            }
+                            Ok(None) => {
+                                tracing::warn!("视频详情API中未找到epid信息，无法降级到番剧API");
+                                None
+                            }
+                            Err(detail_err) => {
+                                tracing::warn!("调用视频详情API失败: {}", detail_err);
+                                None
+                            }
+                        }
+                    };
+
+                    // 如果有epid，尝试番剧API降级
+                    if let Some(epid) = epid_to_use {
+                        tracing::info!("使用epid {} 尝试番剧API降级", epid);
+                        match self.get_bangumi_page_analyzer_with_fallback(page, &epid).await {
+                            Ok(analyzer) => {
+                                tracing::info!("✓ 番剧API降级成功，获取到播放地址");
+                                return Ok(analyzer);
+                            }
+                            Err(bangumi_err) => {
+                                tracing::warn!("× 番剧API降级也失败: {}", bangumi_err);
+                                // 返回原始的普通视频API错误，因为这更能反映真实情况
+                                return Err(e);
+                            }
+                        }
+                    } else {
+                        tracing::warn!("无法获取epid，无法降级到番剧API");
+                        return Err(e);
+                    }
+                } else {
+                    // 不是-404错误或不包含特定消息，直接返回原错误
+                    tracing::debug!("普通视频API失败，但不符合降级条件: {}", e);
+                    return Err(e);
+                }
+            }
+        }
     }
 
     /// 使用指定质量获取页面分析器

@@ -2647,21 +2647,28 @@ pub async fn fetch_page_video(
 
     let bili_video = Video::new(bili_client, video_model.bvid.clone());
 
-    // 获取视频流信息 - 使用带回退机制的API调用
+    // 获取视频流信息 - 使用带API降级机制的调用
     let mut streams = tokio::select! {
         biased;
         _ = token.cancelled() => return Err(anyhow!("Download cancelled")),
         res = async {
             // 检查是否为番剧视频
             if video_model.source_type == Some(1) && video_model.ep_id.is_some() {
-                // 使用番剧专用API的回退机制
+                // 番剧视频使用番剧专用API的回退机制
                 let ep_id = video_model.ep_id.as_ref().unwrap();
                 debug!("使用带质量回退的番剧API获取播放地址: ep_id={}", ep_id);
                 bili_video.get_bangumi_page_analyzer_with_fallback(page_info, ep_id).await
             } else {
-                // 使用普通视频API的回退机制
-                debug!("使用带质量回退的视频API获取播放地址");
-                bili_video.get_page_analyzer_with_fallback(page_info).await
+                // 普通视频使用API降级机制（普通视频API -> 番剧API）
+                debug!("使用API降级机制获取播放地址（普通视频API -> 番剧API）");
+                // 传递ep_id以便在需要时降级到番剧API，如果没有ep_id则会自动从视频详情API获取
+                let ep_id = video_model.ep_id.as_ref().map(|s| s.as_str());
+                if ep_id.is_some() {
+                    debug!("视频已有ep_id: {:?}，可直接用于API降级", ep_id);
+                } else {
+                    debug!("视频缺少ep_id，如遇-404错误将尝试从视频详情API获取epid");
+                }
+                bili_video.get_page_analyzer_with_api_fallback(page_info, ep_id).await
             }
         } => res
     }?;
