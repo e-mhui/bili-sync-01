@@ -91,7 +91,7 @@ pub struct ClassifiedError {
     pub status_code: Option<u16>,
     pub should_retry: bool,
     pub should_ignore: bool,
-    /// 是否为87007充电专享视频错误，需要自动删除
+    /// 是否需要自动删除（现在主要由upower字段检测处理）
     pub should_auto_delete: bool,
 }
 
@@ -315,35 +315,26 @@ impl ErrorClassifier {
             }
             crate::bilibili::BiliError::RequestFailed(code, msg) => {
                 let error_type = match *code {
-                    87007 | 87008 => ErrorType::Permission, // 充电专享视频，归类为权限错误
                     -352 | -412 => ErrorType::RiskControl,  // 特定风控错误码
                     -401 | -403 => ErrorType::Authentication,
                     -404 => ErrorType::NotFound,
                     -429 => ErrorType::RateLimit,
                     -500..=-400 => ErrorType::ServerError,
+                    // 充电专享视频错误现在通过upower字段在获取详情时处理，不需要特殊分类
                     _ => ErrorType::ClientError,
                 };
 
                 let should_retry = match *code {
-                    87007 | 87008 => false,   // 充电专享视频不需要重试
                     -352 | -412 => false,     // 风控不重试
                     -500..=-400 | -1 => true, // 服务器错误或网络错误可重试
-                    _ => false,
+                    _ => false, // 充电专享视频等其他错误不重试
                 };
 
-                let should_ignore = match *code {
-                    87007 | 87008 => true, // 充电专享视频应该被忽略
-                    _ => false,
-                };
-
-                let message = match *code {
-                    87007 | 87008 => "充电专享视频，需要为UP主充电才能观看".to_string(),
-                    _ => format!("B站API错误: {}", msg),
-                };
+                let message = format!("B站API错误: {}", msg);
 
                 ClassifiedError::new(error_type, message)
-                    .with_retry_policy(should_retry, should_ignore)
-                    .with_auto_delete(matches!(*code, 87007 | 87008)) // 87007/87008需要自动删除
+                    .with_retry_policy(should_retry, false) // 简化逻辑，移除充电视频特殊处理
+                    .with_auto_delete(false) // 充电视频现在由upower字段在获取详情时处理
             }
         }
     }
