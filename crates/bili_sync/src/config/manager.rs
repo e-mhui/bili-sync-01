@@ -245,6 +245,17 @@ impl ConfigManager {
         }
 
         info!("配置已保存到数据库");
+        
+        // 如果使用了内存优化连接，立即同步到主数据库
+        if optimized_conn.is_some() && crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
+            info!("内存模式下，立即同步配置更新到主数据库");
+            if let Err(e) = crate::utils::global_memory_optimizer::sync_to_main_db().await {
+                warn!("配置更新后同步到主数据库失败: {}", e);
+            } else {
+                info!("配置更新已同步到主数据库");
+            }
+        }
+        
         Ok(())
     }
 
@@ -308,6 +319,17 @@ impl ConfigManager {
         }
 
         debug!("配置项 {} 已更新", key);
+        
+        // 如果使用了内存优化连接，立即同步到主数据库
+        if optimized_conn.is_some() && crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
+            debug!("内存模式下，立即同步配置项更新到主数据库");
+            if let Err(e) = crate::utils::global_memory_optimizer::sync_to_main_db().await {
+                warn!("配置项更新后同步到主数据库失败: {}", e);
+            } else {
+                debug!("配置项更新已同步到主数据库");
+            }
+        }
+        
         Ok(())
     }
 
