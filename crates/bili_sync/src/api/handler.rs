@@ -2544,25 +2544,47 @@ pub async fn delete_video_source_internal(
                 .await?
                 .ok_or_else(|| anyhow!("未找到指定的合集"))?;
 
-            // 删除相关的视频和页面数据
+            // 获取属于该合集的视频
             let videos = video::Entity::find()
                 .filter(video::Column::CollectionId.eq(id))
                 .all(&txn)
                 .await?;
 
-            for video in &videos {
-                // 删除页面数据
+            // 清空合集关联，而不是直接删除视频
+            video::Entity::update_many()
+                .col_expr(video::Column::CollectionId, sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)))
+                .filter(video::Column::CollectionId.eq(id))
+                .exec(&txn)
+                .await?;
+
+            // 找出清空关联后变成孤立的视频（所有源ID都为null）
+            let orphaned_videos = video::Entity::find()
+                .filter(
+                    video::Column::CollectionId.is_null()
+                    .and(video::Column::FavoriteId.is_null())
+                    .and(video::Column::WatchLaterId.is_null())
+                    .and(video::Column::SubmissionId.is_null())
+                    .and(video::Column::SourceId.is_null())
+                )
+                .filter(video::Column::Id.is_in(videos.iter().map(|v| v.id)))
+                .all(&txn)
+                .await?;
+
+            // 删除孤立视频的页面数据
+            for video in &orphaned_videos {
                 page::Entity::delete_many()
                     .filter(page::Column::VideoId.eq(video.id))
                     .exec(&txn)
                     .await?;
             }
 
-            // 删除视频数据
-            video::Entity::delete_many()
-                .filter(video::Column::CollectionId.eq(id))
-                .exec(&txn)
-                .await?;
+            // 删除孤立视频记录
+            if !orphaned_videos.is_empty() {
+                video::Entity::delete_many()
+                    .filter(video::Column::Id.is_in(orphaned_videos.iter().map(|v| v.id)))
+                    .exec(&txn)
+                    .await?;
+            }
 
             // 如果需要删除本地文件
             if delete_local_files {
@@ -2640,25 +2662,47 @@ pub async fn delete_video_source_internal(
                 .await?
                 .ok_or_else(|| anyhow!("未找到指定的收藏夹"))?;
 
-            // 删除相关的视频和页面数据
+            // 获取属于该收藏夹的视频
             let videos = video::Entity::find()
                 .filter(video::Column::FavoriteId.eq(id))
                 .all(&txn)
                 .await?;
 
-            for video in &videos {
-                // 删除页面数据
+            // 清空收藏夹关联，而不是直接删除视频
+            video::Entity::update_many()
+                .col_expr(video::Column::FavoriteId, sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)))
+                .filter(video::Column::FavoriteId.eq(id))
+                .exec(&txn)
+                .await?;
+
+            // 找出清空关联后变成孤立的视频（所有源ID都为null）
+            let orphaned_videos = video::Entity::find()
+                .filter(
+                    video::Column::CollectionId.is_null()
+                    .and(video::Column::FavoriteId.is_null())
+                    .and(video::Column::WatchLaterId.is_null())
+                    .and(video::Column::SubmissionId.is_null())
+                    .and(video::Column::SourceId.is_null())
+                )
+                .filter(video::Column::Id.is_in(videos.iter().map(|v| v.id)))
+                .all(&txn)
+                .await?;
+
+            // 删除孤立视频的页面数据
+            for video in &orphaned_videos {
                 page::Entity::delete_many()
                     .filter(page::Column::VideoId.eq(video.id))
                     .exec(&txn)
                     .await?;
             }
 
-            // 删除视频数据
-            video::Entity::delete_many()
-                .filter(video::Column::FavoriteId.eq(id))
-                .exec(&txn)
-                .await?;
+            // 删除孤立视频记录
+            if !orphaned_videos.is_empty() {
+                video::Entity::delete_many()
+                    .filter(video::Column::Id.is_in(orphaned_videos.iter().map(|v| v.id)))
+                    .exec(&txn)
+                    .await?;
+            }
 
             // 如果需要删除本地文件
             if delete_local_files {
@@ -2735,25 +2779,47 @@ pub async fn delete_video_source_internal(
                 .await?
                 .ok_or_else(|| anyhow!("未找到指定的UP主投稿"))?;
 
-            // 删除相关的视频和页面数据
+            // 获取属于该UP主投稿的视频
             let videos = video::Entity::find()
                 .filter(video::Column::SubmissionId.eq(id))
                 .all(&txn)
                 .await?;
 
-            for video in &videos {
-                // 删除页面数据
+            // 清空UP主投稿关联，而不是直接删除视频
+            video::Entity::update_many()
+                .col_expr(video::Column::SubmissionId, sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)))
+                .filter(video::Column::SubmissionId.eq(id))
+                .exec(&txn)
+                .await?;
+
+            // 找出清空关联后变成孤立的视频（所有源ID都为null）
+            let orphaned_videos = video::Entity::find()
+                .filter(
+                    video::Column::CollectionId.is_null()
+                    .and(video::Column::FavoriteId.is_null())
+                    .and(video::Column::WatchLaterId.is_null())
+                    .and(video::Column::SubmissionId.is_null())
+                    .and(video::Column::SourceId.is_null())
+                )
+                .filter(video::Column::Id.is_in(videos.iter().map(|v| v.id)))
+                .all(&txn)
+                .await?;
+
+            // 删除孤立视频的页面数据
+            for video in &orphaned_videos {
                 page::Entity::delete_many()
                     .filter(page::Column::VideoId.eq(video.id))
                     .exec(&txn)
                     .await?;
             }
 
-            // 删除视频数据
-            video::Entity::delete_many()
-                .filter(video::Column::SubmissionId.eq(id))
-                .exec(&txn)
-                .await?;
+            // 删除孤立视频记录
+            if !orphaned_videos.is_empty() {
+                video::Entity::delete_many()
+                    .filter(video::Column::Id.is_in(orphaned_videos.iter().map(|v| v.id)))
+                    .exec(&txn)
+                    .await?;
+            }
 
             // 如果需要删除本地文件
             if delete_local_files {
@@ -2830,25 +2896,47 @@ pub async fn delete_video_source_internal(
                 .await?
                 .ok_or_else(|| anyhow!("未找到指定的稍后再看"))?;
 
-            // 删除相关的视频和页面数据
+            // 获取属于稍后再看的视频
             let videos = video::Entity::find()
                 .filter(video::Column::WatchLaterId.eq(id))
                 .all(&txn)
                 .await?;
 
-            for video in &videos {
-                // 删除页面数据
+            // 清空稍后再看关联，而不是直接删除视频
+            video::Entity::update_many()
+                .col_expr(video::Column::WatchLaterId, sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)))
+                .filter(video::Column::WatchLaterId.eq(id))
+                .exec(&txn)
+                .await?;
+
+            // 找出清空关联后变成孤立的视频（所有源ID都为null）
+            let orphaned_videos = video::Entity::find()
+                .filter(
+                    video::Column::CollectionId.is_null()
+                    .and(video::Column::FavoriteId.is_null())
+                    .and(video::Column::WatchLaterId.is_null())
+                    .and(video::Column::SubmissionId.is_null())
+                    .and(video::Column::SourceId.is_null())
+                )
+                .filter(video::Column::Id.is_in(videos.iter().map(|v| v.id)))
+                .all(&txn)
+                .await?;
+
+            // 删除孤立视频的页面数据
+            for video in &orphaned_videos {
                 page::Entity::delete_many()
                     .filter(page::Column::VideoId.eq(video.id))
                     .exec(&txn)
                     .await?;
             }
 
-            // 删除视频数据
-            video::Entity::delete_many()
-                .filter(video::Column::WatchLaterId.eq(id))
-                .exec(&txn)
-                .await?;
+            // 删除孤立视频记录
+            if !orphaned_videos.is_empty() {
+                video::Entity::delete_many()
+                    .filter(video::Column::Id.is_in(orphaned_videos.iter().map(|v| v.id)))
+                    .exec(&txn)
+                    .await?;
+            }
 
             // 如果需要删除本地文件
             if delete_local_files {
@@ -2924,27 +3012,50 @@ pub async fn delete_video_source_internal(
                 .await?
                 .ok_or_else(|| anyhow!("未找到指定的番剧"))?;
 
-            // 删除相关的视频和页面数据
+            // 获取属于该番剧的视频
             let videos = video::Entity::find()
                 .filter(video::Column::SourceId.eq(id))
                 .filter(video::Column::SourceType.eq(1)) // 番剧类型
                 .all(&txn)
                 .await?;
 
-            for video in &videos {
-                // 删除页面数据
+            // 清空番剧关联，而不是直接删除视频
+            video::Entity::update_many()
+                .col_expr(video::Column::SourceId, sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)))
+                .col_expr(video::Column::SourceType, sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)))
+                .filter(video::Column::SourceId.eq(id))
+                .filter(video::Column::SourceType.eq(1))
+                .exec(&txn)
+                .await?;
+
+            // 找出清空关联后变成孤立的视频（所有源ID都为null）
+            let orphaned_videos = video::Entity::find()
+                .filter(
+                    video::Column::CollectionId.is_null()
+                    .and(video::Column::FavoriteId.is_null())
+                    .and(video::Column::WatchLaterId.is_null())
+                    .and(video::Column::SubmissionId.is_null())
+                    .and(video::Column::SourceId.is_null())
+                )
+                .filter(video::Column::Id.is_in(videos.iter().map(|v| v.id)))
+                .all(&txn)
+                .await?;
+
+            // 删除孤立视频的页面数据
+            for video in &orphaned_videos {
                 page::Entity::delete_many()
                     .filter(page::Column::VideoId.eq(video.id))
                     .exec(&txn)
                     .await?;
             }
 
-            // 删除视频数据
-            video::Entity::delete_many()
-                .filter(video::Column::SourceId.eq(id))
-                .filter(video::Column::SourceType.eq(1))
-                .exec(&txn)
-                .await?;
+            // 删除孤立视频记录
+            if !orphaned_videos.is_empty() {
+                video::Entity::delete_many()
+                    .filter(video::Column::Id.is_in(orphaned_videos.iter().map(|v| v.id)))
+                    .exec(&txn)
+                    .await?;
+            }
 
             // 如果需要删除本地文件
             if delete_local_files {
