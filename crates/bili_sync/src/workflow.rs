@@ -626,7 +626,7 @@ pub async fn fetch_video_details(
                 // 检查是否在内存模式，如果是则使用内存数据库连接
                 let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
                 let db_conn = if let Some(ref conn) = optimized_conn {
-                    info!("使用内存数据库连接处理番剧视频");
+                    debug!("使用内存数据库连接处理番剧视频");
                     conn.as_ref()
                 } else {
                     connection
@@ -887,7 +887,7 @@ pub async fn fetch_video_details(
                             // 检查是否在内存模式，如果是则使用内存数据库连接
                             let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
                             let db_conn = if let Some(ref conn) = optimized_conn {
-                                info!("使用内存数据库连接处理普通视频");
+                                debug!("使用内存数据库连接处理普通视频");
                                 conn.as_ref()
                             } else {
                                 connection
@@ -3964,7 +3964,7 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
     // 检查是否在内存模式，如果是则使用内存数据库连接
     let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
     let db_conn = if let Some(ref conn) = optimized_conn {
-        info!("使用内存数据库连接重置风控失败任务");
+        debug!("使用内存数据库连接重置风控失败任务");
         conn.as_ref()
     } else {
         connection
