@@ -2288,7 +2288,15 @@ pub async fn download_page(
             match get_collection_video_episode_number(connection, collection_source.id, &video_model.bvid).await {
                 Ok(episode_number) => {
                     let clean_name = crate::utils::filenamify::filenamify(&video_model.name);
-                    format!("S01E{:02} - {}", episode_number, clean_name)
+                    // 检查是否为多P视频
+                    let is_single_page = video_model.single_page.unwrap_or(true);
+                    if !is_single_page {
+                        // 多P视频：在集数后添加分P标识
+                        format!("S01E{:02}P{:02} - {}", episode_number, page_model.pid, clean_name)
+                    } else {
+                        // 单P视频：保持原有格式
+                        format!("S01E{:02} - {}", episode_number, clean_name)
+                    }
                 }
                 Err(_) => {
                     // 如果获取序号失败，使用默认命名
