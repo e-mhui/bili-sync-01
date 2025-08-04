@@ -2307,11 +2307,27 @@ pub async fn download_page(
                 }
             }
         } else {
-            // 分离模式：使用原有逻辑
-            crate::config::with_config(|bundle| {
-                bundle.render_page_template(&page_format_args(video_model, &page_model))
-            })
-            .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?
+            // 分离模式：检查是否为多P视频
+            let is_single_page = video_model.single_page.unwrap_or(true);
+            if !is_single_page {
+                // 多P视频：使用multi_page_name模板
+                let page_args = page_format_args(video_model, &page_model);
+                match crate::config::with_config(|bundle| bundle.render_multi_page_template(&page_args)) {
+                    Ok(rendered) => rendered,
+                    Err(_) => {
+                        // 如果渲染失败，使用默认格式
+                        let season_number = 1;
+                        let episode_number = page_model.pid;
+                        format!("S{:02}E{:02}-{:02}", season_number, episode_number, episode_number)
+                    }
+                }
+            } else {
+                // 单P视频：使用page_name模板
+                crate::config::with_config(|bundle| {
+                    bundle.render_page_template(&page_format_args(video_model, &page_model))
+                })
+                .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?
+            }
         }
     } else if is_bangumi {
         // 番剧使用专用的模板方法
