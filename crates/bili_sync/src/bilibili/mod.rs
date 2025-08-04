@@ -148,6 +148,11 @@ pub enum VideoInfo {
         ctime: DateTime<Utc>,
         #[serde(rename = "pubdate", with = "ts_seconds")]
         pubtime: DateTime<Utc>,
+        /// 视频标题
+        title: String,
+        /// UP主信息，从arc.author中提取
+        #[serde(rename = "arc")]
+        arc: Option<serde_json::Value>,
     },
     // 从用户投稿接口获取的视频信息
     Submission {

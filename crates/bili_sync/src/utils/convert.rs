@@ -19,14 +19,34 @@ impl VideoInfo {
                 cover,
                 ctime,
                 pubtime,
-            } => bili_sync_entity::video::ActiveModel {
-                bvid: Set(bvid),
-                cover: Set(cover),
-                ctime: Set(ctime.naive_utc()),
-                pubtime: Set(pubtime.naive_utc()),
-                category: Set(2), // 视频合集里的内容类型肯定是视频
-                valid: Set(true),
-                ..default
+                title,
+                arc,
+            } => {
+                // 从arc中提取upper信息
+                let (upper_id, upper_name, upper_face) = if let Some(arc_val) = arc {
+                    let author = &arc_val["author"];
+                    (
+                        author["mid"].as_i64(),
+                        author["name"].as_str().map(|s| s.to_string()),
+                        author["face"].as_str().map(|s| s.to_string()),
+                    )
+                } else {
+                    (None, None, None)
+                };
+                
+                bili_sync_entity::video::ActiveModel {
+                    bvid: Set(bvid),
+                    name: Set(title),
+                    cover: Set(cover),
+                    ctime: Set(ctime.naive_utc()),
+                    pubtime: Set(pubtime.naive_utc()),
+                    category: Set(2), // 视频合集里的内容类型肯定是视频
+                    valid: Set(true),
+                    upper_id: Set(upper_id.unwrap_or_default()),
+                    upper_name: Set(upper_name.unwrap_or_default()),
+                    upper_face: Set(upper_face.unwrap_or_default()),
+                    ..default
+                }
             },
             VideoInfo::Favorite {
                 title,

@@ -395,9 +395,13 @@ pub async fn refresh_video_source<'a>(
             let (title, bvid, upper_name, episode_num) = match video_info {
                 VideoInfo::Detail { title, bvid, upper, .. } => (title.clone(), bvid.clone(), upper.name.clone(), None),
                 VideoInfo::Favorite { title, bvid, upper, .. } => (title.clone(), bvid.clone(), upper.name.clone(), None),
-                VideoInfo::Collection { bvid, .. } => {
-                    // Collection 没有 title 和 upper，使用默认值
-                    ("未知".to_string(), bvid.clone(), "未知".to_string(), None)
+                VideoInfo::Collection { title, bvid, arc, .. } => {
+                    // 从arc字段中提取upper信息
+                    let upper_name = arc.as_ref()
+                        .and_then(|a| a["author"]["name"].as_str())
+                        .unwrap_or("未知")
+                        .to_string();
+                    (title.clone(), bvid.clone(), upper_name, None)
                 }
                 VideoInfo::WatchLater { title, bvid, upper, .. } => (title.clone(), bvid.clone(), upper.name.clone(), None),
                 VideoInfo::Submission { title, bvid, .. } => {
