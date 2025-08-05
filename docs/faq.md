@@ -69,6 +69,43 @@ A: Web 界面的"日志"页面可以实时查看，或查看 data 目录下的�
 ### Q: 如何重置所有配置？
 A: 删除 data 目录下的 data.sqlite 文件，重启程序。
 
+## 媒体服务器相关
+
+### Q: Jellyfin 中字幕显示为方块怎么办？
+A: 这是 Jellyfin 字幕渲染的常见问题，特别是 ASS 格式的弹幕字幕。解决方案：
+
+1. **检查 Jellyfin 的字幕渲染设置**
+   - 在 Jellyfin 管理面板中：控制台 → 播放 → 字幕
+   - 确保字幕模式设置为"始终烧录"或"自动"
+   - 不要选择"仅限图像格式"
+
+2. **检查转码设置**
+   - 控制台 → 播放 → 转码
+   - 启用"允许字幕提取"
+   - 字幕编码器设置为"自动"或"srt"
+
+3. **强制字幕烧录**
+   - 播放时点击齿轮图标 → 质量
+   - 选择一个需要转码的质量（不是"直接播放"）
+   - 这会强制 Jellyfin 将字幕烧录到视频中
+
+4. **安装服务器字体（Linux）**
+   ```bash
+   # 安装中文字体
+   sudo apt-get install fonts-noto-cjk
+   # 或
+   sudo apt-get install fonts-wqy-microhei fonts-wqy-zenhei
+   # 刷新字体缓存
+   fc-cache -fv
+   ```
+
+5. **客户端解决方案**
+   - 使用 Chrome/Edge 浏览器效果更好
+   - 尝试使用 Jellyfin 客户端而不是 Web 界面
+   - 移动设备使用官方 Jellyfin 应用
+
+注意：如果 Emby 能正常显示同样的字幕文件，说明文件本身没问题，是 Jellyfin 的渲染配置问题。
+
 ## 其他问题
 
 更多问题请访问 [GitHub Issues](https://github.com/qq1582185982/bili-sync-01/issues)
