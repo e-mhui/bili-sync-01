@@ -591,7 +591,7 @@ impl VideoDeleteTaskQueue {
 
 /// 视频软删除内部实现
 async fn delete_video_internal(db: Arc<DatabaseConnection>, video_id: i32) -> Result<(), anyhow::Error> {
-    use bili_sync_entity::video;
+    use bili_sync_entity::{page, video};
     use sea_orm::*;
 
     // 检查是否在内存模式，如果是则使用内存数据库连接
@@ -650,6 +650,15 @@ async fn delete_video_internal(db: Arc<DatabaseConnection>, video_id: i32) -> Re
     } else {
         debug!("未找到需要删除的文件，视频ID: {}", video_id);
     }
+
+    // 在软删除video之前，先删除page表记录
+    page::Entity::delete_many()
+        .filter(page::Column::VideoId.eq(video_id))
+        .exec(db_conn)
+        .await
+        .map_err(|e| anyhow::anyhow!("删除page记录失败: {}", e))?;
+    
+    info!("已删除video_id={}的所有page记录", video_id);
 
     // 执行软删除：将deleted字段设为1
     video::Entity::update_many()
