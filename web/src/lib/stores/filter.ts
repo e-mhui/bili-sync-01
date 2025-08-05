@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import type { SortBy, SortOrder } from '$lib/types';
 
 export interface AppState {
 	query: string;
@@ -8,17 +9,21 @@ export interface AppState {
 		id: string;
 	} | null;
 	showFailedOnly: boolean;
+	sortBy: SortBy;
+	sortOrder: SortOrder;
 }
 
 export const appStateStore = writable<AppState>({
 	query: '',
 	currentPage: 0,
 	videoSource: null,
-	showFailedOnly: false
+	showFailedOnly: false,
+	sortBy: 'id',
+	sortOrder: 'desc'
 });
 
 export const ToQuery = (state: AppState): string => {
-	const { query, videoSource, showFailedOnly } = state;
+	const { query, videoSource, showFailedOnly, sortBy, sortOrder } = state;
 	const params = new URLSearchParams();
 	if (state.currentPage > 0) {
 		params.set('page', String(state.currentPage));
@@ -31,6 +36,11 @@ export const ToQuery = (state: AppState): string => {
 	}
 	if (showFailedOnly) {
 		params.set('show_failed_only', 'true');
+	}
+	// 只有非默认排序时才添加到URL
+	if (sortBy !== 'id' || sortOrder !== 'desc') {
+		params.set('sort_by', sortBy);
+		params.set('sort_order', sortOrder);
 	}
 	const queryString = params.toString();
 	return queryString ? `${queryString}` : '';
@@ -82,13 +92,17 @@ export const setAll = (
 	query: string,
 	currentPage: number,
 	videoSource: { type: string; id: string } | null,
-	showFailedOnly: boolean = false
+	showFailedOnly: boolean = false,
+	sortBy: SortBy = 'id',
+	sortOrder: SortOrder = 'desc'
 ) => {
 	appStateStore.set({
 		query,
 		currentPage,
 		videoSource,
-		showFailedOnly
+		showFailedOnly,
+		sortBy,
+		sortOrder
 	});
 };
 
@@ -97,8 +111,18 @@ export const clearAll = () => {
 		query: '',
 		currentPage: 0,
 		videoSource: null,
-		showFailedOnly: false
+		showFailedOnly: false,
+		sortBy: 'id',
+		sortOrder: 'desc'
 	});
+};
+
+export const setSort = (sortBy: SortBy, sortOrder: SortOrder) => {
+	appStateStore.update((state) => ({
+		...state,
+		sortBy,
+		sortOrder
+	}));
 };
 
 // 保留旧的接口以兼容现有代码

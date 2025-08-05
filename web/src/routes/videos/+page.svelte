@@ -23,8 +23,10 @@
 		setCurrentPage,
 		setQuery,
 		setShowFailedOnly,
+		setSort,
 		ToQuery
 	} from '$lib/stores/filter';
+	import type { SortBy, SortOrder } from '$lib/types';
 
 	const pageSize = 20;
 
@@ -51,6 +53,8 @@
 	let selectedSourceType = '';
 	let selectedSourceId = '';
 	let showFailedOnly = false;
+	let currentSortBy: SortBy = 'id';
+	let currentSortOrder: SortOrder = 'desc';
 
 	function getApiParams(searchParams: URLSearchParams) {
 		let videoSource = null;
@@ -64,7 +68,9 @@
 			query: searchParams.get('query') || '',
 			videoSource,
 			pageNum: parseInt(searchParams.get('page') || '0'),
-			showFailedOnly: searchParams.get('show_failed_only') === 'true'
+			showFailedOnly: searchParams.get('show_failed_only') === 'true',
+			sortBy: (searchParams.get('sort_by') as SortBy) || 'id',
+			sortOrder: (searchParams.get('sort_order') as SortOrder) || 'desc'
 		};
 	}
 
@@ -72,13 +78,17 @@
 		query: string,
 		pageNum: number = 0,
 		filter?: { type: string; id: string } | null,
-		showFailedOnly: boolean = false
+		showFailedOnly: boolean = false,
+		sortBy: SortBy = 'id',
+		sortOrder: SortOrder = 'desc'
 	) {
 		loading = true;
 		try {
 			const params: Record<string, string | number | boolean> = {
 				page: pageNum,
-				page_size: pageSize
+				page_size: pageSize,
+				sort_by: sortBy,
+				sort_order: sortOrder
 			};
 			if (query) {
 				params.query = query;
@@ -117,8 +127,8 @@
 	}
 
 	async function handleSearchParamsChange(searchParams: URLSearchParams) {
-		const { query, videoSource, pageNum, showFailedOnly: showFailedOnlyParam } = getApiParams(searchParams);
-		setAll(query, pageNum, videoSource, showFailedOnlyParam);
+		const { query, videoSource, pageNum, showFailedOnly: showFailedOnlyParam, sortBy, sortOrder } = getApiParams(searchParams);
+		setAll(query, pageNum, videoSource, showFailedOnlyParam, sortBy, sortOrder);
 
 		// 同步筛选状态
 		if (videoSource) {
@@ -129,8 +139,10 @@
 			selectedSourceId = '';
 		}
 		showFailedOnly = showFailedOnlyParam;
+		currentSortBy = sortBy;
+		currentSortOrder = sortOrder;
 
-		loadVideos(query, pageNum, videoSource, showFailedOnlyParam);
+		loadVideos(query, pageNum, videoSource, showFailedOnlyParam, sortBy, sortOrder);
 	}
 
 	async function handleResetVideo(video: VideoInfo, forceReset: boolean) {
@@ -141,8 +153,8 @@
 				toast.success('重置成功', {
 					description: `视频「${video.name}」已重置`
 				});
-				const { query, currentPage, videoSource, showFailedOnly } = $appStateStore;
-				await loadVideos(query, currentPage, videoSource, showFailedOnly);
+				const { query, currentPage, videoSource, showFailedOnly, sortBy, sortOrder } = $appStateStore;
+				await loadVideos(query, currentPage, videoSource, showFailedOnly, sortBy, sortOrder);
 			} else {
 				toast.info('重置无效', {
 					description: `视频「${video.name}」没有失败的状态，无需重置`
@@ -218,8 +230,8 @@
 				});
 				// 延迟重新加载视频列表，避免与toast提示冲突
 				setTimeout(async () => {
-					const { query, currentPage, videoSource: currentVideoSource, showFailedOnly } = $appStateStore;
-					await loadVideos(query, currentPage, currentVideoSource, showFailedOnly);
+					const { query, currentPage, videoSource: currentVideoSource, showFailedOnly, sortBy, sortOrder } = $appStateStore;
+					await loadVideos(query, currentPage, currentVideoSource, showFailedOnly, sortBy, sortOrder);
 				}, 100);
 			} else {
 				toast.info('没有需要重置的视频');
@@ -238,7 +250,7 @@
 	function handleSourceFilter(sourceType: string, sourceId: string) {
 		selectedSourceType = sourceType;
 		selectedSourceId = sourceId;
-		setAll('', 0, { type: sourceType, id: sourceId }, showFailedOnly);
+		setAll('', 0, { type: sourceType, id: sourceId }, showFailedOnly, currentSortBy, currentSortOrder);
 		goto(`/videos?${ToQuery($appStateStore)}`);
 	}
 
@@ -246,8 +258,18 @@
 		selectedSourceType = '';
 		selectedSourceId = '';
 		showFailedOnly = false;
-		setAll('', 0, null, false);
+		currentSortBy = 'id';
+		currentSortOrder = 'desc';
+		setAll('', 0, null, false, 'id', 'desc');
 		goto('/videos');
+	}
+	
+	function handleSortChange(sortBy: SortBy, sortOrder: SortOrder) {
+		currentSortBy = sortBy;
+		currentSortOrder = sortOrder;
+		setSort(sortBy, sortOrder);
+		resetCurrentPage();
+		goto(`/videos?${ToQuery($appStateStore)}`);
 	}
 
 	// 处理重置任务选择
@@ -306,6 +328,27 @@
 		</div>
 
 		<div class="flex items-center gap-2">
+			<!-- 排序下拉框 -->
+			<div class="flex items-center gap-2">
+				<select 
+					class="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+					value="{currentSortBy}_{currentSortOrder}"
+					onchange={(e) => {
+						const [sortBy, sortOrder] = e.currentTarget.value.split('_') as [SortBy, SortOrder];
+						handleSortChange(sortBy, sortOrder);
+					}}
+				>
+					<option value="id_desc">最新添加</option>
+					<option value="id_asc">最早添加</option>
+					<option value="name_asc">名称 (A-Z)</option>
+					<option value="name_desc">名称 (Z-A)</option>
+					<option value="upper_name_asc">UP主 (A-Z)</option>
+					<option value="upper_name_desc">UP主 (Z-A)</option>
+					<option value="created_at_desc">创建时间 (最新)</option>
+					<option value="created_at_asc">创建时间 (最早)</option>
+				</select>
+			</div>
+			
 			<!-- 筛选按钮 -->
 			<Button
 				variant={showFilters ? 'default' : 'outline'}

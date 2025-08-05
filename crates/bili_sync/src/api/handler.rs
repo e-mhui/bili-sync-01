@@ -478,6 +478,46 @@ pub async fn get_videos(
     } else {
         (1, 10)
     };
+    
+    // 处理排序参数
+    let sort_by = params.sort_by.as_deref().unwrap_or("id");
+    let sort_order = params.sort_order.as_deref().unwrap_or("desc");
+    
+    // 应用排序
+    query = match sort_by {
+        "name" => {
+            if sort_order == "asc" {
+                query.order_by_asc(video::Column::Name)
+            } else {
+                query.order_by_desc(video::Column::Name)
+            }
+        }
+        "upper_name" => {
+            if sort_order == "asc" {
+                query.order_by_asc(video::Column::UpperName)
+            } else {
+                query.order_by_desc(video::Column::UpperName)
+            }
+        }
+        "created_at" | "updated_at" => {
+            // 视频表只有created_at字段，没有updated_at
+            // 所以updated_at也使用created_at排序
+            if sort_order == "asc" {
+                query.order_by_asc(video::Column::CreatedAt)
+            } else {
+                query.order_by_desc(video::Column::CreatedAt)
+            }
+        }
+        _ => {
+            // 默认按ID排序
+            if sort_order == "asc" {
+                query.order_by_asc(video::Column::Id)
+            } else {
+                query.order_by_desc(video::Column::Id)
+            }
+        }
+    };
+    
     Ok(ApiResponse::ok(VideosResponse {
         videos: {
             // 查询包含season_id和source_type字段，用于番剧标题获取
@@ -493,7 +533,6 @@ pub async fn get_videos(
                 Option<i32>,
             );
             let raw_videos: Vec<RawVideoTuple> = query
-                .order_by_desc(video::Column::Id)
                 .select_only()
                 .columns([
                     video::Column::Id,

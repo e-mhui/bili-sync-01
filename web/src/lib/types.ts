@@ -5,6 +5,12 @@ export interface ApiResponse<T> {
 	data: T;
 }
 
+// 排序字段枚举
+export type SortBy = 'id' | 'name' | 'upper_name' | 'created_at';
+
+// 排序顺序枚举
+export type SortOrder = 'asc' | 'desc';
+
 // 请求参数类型
 export interface VideosRequest {
 	collection?: number;
@@ -15,6 +21,8 @@ export interface VideosRequest {
 	page?: number;
 	page_size?: number;
 	show_failed_only?: boolean;
+	sort_by?: SortBy;
+	sort_order?: SortOrder;
 }
 
 // 视频来源类型
