@@ -84,7 +84,6 @@ fn default_time_format() -> String {
     "%Y-%m-%d".to_string()
 }
 
-
 /// 默认的 auth_token 实现，首次使用时返回None，需要用户主动设置
 fn default_auth_token() -> Option<String> {
     // 首次使用时不自动生成token，需要用户通过初始设置界面设置

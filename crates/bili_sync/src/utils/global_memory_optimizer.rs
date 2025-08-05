@@ -1,14 +1,14 @@
 use anyhow::Result;
+use once_cell::sync::Lazy;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn, error};
-use once_cell::sync::Lazy;
+use tracing::{debug, error, info, warn};
 
 use crate::utils::memory_db::MemoryDbOptimizer;
 
 /// 全局内存数据库优化器实例
-pub static GLOBAL_MEMORY_OPTIMIZER: Lazy<Arc<RwLock<GlobalMemoryOptimizer>>> = 
+pub static GLOBAL_MEMORY_OPTIMIZER: Lazy<Arc<RwLock<GlobalMemoryOptimizer>>> =
     Lazy::new(|| Arc::new(RwLock::new(GlobalMemoryOptimizer::new())));
 
 /// 全局内存数据库优化器
@@ -48,7 +48,7 @@ impl GlobalMemoryOptimizer {
         // 检查是否应该使用内存模式
         if optimizer.should_use_memory_mode().await? {
             info!("检测到需要内存优化，在程序启动阶段启用内存数据库优化");
-            
+
             // 启动内存模式
             match optimizer.start_memory_mode().await {
                 Ok(_) => {
@@ -102,13 +102,15 @@ impl GlobalMemoryOptimizer {
         let should_use_memory = config.enable_memory_optimization;
 
         // 检测配置变化或内存数据库是否需要重建
-        let needs_reconfigure = should_use_memory != self.is_memory_mode_enabled || 
-                               (self.is_memory_mode_enabled && self.needs_memory_rebuild().await);
+        let needs_reconfigure = should_use_memory != self.is_memory_mode_enabled
+            || (self.is_memory_mode_enabled && self.needs_memory_rebuild().await);
 
         if needs_reconfigure {
             if should_use_memory != self.is_memory_mode_enabled {
-                info!("检测到内存优化配置变化：{} -> {}", 
-                    self.is_memory_mode_enabled, should_use_memory);
+                info!(
+                    "检测到内存优化配置变化：{} -> {}",
+                    self.is_memory_mode_enabled, should_use_memory
+                );
             } else {
                 info!("检测到内存数据库需要重建");
             }
@@ -122,7 +124,7 @@ impl GlobalMemoryOptimizer {
             }
             return Ok(true); // 发生了切换
         }
-        
+
         Ok(false) // 无需切换
     }
 
@@ -182,7 +184,7 @@ impl GlobalMemoryOptimizer {
                 current_optimizer.stop_memory_mode().await?;
                 info!("内存数据库变更已写回主数据库");
             }
-            
+
             // 创建常规模式的优化器
             let main_db = current_optimizer.get_active_connection();
             self.optimizer = Some(MemoryDbOptimizer::new(main_db));
@@ -227,18 +229,17 @@ impl GlobalMemoryOptimizer {
         if !self.is_initialized || !self.is_memory_mode_enabled {
             return Ok(());
         }
-        
+
         debug!("开始同步全局内存优化器的变更（保持内存模式）");
-        
+
         if let Some(ref optimizer) = self.optimizer {
             // 调用底层的同步方法
             optimizer.sync_to_main_db_keep_memory().await?;
             debug!("全局内存优化器数据同步完成");
         }
-        
+
         Ok(())
     }
-
 }
 
 impl Default for GlobalMemoryOptimizer {
@@ -246,7 +247,6 @@ impl Default for GlobalMemoryOptimizer {
         Self::new()
     }
 }
-
 
 /// 便捷函数：初始化全局内存优化器
 pub async fn initialize_global_memory_optimizer(db: Arc<DatabaseConnection>) -> Result<()> {
@@ -283,4 +283,3 @@ pub async fn sync_to_main_db() -> Result<()> {
     let mut optimizer = GLOBAL_MEMORY_OPTIMIZER.write().await;
     optimizer.sync_changes_without_stopping().await
 }
-

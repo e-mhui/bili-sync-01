@@ -4,9 +4,9 @@ use std::sync::Arc;
 use anyhow::{anyhow, Context, Result};
 use axum::extract::{Extension, Path, Query};
 
+use crate::utils::time_format::{now_standard_string, to_standard_string};
 use bili_sync_entity::{collection, favorite, page, submission, video, video_source, watch_later};
 use bili_sync_migration::Expr;
-use crate::utils::time_format::{now_standard_string, to_standard_string};
 use reqwest;
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait, FromQueryResult, PaginatorTrait,
@@ -47,8 +47,6 @@ fn normalize_file_path(path: &str) -> String {
     // 将所有反斜杠转换为正斜杠，保持路径一致性
     path.replace('\\', "/")
 }
-
-
 
 /// 处理包含路径分隔符的模板结果，对每个路径段单独应用filenamify
 /// 这样可以保持目录结构同时确保每个段都是安全的文件名
@@ -122,7 +120,6 @@ fn get_config_path() -> Result<PathBuf> {
         .context("无法获取配置目录")
         .map(|dir| dir.join("bili-sync").join("config.toml"))
 }
-
 
 /// 列出所有视频来源
 #[utoipa::path(
@@ -1401,7 +1398,7 @@ pub async fn add_video_source_internal(
     } else {
         db
     };
-    
+
     let txn = db.begin().await?;
 
     let result = match params.source_type.as_str() {
@@ -1882,13 +1879,13 @@ pub async fn add_video_source_internal(
     std::fs::create_dir_all(&params.path).map_err(|e| anyhow!("创建目录失败: {}", e))?;
 
     txn.commit().await?;
-    
+
     // 在内存模式下，确保数据同步到主数据库
     if let Some(_optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
         // 检查是否在内存模式
         if crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
             info!("内存模式下同步{}数据到主数据库", result.source_type);
-            
+
             // 强制同步内存数据库到主数据库
             if let Err(e) = crate::utils::global_memory_optimizer::sync_to_main_db().await {
                 warn!("强制同步内存数据库失败: {}", e);
@@ -1897,7 +1894,7 @@ pub async fn add_video_source_internal(
             }
         }
     }
-    
+
     Ok(result)
 }
 
@@ -2552,7 +2549,10 @@ pub async fn delete_video_source_internal(
 
             // 清空合集关联，而不是直接删除视频
             video::Entity::update_many()
-                .col_expr(video::Column::CollectionId, sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)))
+                .col_expr(
+                    video::Column::CollectionId,
+                    sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)),
+                )
                 .filter(video::Column::CollectionId.eq(id))
                 .exec(&txn)
                 .await?;
@@ -2560,11 +2560,12 @@ pub async fn delete_video_source_internal(
             // 找出清空关联后变成孤立的视频（所有源ID都为null）
             let orphaned_videos = video::Entity::find()
                 .filter(
-                    video::Column::CollectionId.is_null()
-                    .and(video::Column::FavoriteId.is_null())
-                    .and(video::Column::WatchLaterId.is_null())
-                    .and(video::Column::SubmissionId.is_null())
-                    .and(video::Column::SourceId.is_null())
+                    video::Column::CollectionId
+                        .is_null()
+                        .and(video::Column::FavoriteId.is_null())
+                        .and(video::Column::WatchLaterId.is_null())
+                        .and(video::Column::SubmissionId.is_null())
+                        .and(video::Column::SourceId.is_null()),
                 )
                 .filter(video::Column::Id.is_in(videos.iter().map(|v| v.id)))
                 .all(&txn)
@@ -2670,7 +2671,10 @@ pub async fn delete_video_source_internal(
 
             // 清空收藏夹关联，而不是直接删除视频
             video::Entity::update_many()
-                .col_expr(video::Column::FavoriteId, sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)))
+                .col_expr(
+                    video::Column::FavoriteId,
+                    sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)),
+                )
                 .filter(video::Column::FavoriteId.eq(id))
                 .exec(&txn)
                 .await?;
@@ -2678,11 +2682,12 @@ pub async fn delete_video_source_internal(
             // 找出清空关联后变成孤立的视频（所有源ID都为null）
             let orphaned_videos = video::Entity::find()
                 .filter(
-                    video::Column::CollectionId.is_null()
-                    .and(video::Column::FavoriteId.is_null())
-                    .and(video::Column::WatchLaterId.is_null())
-                    .and(video::Column::SubmissionId.is_null())
-                    .and(video::Column::SourceId.is_null())
+                    video::Column::CollectionId
+                        .is_null()
+                        .and(video::Column::FavoriteId.is_null())
+                        .and(video::Column::WatchLaterId.is_null())
+                        .and(video::Column::SubmissionId.is_null())
+                        .and(video::Column::SourceId.is_null()),
                 )
                 .filter(video::Column::Id.is_in(videos.iter().map(|v| v.id)))
                 .all(&txn)
@@ -2787,7 +2792,10 @@ pub async fn delete_video_source_internal(
 
             // 清空UP主投稿关联，而不是直接删除视频
             video::Entity::update_many()
-                .col_expr(video::Column::SubmissionId, sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)))
+                .col_expr(
+                    video::Column::SubmissionId,
+                    sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)),
+                )
                 .filter(video::Column::SubmissionId.eq(id))
                 .exec(&txn)
                 .await?;
@@ -2795,11 +2803,12 @@ pub async fn delete_video_source_internal(
             // 找出清空关联后变成孤立的视频（所有源ID都为null）
             let orphaned_videos = video::Entity::find()
                 .filter(
-                    video::Column::CollectionId.is_null()
-                    .and(video::Column::FavoriteId.is_null())
-                    .and(video::Column::WatchLaterId.is_null())
-                    .and(video::Column::SubmissionId.is_null())
-                    .and(video::Column::SourceId.is_null())
+                    video::Column::CollectionId
+                        .is_null()
+                        .and(video::Column::FavoriteId.is_null())
+                        .and(video::Column::WatchLaterId.is_null())
+                        .and(video::Column::SubmissionId.is_null())
+                        .and(video::Column::SourceId.is_null()),
                 )
                 .filter(video::Column::Id.is_in(videos.iter().map(|v| v.id)))
                 .all(&txn)
@@ -2904,7 +2913,10 @@ pub async fn delete_video_source_internal(
 
             // 清空稍后再看关联，而不是直接删除视频
             video::Entity::update_many()
-                .col_expr(video::Column::WatchLaterId, sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)))
+                .col_expr(
+                    video::Column::WatchLaterId,
+                    sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)),
+                )
                 .filter(video::Column::WatchLaterId.eq(id))
                 .exec(&txn)
                 .await?;
@@ -2912,11 +2924,12 @@ pub async fn delete_video_source_internal(
             // 找出清空关联后变成孤立的视频（所有源ID都为null）
             let orphaned_videos = video::Entity::find()
                 .filter(
-                    video::Column::CollectionId.is_null()
-                    .and(video::Column::FavoriteId.is_null())
-                    .and(video::Column::WatchLaterId.is_null())
-                    .and(video::Column::SubmissionId.is_null())
-                    .and(video::Column::SourceId.is_null())
+                    video::Column::CollectionId
+                        .is_null()
+                        .and(video::Column::FavoriteId.is_null())
+                        .and(video::Column::WatchLaterId.is_null())
+                        .and(video::Column::SubmissionId.is_null())
+                        .and(video::Column::SourceId.is_null()),
                 )
                 .filter(video::Column::Id.is_in(videos.iter().map(|v| v.id)))
                 .all(&txn)
@@ -3021,8 +3034,14 @@ pub async fn delete_video_source_internal(
 
             // 清空番剧关联，而不是直接删除视频
             video::Entity::update_many()
-                .col_expr(video::Column::SourceId, sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)))
-                .col_expr(video::Column::SourceType, sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)))
+                .col_expr(
+                    video::Column::SourceId,
+                    sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)),
+                )
+                .col_expr(
+                    video::Column::SourceType,
+                    sea_orm::sea_query::Expr::value(sea_orm::Value::Int(None)),
+                )
                 .filter(video::Column::SourceId.eq(id))
                 .filter(video::Column::SourceType.eq(1))
                 .exec(&txn)
@@ -3031,11 +3050,12 @@ pub async fn delete_video_source_internal(
             // 找出清空关联后变成孤立的视频（所有源ID都为null）
             let orphaned_videos = video::Entity::find()
                 .filter(
-                    video::Column::CollectionId.is_null()
-                    .and(video::Column::FavoriteId.is_null())
-                    .and(video::Column::WatchLaterId.is_null())
-                    .and(video::Column::SubmissionId.is_null())
-                    .and(video::Column::SourceId.is_null())
+                    video::Column::CollectionId
+                        .is_null()
+                        .and(video::Column::FavoriteId.is_null())
+                        .and(video::Column::WatchLaterId.is_null())
+                        .and(video::Column::SubmissionId.is_null())
+                        .and(video::Column::SourceId.is_null()),
                 )
                 .filter(video::Column::Id.is_in(videos.iter().map(|v| v.id)))
                 .all(&txn)
@@ -3129,13 +3149,13 @@ pub async fn delete_video_source_internal(
     };
 
     txn.commit().await?;
-    
+
     // 在内存模式下，确保删除操作同步到主数据库
     if let Some(_optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
         // 检查是否在内存模式
         if crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
             info!("内存模式下同步{}删除操作到主数据库", result.source_type);
-            
+
             // 强制同步内存数据库到主数据库
             if let Err(e) = crate::utils::global_memory_optimizer::sync_to_main_db().await {
                 warn!("强制同步内存数据库失败: {}", e);
@@ -3144,7 +3164,7 @@ pub async fn delete_video_source_internal(
             }
         }
     }
-    
+
     Ok(result)
 }
 
@@ -3185,7 +3205,7 @@ pub async fn update_video_source_scan_deleted_internal(
     } else {
         db
     };
-    
+
     let txn = db.begin().await?;
 
     let result = match source_type.as_str() {
@@ -3451,7 +3471,7 @@ pub async fn reset_video_source_path_internal(
     } else {
         db
     };
-    
+
     // 在开始操作前进行安全验证
     let txn = db.begin().await?;
     validate_path_reset_safety(&txn, &source_type, id, &request.new_path).await?;
@@ -4614,7 +4634,6 @@ pub async fn update_config_internal(
         }
     }
 
-
     // 处理显示已删除视频配置
     if let Some(scan_deleted) = params.scan_deleted_videos {
         if scan_deleted != config.scan_deleted_videos {
@@ -4910,7 +4929,7 @@ pub async fn update_config_internal(
     // 检查是否更新了内存优化配置
     if updated_fields.contains(&"enable_memory_optimization") {
         info!("检测到内存优化配置更新，准备重配置内存优化器");
-        
+
         // 检查并重配置内存优化器
         match crate::utils::global_memory_optimizer::reconfigure_global_memory_optimizer(db.clone()).await {
             Ok(changed) => {
@@ -6506,7 +6525,6 @@ pub async fn proxy_image(
         .body(axum::body::Body::from(image_data))
         .unwrap())
 }
-
 
 // ============================================================================
 // 配置管理 API 端点
@@ -9436,7 +9454,7 @@ pub async fn get_notification_status() -> Result<ApiResponse<crate::api::respons
     if let Err(e) = crate::config::reload_config_bundle().await {
         warn!("重新加载配置失败: {}", e);
     }
-    
+
     // 从当前配置包中获取最新的通知配置
     let config = crate::config::with_config(|bundle| bundle.config.notification.clone());
 
@@ -9463,17 +9481,17 @@ pub async fn get_notification_status() -> Result<ApiResponse<crate::api::respons
 )]
 pub async fn get_log_files() -> Result<ApiResponse<Vec<LogFileInfo>>, ApiError> {
     use crate::utils::file_logger;
-    
+
     let log_files = file_logger::get_current_session_logs();
     let startup_time = &*file_logger::STARTUP_TIME;
-    
+
     let file_infos: Vec<LogFileInfo> = log_files
         .into_iter()
         .filter_map(|path| {
             let file_name = path.file_name()?.to_string_lossy().to_string();
             let metadata = std::fs::metadata(&path).ok()?;
             let size = metadata.len();
-            
+
             Some(LogFileInfo {
                 name: file_name,
                 path: path.to_string_lossy().to_string(),
@@ -9482,7 +9500,7 @@ pub async fn get_log_files() -> Result<ApiResponse<Vec<LogFileInfo>>, ApiError> 
             })
         })
         .collect();
-    
+
     Ok(ApiResponse::ok(file_infos))
 }
 
@@ -9499,36 +9517,34 @@ pub async fn get_log_files() -> Result<ApiResponse<Vec<LogFileInfo>>, ApiError> 
         (status = 500, description = "服务器内部错误", body = String)
     )
 )]
-pub async fn download_log_file(
-    Path(filename): Path<String>,
-) -> Result<impl axum::response::IntoResponse, ApiError> {
-    use axum::response::IntoResponse;
+pub async fn download_log_file(Path(filename): Path<String>) -> Result<impl axum::response::IntoResponse, ApiError> {
     use crate::config::CONFIG_DIR;
-    
+    use axum::response::IntoResponse;
+
     // 安全检查：确保文件名不包含路径遍历
     if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
         return Err(ApiError::from(anyhow!("非法的文件名")));
     }
-    
+
     let log_dir = CONFIG_DIR.join("logs");
     let file_path = log_dir.join(&filename);
-    
+
     // 确保文件存在且在日志目录内
     if !file_path.exists() || !file_path.starts_with(&log_dir) {
         return Err(ApiError::from(anyhow!("日志文件不存在")));
     }
-    
+
     // 读取文件内容
     let content = tokio::fs::read(&file_path)
         .await
         .map_err(|e| ApiError::from(anyhow!("读取日志文件失败: {}", e)))?;
-    
+
     // 设置响应头
     let headers = [
         ("Content-Type", "text/csv; charset=utf-8"),
         ("Content-Disposition", &format!("attachment; filename=\"{}\"", filename)),
     ];
-    
+
     Ok((headers, content).into_response())
 }
 

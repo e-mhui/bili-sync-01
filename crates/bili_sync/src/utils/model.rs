@@ -43,7 +43,7 @@ pub async fn filter_unfilled_videos(
     } else {
         conn
     };
-    
+
     video::Entity::find()
         .filter(
             video::Column::Valid
@@ -73,7 +73,7 @@ pub async fn filter_unhandled_video_pages(
     } else {
         connection
     };
-    
+
     video::Entity::find()
         .filter(
             video::Column::Valid

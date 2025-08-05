@@ -1,3 +1,4 @@
+use crate::utils::time_format::parse_time_string;
 use anyhow::Result;
 use bili_sync_entity::*;
 use chrono::NaiveDateTime;
@@ -5,7 +6,6 @@ use quick_xml::events::{BytesCData, BytesText};
 use quick_xml::writer::Writer;
 use quick_xml::Error;
 use tokio::io::{AsyncWriteExt, BufWriter};
-use crate::utils::time_format::parse_time_string;
 
 use crate::config::{EmptyUpperStrategy, NFOConfig, NFOTimeType};
 
@@ -1414,7 +1414,7 @@ impl NFO<'_> {
     /// 根据配置策略获取演员信息（返回演员名称和角色名称）
     fn get_actor_info(upper_id: i64, upper_name: &str, config: &NFOConfig) -> Option<(String, String)> {
         let trimmed_name = upper_name.trim();
-        
+
         // 如果upper_id有效（大于0），使用UID作为演员名称，UP主名称作为角色
         if upper_id > 0 {
             let role_name = if !trimmed_name.is_empty() {
@@ -1429,7 +1429,7 @@ impl NFO<'_> {
             };
             return Some((upper_id.to_string(), role_name));
         }
-        
+
         // UID无效时，使用UP主名称作为演员名称和角色名称
         if !trimmed_name.is_empty() {
             return Some((trimmed_name.to_string(), trimmed_name.to_string()));
@@ -2315,7 +2315,7 @@ mod tests {
         // 测试非空UP主名称（应该优先使用UID作为name，UP主名称作为role）
         let actor_info = NFO::get_actor_info(123456, "测试UP主", &config);
         assert_eq!(actor_info, Some(("123456".to_string(), "测试UP主".to_string()))); // UID作为name，UP主名称作为role
-        
+
         // 测试无效UID（0或负数）时使用昵称
         let actor_info = NFO::get_actor_info(0, "测试UP主", &config);
         assert_eq!(actor_info, Some(("测试UP主".to_string(), "测试UP主".to_string()))); // UID无效，昵称同时作为name和role

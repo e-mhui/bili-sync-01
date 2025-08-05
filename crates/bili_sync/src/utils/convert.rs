@@ -33,7 +33,7 @@ impl VideoInfo {
                 } else {
                     (None, None, None)
                 };
-                
+
                 bili_sync_entity::video::ActiveModel {
                     bvid: Set(bvid),
                     name: Set(title),
@@ -47,7 +47,7 @@ impl VideoInfo {
                     upper_face: Set(upper_face.unwrap_or_default()),
                     ..default
                 }
-            },
+            }
             VideoInfo::Favorite {
                 title,
                 vtype,
@@ -114,7 +114,7 @@ impl VideoInfo {
                 cover: Set(cover),
                 ctime: Set(ctime.naive_utc()),
                 pubtime: Set(ctime.naive_utc()), // 使用ctime作为pubtime
-                category: Set(2), // 投稿视频的内容类型肯定是视频
+                category: Set(2),                // 投稿视频的内容类型肯定是视频
                 valid: Set(true),
                 ..default
             },

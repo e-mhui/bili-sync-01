@@ -1,9 +1,9 @@
 //! 统一的时间格式处理模块
-//! 
+//!
 //! 本模块提供统一的时间格式化和解析功能
 //! 标准格式：YYYY-MM-DD HH:MM:SS (不含毫秒和时区)
 
-use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc, TimeZone, Timelike};
+use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Timelike, Utc};
 
 /// 标准时间格式
 pub const STANDARD_TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
@@ -36,7 +36,7 @@ pub fn now_naive() -> NaiveDateTime {
 }
 
 /// 将任意时间转换为标准格式字符串
-pub fn to_standard_string<Tz: TimeZone>(dt: DateTime<Tz>) -> String 
+pub fn to_standard_string<Tz: TimeZone>(dt: DateTime<Tz>) -> String
 where
     Tz::Offset: std::fmt::Display,
 {
@@ -46,37 +46,37 @@ where
 /// 解析时间字符串，支持多种格式
 pub fn parse_time_string(time_str: &str) -> Option<NaiveDateTime> {
     // 尝试多种格式解析
-    
+
     // 1. 标准格式: YYYY-MM-DD HH:MM:SS
     if let Ok(dt) = NaiveDateTime::parse_from_str(time_str, STANDARD_TIME_FORMAT) {
         return Some(dt);
     }
-    
+
     // 2. 带毫秒格式: YYYY-MM-DD HH:MM:SS.ffffff
     if let Ok(dt) = NaiveDateTime::parse_from_str(time_str, "%Y-%m-%d %H:%M:%S%.f") {
         return Some(dt);
     }
-    
+
     // 3. 带时区格式: YYYY-MM-DD HH:MM:SS.ffffff +08:00
     if let Ok(dt) = DateTime::parse_from_str(time_str, "%Y-%m-%d %H:%M:%S%.f %z") {
         return Some(dt.naive_local());
     }
-    
+
     // 4. 带时区但无毫秒: YYYY-MM-DD HH:MM:SS +08:00
     if let Ok(dt) = DateTime::parse_from_str(time_str, "%Y-%m-%d %H:%M:%S %z") {
         return Some(dt.naive_local());
     }
-    
+
     // 5. RFC3339格式: YYYY-MM-DDTHH:MM:SS.ssssss+08:00
     if let Ok(dt) = DateTime::parse_from_rfc3339(time_str) {
         return Some(dt.naive_local());
     }
-    
+
     // 6. ISO8601格式变体
     if let Ok(dt) = time_str.parse::<DateTime<Utc>>() {
         return Some(dt.naive_local());
     }
-    
+
     None
 }
 
@@ -84,7 +84,10 @@ pub fn parse_time_string(time_str: &str) -> Option<NaiveDateTime> {
 #[allow(dead_code)]
 pub fn timestamp_to_standard_string(timestamp: i64) -> String {
     match DateTime::from_timestamp(timestamp, 0) {
-        Some(dt) => dt.with_timezone(&beijing_timezone()).format(STANDARD_TIME_FORMAT).to_string(),
+        Some(dt) => dt
+            .with_timezone(&beijing_timezone())
+            .format(STANDARD_TIME_FORMAT)
+            .to_string(),
         None => now_standard_string(), // 如果时间戳无效，返回当前时间
     }
 }
@@ -92,7 +95,7 @@ pub fn timestamp_to_standard_string(timestamp: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_standard_format() {
         let time_str = now_standard_string();
@@ -101,7 +104,7 @@ mod tests {
         assert!(!time_str.contains('+'));
         assert!(!time_str.contains('.'));
     }
-    
+
     #[test]
     fn test_parse_various_formats() {
         // 测试各种格式的解析
@@ -112,7 +115,7 @@ mod tests {
             "2025-07-25 16:52:53 +08:00",
             "2025-07-25T16:52:53.827266200+08:00",
         ];
-        
+
         for format in formats {
             let parsed = parse_time_string(format);
             assert!(parsed.is_some(), "Failed to parse: {}", format);

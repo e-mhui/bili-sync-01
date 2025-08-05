@@ -27,8 +27,8 @@ use tokio_util::task::TaskTracker;
 
 use crate::config::{init_config_with_database, ARGS};
 use crate::database::setup_database;
-use crate::utils::{file_logger, init_logger};
 use crate::utils::signal::terminate;
+use crate::utils::{file_logger, init_logger};
 use anyhow::Result;
 
 #[tokio::main]
@@ -103,7 +103,8 @@ async fn main() -> Result<()> {
 
     // 在启动HTTP服务器之前初始化全局内存优化器
     // 这确保HTTP API能使用正确的优化连接
-    if let Err(e) = crate::utils::global_memory_optimizer::initialize_global_memory_optimizer(connection.clone()).await {
+    if let Err(e) = crate::utils::global_memory_optimizer::initialize_global_memory_optimizer(connection.clone()).await
+    {
         warn!("初始化全局内存优化器失败: {}", e);
     }
 
@@ -142,7 +143,7 @@ fn init() {
     // 强制初始化文件日志系统（这会设置启动时间）
     let _ = &*file_logger::STARTUP_TIME;
     let _ = &*file_logger::FILE_LOG_WRITER;
-    
+
     init_logger(&ARGS.log_level);
     info!("欢迎使用 Bili-Sync，当前程序版本：{}", config::version());
     info!("现项目地址：https://github.com/qq1582185982/bili-sync-01");
@@ -178,7 +179,7 @@ async fn finalize_global_systems() {
     if let Err(e) = crate::utils::global_memory_optimizer::finalize_global_memory_optimizer().await {
         warn!("完成全局内存优化器时出错: {}", e);
     }
-    
+
     // 关闭文件日志系统
     file_logger::shutdown_file_logger();
 }

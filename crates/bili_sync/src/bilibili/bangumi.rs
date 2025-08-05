@@ -155,20 +155,20 @@ impl Bangumi {
     pub async fn check_update(&self, last_check_time: Option<DateTime<Utc>>) -> Result<(bool, Option<DateTime<Utc>>)> {
         // 获取最小信息来判断是否有更新
         let season_info = self.get_season_info().await?;
-        
+
         // 获取最新更新时间
         let latest_episode_time = season_info["new_ep"]["pub_time"]
             .as_i64()
             .map(|ts| DateTime::<Utc>::from_timestamp(ts, 0))
             .flatten();
-        
+
         // 如果没有上次检查时间，视为有更新
         let has_update = match (last_check_time, latest_episode_time) {
             (Some(last), Some(latest)) => latest > last,
             (None, Some(_)) => true,
             _ => false,
         };
-        
+
         Ok((has_update, latest_episode_time))
     }
 

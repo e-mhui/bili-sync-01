@@ -8,15 +8,15 @@ use tracing::{debug, error, info, warn};
 use crate::adapter::Args;
 use crate::bilibili::{self, BiliClient, CollectionItem, CollectionType};
 use crate::config::Config;
-use crate::utils::file_logger;
 use crate::initialization;
 use crate::task::TASK_CONTROLLER;
 use crate::unified_downloader::UnifiedDownloader;
-use crate::utils::scan_collector::ScanCollector;
+use crate::utils::file_logger;
 use crate::utils::global_memory_optimizer::initialize_global_memory_optimizer;
+use crate::utils::scan_collector::ScanCollector;
 use crate::utils::scan_id_tracker::{
-    get_last_scanned_ids, group_sources_by_new_old, update_last_scanned_ids,
-    LastScannedIds, MaxIdRecorder, SourceType, VideoSourceWithId,
+    get_last_scanned_ids, group_sources_by_new_old, update_last_scanned_ids, LastScannedIds, MaxIdRecorder, SourceType,
+    VideoSourceWithId,
 };
 use crate::workflow::process_video_source;
 use bili_sync_entity::entities;
@@ -189,13 +189,13 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
     // 在启动时初始化所有视频源 - 使用动态配置而非静态CONFIG
     let config = crate::config::reload_config();
-    
+
     // 获取启动时的优化连接
     let startup_connection = match crate::utils::global_memory_optimizer::get_optimized_connection().await {
         Some(conn) => conn,
         None => connection.clone(),
     };
-    
+
     if let Err(e) = init_all_sources(&config, &startup_connection).await {
         error!("启动时初始化视频源失败: {}", e);
     } else {
@@ -220,8 +220,10 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
         let optimized_connection = match crate::utils::global_memory_optimizer::get_optimized_connection().await {
             Some(conn) => {
                 let is_memory_optimized = crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await;
-                debug!("使用全局内存优化器，性能模式: {}", 
-                    if is_memory_optimized { "内存优化" } else { "常规" });
+                debug!(
+                    "使用全局内存优化器，性能模式: {}",
+                    if is_memory_optimized { "内存优化" } else { "常规" }
+                );
                 conn
             }
             None => {
@@ -337,13 +339,10 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
             // 将视频源按新旧分组
             let (new_sources, old_sources) = group_sources_by_new_old(video_sources, &last_scanned_ids);
-            
+
             if !new_sources.is_empty() {
-                info!(
-                    "检测到 {} 个新添加的视频源，将优先扫描这些新源",
-                    new_sources.len()
-                );
-                
+                info!("检测到 {} 个新添加的视频源，将优先扫描这些新源", new_sources.len());
+
                 // 显示新源的详细信息
                 for source in &new_sources {
                     let source_name = match &source.args {
@@ -373,29 +372,32 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             let mut is_first_source = true;
             let mut last_successful_source: Option<&VideoSourceWithId> = None; // 记录上一个成功处理的源
             let mut is_interrupted = false; // 标记是否因风控等原因中断
-            
+
             // 定期同步相关变量
             let mut videos_since_last_sync = 0; // 自上次同步以来处理的视频数
             let sync_interval_videos = 10; // 每处理10个视频同步一次
             let mut last_sync_time = std::time::Instant::now(); // 上次同步时间
             let sync_interval_minutes = 5; // 每5分钟同步一次
-            
+
             for source in &ordered_sources {
                 let args = &source.args;
                 let path = &source.path;
-                
+
                 // 在开始扫描当前源之前，保存上一个成功处理的源ID
                 if let Some(prev_source) = last_successful_source {
                     max_id_recorder.record(prev_source.source_type, prev_source.id);
                     max_id_recorder.merge_into(&mut last_scanned_ids);
-                    
+
                     if let Err(e) = update_last_scanned_ids(&optimized_connection, &last_scanned_ids).await {
                         warn!("保存扫描进度失败 (源ID: {}): {}", prev_source.id, e);
                     } else {
-                        debug!("已保存扫描进度 (源ID: {}, 类型: {:?})", prev_source.id, prev_source.source_type);
+                        debug!(
+                            "已保存扫描进度 (源ID: {}, 类型: {:?})",
+                            prev_source.id, prev_source.source_type
+                        );
                     }
                 }
-                
+
                 // 在处理每个视频源前检查是否暂停
                 if TASK_CONTROLLER.is_paused() {
                     debug!("在处理视频源时检测到暂停信号，停止当前轮次扫描");
@@ -405,7 +407,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                     is_interrupted = true;
                     break;
                 }
-                
+
                 // 视频源间延迟处理（第一个源不延迟）
                 if !is_first_source {
                     let delay_seconds = match args {
@@ -418,7 +420,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                             config.submission_risk_control.source_delay_seconds
                         }
                     };
-                    
+
                     if delay_seconds > 0 {
                         let source_type = match args {
                             crate::adapter::Args::Submission { .. } => "UP主投稿",
@@ -427,11 +429,8 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                             crate::adapter::Args::WatchLater => "稍后再看",
                             crate::adapter::Args::Bangumi { .. } => "番剧",
                         };
-                        
-                        info!(
-                            "处理下一个{}前延迟 {} 秒，避免触发风控...",
-                            source_type, delay_seconds
-                        );
+
+                        info!("处理下一个{}前延迟 {} 秒，避免触发风控...", source_type, delay_seconds);
                         tokio::time::sleep(tokio::time::Duration::from_secs(delay_seconds)).await;
                     }
                 }
@@ -462,17 +461,21 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                 {
                     Ok((new_video_count, new_videos)) => {
                         processed_sources += 1;
-                        
+
                         // 成功处理后，记录为上一个成功的源（不立即保存，等下次循环再保存）
                         last_successful_source = Some(source);
-                        
+
                         // 添加调试日志来跟踪new_videos数据传递
-                        debug!("扫描完成 - new_video_count: {}, new_videos.len(): {}", new_video_count, new_videos.len());
-                        
+                        debug!(
+                            "扫描完成 - new_video_count: {}, new_videos.len(): {}",
+                            new_video_count,
+                            new_videos.len()
+                        );
+
                         if new_video_count > 0 {
                             sources_with_new_content += 1;
                         }
-                        
+
                         // 检查是否有新视频信息需要添加到收集器（修复：同时检查数量和向量）
                         if !new_videos.is_empty() {
                             if let Ok((video_source, _)) =
@@ -486,34 +489,39 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                         } else if new_video_count > 0 {
                             warn!("发现不一致：new_video_count={} 但 new_videos 为空", new_video_count);
                         }
-                        
+
                         // 更新处理的视频计数
                         if new_video_count > 0 {
                             videos_since_last_sync += new_video_count as u32;
                         }
-                        
+
                         // 检查是否需要定期同步
-                        let should_sync = if crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
-                            // 检查是否达到视频数量阈值
-                            let video_threshold_reached = videos_since_last_sync >= sync_interval_videos;
-                            
-                            // 检查是否达到时间阈值
-                            let time_threshold_reached = last_sync_time.elapsed().as_secs() >= (sync_interval_minutes * 60);
-                            
-                            if video_threshold_reached || time_threshold_reached {
-                                if video_threshold_reached {
-                                    info!("已处理 {} 个视频，触发定期同步", videos_since_last_sync);
+                        let should_sync =
+                            if crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
+                                // 检查是否达到视频数量阈值
+                                let video_threshold_reached = videos_since_last_sync >= sync_interval_videos;
+
+                                // 检查是否达到时间阈值
+                                let time_threshold_reached =
+                                    last_sync_time.elapsed().as_secs() >= (sync_interval_minutes * 60);
+
+                                if video_threshold_reached || time_threshold_reached {
+                                    if video_threshold_reached {
+                                        info!("已处理 {} 个视频，触发定期同步", videos_since_last_sync);
+                                    } else {
+                                        info!(
+                                            "距上次同步已过 {} 分钟，触发定期同步",
+                                            last_sync_time.elapsed().as_secs() / 60
+                                        );
+                                    }
+                                    true
                                 } else {
-                                    info!("距上次同步已过 {} 分钟，触发定期同步", last_sync_time.elapsed().as_secs() / 60);
+                                    false
                                 }
-                                true
                             } else {
                                 false
-                            }
-                        } else {
-                            false
-                        };
-                        
+                            };
+
                         if should_sync {
                             match crate::utils::global_memory_optimizer::sync_to_main_db().await {
                                 Ok(_) => {
@@ -530,12 +538,12 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                     Err(e) => {
                         // 检查是否为风控错误，如果是则停止所有后续扫描
                         let mut is_risk_control = false;
-                        
+
                         // 检查DownloadAbortError
                         if e.downcast_ref::<crate::error::DownloadAbortError>().is_some() {
                             is_risk_control = true;
                         }
-                        
+
                         // 检查错误链中的BiliError
                         for cause in e.chain() {
                             if let Some(bili_err) = cause.downcast_ref::<crate::bilibili::BiliError>() {
@@ -555,14 +563,14 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                                 }
                             }
                         }
-                        
+
                         if is_risk_control {
                             error!("检测到风控，停止所有后续视频源的扫描");
                             info!("触发风控的源(ID: {})未完成处理，下次扫描将重新处理该源", source.id);
                             is_interrupted = true;
                             break; // 跳出循环，停止处理剩余的视频源
                         }
-                        
+
                         error!("处理过程遇到错误：{:#}", e);
                     }
                 }
@@ -575,20 +583,23 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             if let Some(final_source) = last_successful_source {
                 max_id_recorder.record(final_source.source_type, final_source.id);
                 max_id_recorder.merge_into(&mut last_scanned_ids);
-                
+
                 // 如果没有被中断，说明扫描完了所有源，需要重置last_processed_id以实现循环
                 if !is_interrupted {
                     debug!("本轮扫描完成所有源，重置处理ID以便下次从头开始循环");
                     last_scanned_ids.reset_all_processed_ids();
                 }
-                
+
                 if let Err(e) = update_last_scanned_ids(&optimized_connection, &last_scanned_ids).await {
                     warn!("保存最后源的扫描进度失败 (源ID: {}): {}", final_source.id, e);
                 } else {
-                    debug!("已保存最后源的扫描进度 (源ID: {}, 类型: {:?})", final_source.id, final_source.source_type);
+                    debug!(
+                        "已保存最后源的扫描进度 (源ID: {}, 类型: {:?})",
+                        final_source.id, final_source.source_type
+                    );
                 }
             }
-            
+
             debug!("扫描完成，所有进度已保存");
 
             // 如果使用了内存优化模式，在扫描完成后立即同步数据到主数据库
@@ -600,10 +611,14 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                     Err(e) => error!("数据同步失败: {}，可能导致数据丢失", e),
                 }
             }
-            
-            let mode = if is_memory_optimized { "内存优化模式" } else { "常规模式" };
+
+            let mode = if is_memory_optimized {
+                "内存优化模式"
+            } else {
+                "常规模式"
+            };
             info!("本轮扫描完成 - 模式: {}, 视频源数量: {}", mode, ordered_sources.len());
-            
+
             if is_memory_optimized {
                 debug!("内存优化模式有效减少了数据库I/O开销，提升了扫描性能");
             }

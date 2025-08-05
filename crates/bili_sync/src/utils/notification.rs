@@ -38,7 +38,7 @@ pub struct NewVideoInfo {
     pub upper_name: String,
     pub source_type: String,
     pub source_name: String,
-    pub pubtime: Option<String>,  // 使用字符串格式的北京时间
+    pub pubtime: Option<String>, // 使用字符串格式的北京时间
     pub episode_number: Option<i32>,
     pub season_number: Option<i32>,
 }
@@ -170,21 +170,21 @@ impl NotificationClient {
                     let mut sorted_videos = source_result.new_videos.clone();
                     if source_result.source_type == "番剧" {
                         // 番剧按集数降序排列（最新的集数在前）
-                        sorted_videos.sort_by(|a, b| {
-                            b.episode_number.unwrap_or(0).cmp(&a.episode_number.unwrap_or(0))
-                        });
+                        sorted_videos.sort_by(|a, b| b.episode_number.unwrap_or(0).cmp(&a.episode_number.unwrap_or(0)));
                     } else {
                         // 其他视频按发布时间降序排列（最新的在前）
                         sorted_videos.sort_by(|a, b| {
-                            b.pubtime.as_ref().unwrap_or(&String::new())
+                            b.pubtime
+                                .as_ref()
+                                .unwrap_or(&String::new())
                                 .cmp(a.pubtime.as_ref().unwrap_or(&String::new()))
                         });
                     }
 
                     for video in &sorted_videos {
-                        let mut video_line = format!("- [{}](https://www.bilibili.com/video/{})", 
-                            video.title, video.bvid);
-                        
+                        let mut video_line =
+                            format!("- [{}](https://www.bilibili.com/video/{})", video.title, video.bvid);
+
                         // 添加额外信息
                         if source_result.source_type == "番剧" && video.episode_number.is_some() {
                             video_line.push_str(&format!(" (第{}集", video.episode_number.unwrap()));
@@ -202,7 +202,7 @@ impl NotificationClient {
                                 video_line.push_str(&format!(" ({})", date_part));
                             }
                         }
-                        
+
                         content.push_str(&video_line);
                         content.push('\n');
                     }

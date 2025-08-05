@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::sync::Arc;
 use anyhow::Result;
 use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::debug;
 
 /// 扫描源ID跟踪器，用于记录每个源类型的最后扫描ID
@@ -19,7 +19,7 @@ pub struct LastScannedIds {
     pub watch_later: Option<i32>,
     #[serde(default)]
     pub bangumi: Option<i32>,
-    
+
     // 记录每种类型源上次处理的ID（用于断点续传）
     #[serde(default)]
     pub last_processed_collection: Option<i32>,
@@ -38,14 +38,14 @@ const CONFIG_KEY: &str = "last_scanned_ids";
 /// 从数据库获取最后扫描的ID记录
 pub async fn get_last_scanned_ids(db: &Arc<DatabaseConnection>) -> Result<LastScannedIds> {
     use bili_sync_entity::entities::{config_item, prelude::ConfigItem};
-    use sea_orm::{EntityTrait, QueryFilter, ColumnTrait};
-    
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
     // 查询配置项
     let config_item = ConfigItem::find()
         .filter(config_item::Column::KeyName.eq(CONFIG_KEY))
         .one(db.as_ref())
         .await?;
-    
+
     match config_item {
         Some(item) => {
             // 解析JSON值
@@ -62,16 +62,16 @@ pub async fn get_last_scanned_ids(db: &Arc<DatabaseConnection>) -> Result<LastSc
 /// 更新最后扫描的ID记录到数据库
 pub async fn update_last_scanned_ids(db: &Arc<DatabaseConnection>, ids: &LastScannedIds) -> Result<()> {
     use bili_sync_entity::entities::{config_item, prelude::ConfigItem};
-    use sea_orm::{EntityTrait, QueryFilter, ColumnTrait, ActiveModelTrait, Set};
-    
+    use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+
     let value_json = serde_json::to_string(ids)?;
-    
+
     // 查询是否已存在
     let existing = ConfigItem::find()
         .filter(config_item::Column::KeyName.eq(CONFIG_KEY))
         .one(db.as_ref())
         .await?;
-    
+
     if let Some(existing_item) = existing {
         // 更新现有记录
         let mut active_model: config_item::ActiveModel = existing_item.into();
@@ -88,7 +88,7 @@ pub async fn update_last_scanned_ids(db: &Arc<DatabaseConnection>, ids: &LastSca
         };
         new_item.insert(db.as_ref()).await?;
     }
-    
+
     Ok(())
 }
 
@@ -110,7 +110,6 @@ pub enum SourceType {
     Bangumi,
 }
 
-
 /// 将视频源按新旧分组，并支持断点续传
 pub fn group_sources_by_new_old(
     sources: Vec<VideoSourceWithId>,
@@ -118,16 +117,19 @@ pub fn group_sources_by_new_old(
 ) -> (Vec<VideoSourceWithId>, Vec<VideoSourceWithId>) {
     let mut new_sources = Vec::new();
     let mut old_sources = Vec::new();
-    
+
     for source in sources {
         let (max_id, last_processed_id) = match source.source_type {
             SourceType::Collection => (last_scanned_ids.collection, last_scanned_ids.last_processed_collection),
             SourceType::Favorite => (last_scanned_ids.favorite, last_scanned_ids.last_processed_favorite),
             SourceType::Submission => (last_scanned_ids.submission, last_scanned_ids.last_processed_submission),
-            SourceType::WatchLater => (last_scanned_ids.watch_later, last_scanned_ids.last_processed_watch_later),
+            SourceType::WatchLater => (
+                last_scanned_ids.watch_later,
+                last_scanned_ids.last_processed_watch_later,
+            ),
             SourceType::Bangumi => (last_scanned_ids.bangumi, last_scanned_ids.last_processed_bangumi),
         };
-        
+
         // 如果没有记录（首次运行）或ID大于最大ID，则为新源
         if max_id.is_none() || source.id > max_id.unwrap() {
             new_sources.push(source);
@@ -141,10 +143,10 @@ pub fn group_sources_by_new_old(
             }
         }
     }
-    
+
     // 对旧源按ID排序，确保从小到大处理
     old_sources.sort_by_key(|s| s.id);
-    
+
     (new_sources, old_sources)
 }
 
@@ -161,7 +163,7 @@ impl MaxIdRecorder {
             current_processed_ids: HashMap::new(),
         }
     }
-    
+
     /// 记录一个源的ID（已成功处理）
     pub fn record(&mut self, source_type: SourceType, id: i32) {
         // 更新最大ID
@@ -173,11 +175,11 @@ impl MaxIdRecorder {
                 }
             })
             .or_insert(id);
-            
+
         // 更新当前处理的ID（用于断点续传）
         self.current_processed_ids.insert(source_type, id);
     }
-    
+
     /// 获取记录的最大ID和处理ID，更新到LastScannedIds中
     pub fn merge_into(&self, last_scanned_ids: &mut LastScannedIds) {
         // 更新最大ID
@@ -200,7 +202,7 @@ impl MaxIdRecorder {
                 }
             }
         }
-        
+
         // 更新当前处理的ID（用于断点续传）
         for (source_type, &processed_id) in &self.current_processed_ids {
             match source_type {

@@ -104,12 +104,12 @@ pub(super) async fn watch_later_from<'a>(
     };
 
     let watch_later = WatchLater::new(bili_client);
-    
+
     // 检查是否已存在，如果存在直接返回
     if let Some(existing) = watch_later::Entity::find().one(db_conn).await? {
         return Ok((existing.into(), Box::pin(watch_later.into_video_stream())));
     }
-    
+
     // 不存在则创建新记录
     let result = watch_later::Entity::insert(watch_later::ActiveModel {
         path: Set(path.to_string_lossy().to_string()),
@@ -121,7 +121,7 @@ pub(super) async fn watch_later_from<'a>(
     })
     .exec(db_conn)
     .await?;
-    
+
     Ok((
         watch_later::Entity::find_by_id(result.last_insert_id)
             .one(db_conn)

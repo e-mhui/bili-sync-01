@@ -150,10 +150,11 @@ impl ErrorClassifier {
         }
 
         // 检查是否为充电专享视频相关错误（扩展检测，优先级最高）
-        if error_msg.contains("Request too frequently") 
-           || error_msg.contains("检测到试看视频，需要充电才能观看完整版")
-           || error_msg.contains("视频需要充电才能观看")
-           || error_msg.contains("所有质量级别都获取失败") {
+        if error_msg.contains("Request too frequently")
+            || error_msg.contains("检测到试看视频，需要充电才能观看完整版")
+            || error_msg.contains("视频需要充电才能观看")
+            || error_msg.contains("所有质量级别都获取失败")
+        {
             return ClassifiedError::new(ErrorType::Permission, "充电专享视频，需要为UP主充电才能观看".to_string())
                 .with_retry_policy(false, true) // 不重试，可忽略
                 .with_auto_delete(true); // 需要自动删除
@@ -217,21 +218,21 @@ impl ErrorClassifier {
         if let Some(status) = err.status() {
             let status_code = status.as_u16();
             let error_message = err.to_string();
-            
+
             // 特殊处理：412状态码的充电专享视频检测（优先级高于风控）
-            if status_code == 412 && (
-                error_message.contains("Request too frequently") ||
-                error_message.contains("检测到试看视频，需要充电才能观看完整版") ||
-                error_message.contains("视频需要充电才能观看") ||
-                error_message.contains("所有质量级别都获取失败") ||
-                error_message.contains("充电专享视频")
-            ) {
+            if status_code == 412
+                && (error_message.contains("Request too frequently")
+                    || error_message.contains("检测到试看视频，需要充电才能观看完整版")
+                    || error_message.contains("视频需要充电才能观看")
+                    || error_message.contains("所有质量级别都获取失败")
+                    || error_message.contains("充电专享视频"))
+            {
                 return ClassifiedError::new(ErrorType::Permission, "充电专享视频，需要为UP主充电才能观看".to_string())
                     .with_status_code(status_code)
                     .with_retry_policy(false, true) // 不重试，可忽略
                     .with_auto_delete(true); // 需要自动删除
             }
-            
+
             let error_type = match status_code {
                 401 => ErrorType::Authentication,
                 403 => ErrorType::Authorization,
@@ -243,7 +244,7 @@ impl ErrorClassifier {
                     } else {
                         ErrorType::Permission // 默认当作充电视频
                     }
-                },
+                }
                 429 => ErrorType::RateLimit,
                 500..=599 => ErrorType::ServerError,
                 400..=499 => ErrorType::ClientError,
@@ -260,21 +261,21 @@ impl ErrorClassifier {
                     } else {
                         "充电专享视频，需要为UP主充电才能观看".to_string()
                     }
-                },
+                }
                 429 => "请求过于频繁，请稍后重试".to_string(),
                 500..=599 => "服务器内部错误".to_string(),
                 _ => format!("HTTP错误: {}", status_code),
             };
 
             let mut classified_error = ClassifiedError::new(error_type.clone(), message).with_status_code(status_code);
-            
+
             // 如果412状态码被归类为Permission（充电视频），设置自动删除标志
             if status_code == 412 && error_type == ErrorType::Permission {
                 classified_error = classified_error
                     .with_retry_policy(false, true) // 不重试，可忽略
                     .with_auto_delete(true); // 需要自动删除
             }
-            
+
             return classified_error;
         }
 
@@ -315,7 +316,7 @@ impl ErrorClassifier {
             }
             crate::bilibili::BiliError::RequestFailed(code, msg) => {
                 let error_type = match *code {
-                    -352 | -412 => ErrorType::RiskControl,  // 特定风控错误码
+                    -352 | -412 => ErrorType::RiskControl, // 特定风控错误码
                     -401 | -403 => ErrorType::Authentication,
                     -404 => ErrorType::NotFound,
                     -429 => ErrorType::RateLimit,
@@ -327,7 +328,7 @@ impl ErrorClassifier {
                 let should_retry = match *code {
                     -352 | -412 => false,     // 风控不重试
                     -500..=-400 | -1 => true, // 服务器错误或网络错误可重试
-                    _ => false, // 充电专享视频等其他错误不重试
+                    _ => false,               // 充电专享视频等其他错误不重试
                 };
 
                 let message = format!("B站API错误: {}", msg);

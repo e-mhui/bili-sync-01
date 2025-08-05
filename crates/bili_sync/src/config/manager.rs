@@ -245,7 +245,7 @@ impl ConfigManager {
         }
 
         info!("配置已保存到数据库");
-        
+
         // 如果使用了内存优化连接，立即同步到主数据库
         if optimized_conn.is_some() && crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
             info!("内存模式下，立即同步配置更新到主数据库");
@@ -255,7 +255,7 @@ impl ConfigManager {
                 info!("配置更新已同步到主数据库");
             }
         }
-        
+
         Ok(())
     }
 
@@ -319,7 +319,7 @@ impl ConfigManager {
         }
 
         debug!("配置项 {} 已更新", key);
-        
+
         // 如果使用了内存优化连接，立即同步到主数据库
         if optimized_conn.is_some() && crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
             debug!("内存模式下，立即同步配置项更新到主数据库");
@@ -329,7 +329,7 @@ impl ConfigManager {
                 debug!("配置项更新已同步到主数据库");
             }
         }
-        
+
         Ok(())
     }
 
@@ -374,7 +374,7 @@ impl ConfigManager {
                 now_standard_string().into(),
             ],
         );
-        
+
         if let Some(ref conn) = optimized_conn {
             debug!("ConfigManager: 使用内存优化连接记录配置变更");
             conn.execute(stmt).await?;
@@ -382,7 +382,7 @@ impl ConfigManager {
             debug!("ConfigManager: 使用原始连接记录配置变更");
             self.db.execute(stmt).await?;
         }
-        
+
         // 记录当前config_changes表的记录数，用于监控
         let count_sql = "SELECT COUNT(*) as count FROM config_changes";
         let count_stmt = sea_orm::Statement::from_string(sea_orm::DatabaseBackend::Sqlite, count_sql);
@@ -391,7 +391,7 @@ impl ConfigManager {
         } else {
             self.db.query_one(count_stmt).await?
         };
-        
+
         if let Some(row) = count_result {
             let count: i64 = row.try_get("", "count")?;
             debug!("config_changes表当前记录数: {}", count);

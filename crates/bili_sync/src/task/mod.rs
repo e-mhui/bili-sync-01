@@ -4,6 +4,7 @@ pub mod video_downloader;
 pub use http_server::http_server;
 pub use video_downloader::video_downloader;
 
+use crate::utils::time_format::now_standard_string;
 use anyhow::Result;
 use bili_sync_entity::task_queue::{self, Entity as TaskQueueEntity, TaskStatus, TaskType};
 use sea_orm::{
@@ -16,7 +17,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
-use crate::utils::time_format::now_standard_string;
 
 /// 删除视频源任务结构体
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -657,7 +657,7 @@ async fn delete_video_internal(db: Arc<DatabaseConnection>, video_id: i32) -> Re
         .exec(db_conn)
         .await
         .map_err(|e| anyhow::anyhow!("删除page记录失败: {}", e))?;
-    
+
     info!("已删除video_id={}的所有page记录", video_id);
 
     // 执行软删除：将deleted字段设为1
@@ -1663,7 +1663,7 @@ impl ConfigTaskQueue {
             match reload_config_internal().await {
                 Ok(_) => {
                     info!("重载配置任务执行成功");
-                    
+
                     // 重载配置成功后，检查并重配置内存优化器
                     match crate::utils::global_memory_optimizer::reconfigure_global_memory_optimizer(db.clone()).await {
                         Ok(changed) => {
@@ -1677,7 +1677,7 @@ impl ConfigTaskQueue {
                             warn!("重配置内存优化器失败: {}, 继续使用当前模式", e);
                         }
                     }
-                    
+
                     processed_count += 1;
 
                     // 标记数据库任务为已完成

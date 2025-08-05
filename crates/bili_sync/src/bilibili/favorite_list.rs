@@ -71,10 +71,10 @@ impl<'a> FavoriteList<'a> {
                     .get_videos(page)
                     .await
                     .with_context(|| format!("failed to get videos of favorite {} page {}", self.fid, page))?;
-                
+
                 let media_count = videos["data"]["info"]["media_count"].as_u64().unwrap_or(0);
                 let medias = &mut videos["data"]["medias"];
-                
+
                 if medias.as_array().is_none_or(|v| v.is_empty()) {
                     if media_count > 0 {
                         // 统计显示有视频但medias为空，说明内容被B站API过滤

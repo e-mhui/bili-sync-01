@@ -90,7 +90,7 @@ impl<'a> Video<'a> {
     /// 当普通视频API返回-404错误时，可以通过此方法获取epid，然后尝试番剧API降级
     pub async fn get_video_detail_for_epid(&self) -> Result<Option<String>> {
         tracing::debug!("调用视频详情API获取epid信息: BVID={}", self.bvid);
-        
+
         let res = match self
             .client
             .request(Method::GET, "https://api.bilibili.com/x/web-interface/view")
@@ -123,14 +123,17 @@ impl<'a> Video<'a> {
         };
 
         // 记录API响应（仅在debug级别）
-        tracing::debug!("视频详情API响应: {}", serde_json::to_string_pretty(&json_res).unwrap_or_else(|_| "无法序列化".to_string()));
+        tracing::debug!(
+            "视频详情API响应: {}",
+            serde_json::to_string_pretty(&json_res).unwrap_or_else(|_| "无法序列化".to_string())
+        );
 
         // 检查API返回是否成功
         if let Some(code) = json_res["code"].as_i64() {
             if code != 0 {
                 let message = json_res["message"].as_str().unwrap_or("未知错误");
                 tracing::warn!("视频详情API返回错误: code={}, message={}", code, message);
-                
+
                 // 对于特定的错误码，给出更详细的说明
                 match code {
                     -404 => tracing::debug!("视频不存在或已被删除，无法获取epid"),
@@ -138,7 +141,7 @@ impl<'a> Video<'a> {
                     62002 => tracing::debug!("稿件不可见，无法获取epid"),
                     _ => tracing::debug!("其他API错误，无法获取epid"),
                 }
-                
+
                 return Err(crate::bilibili::BiliError::RequestFailed(code, message.to_string()).into());
             }
         }
@@ -161,10 +164,8 @@ impl<'a> Video<'a> {
                 if url.contains("/bangumi/play/ep") {
                     if let Some(ep_start) = url.find("/ep") {
                         let ep_part = &url[ep_start + 3..]; // 跳过"/ep"
-                        // 提取数字部分，支持ep123456?参数的格式
-                        let epid_str: String = ep_part.chars()
-                            .take_while(|c| c.is_ascii_digit())
-                            .collect();
+                                                            // 提取数字部分，支持ep123456?参数的格式
+                        let epid_str: String = ep_part.chars().take_while(|c| c.is_ascii_digit()).collect();
                         if !epid_str.is_empty() {
                             tracing::debug!("从redirect_url提取到epid: {}", epid_str);
                             return Some(epid_str);
@@ -190,14 +191,11 @@ impl<'a> Video<'a> {
             })
             .or_else(|| {
                 // 检查是否有直接的epid字段
-                data["epid"]
-                    .as_i64()
-                    .or_else(|| data["episode_id"].as_i64())
-                    .map(|id| {
-                        let epid_str = id.to_string();
-                        tracing::debug!("从直接字段提取到epid: {}", epid_str);
-                        epid_str
-                    })
+                data["epid"].as_i64().or_else(|| data["episode_id"].as_i64()).map(|id| {
+                    let epid_str = id.to_string();
+                    tracing::debug!("从直接字段提取到epid: {}", epid_str);
+                    epid_str
+                })
             })
             .or_else(|| {
                 // 尝试从ugc_season.episodes中获取（用户投稿番剧）
@@ -391,23 +389,23 @@ impl<'a> Video<'a> {
                             match bili_err {
                                 crate::bilibili::BiliError::RequestFailed(87007 | 87008, msg) => {
                                     (true, msg.contains("试看视频"))
-                                },
+                                }
                                 crate::bilibili::BiliError::RequestFailed(code, msg) => {
                                     // 检查其他可能的充电专享视频错误码或消息
-                                    let is_charging = msg.contains("充电专享") 
-                                        || msg.contains("需要充电") 
+                                    let is_charging = msg.contains("充电专享")
+                                        || msg.contains("需要充电")
                                         || msg.contains("试看视频")
                                         || msg.contains("大会员专享")
                                         || (*code == -403 && msg.contains("access denied"));
                                     (is_charging, msg.contains("试看视频"))
-                                },
-                                _ => (false, false)
+                                }
+                                _ => (false, false),
                             }
                         } else {
                             // 检查非BiliError类型的错误是否可能是充电专享视频错误
                             let error_str = e.to_string().to_lowercase();
-                            let is_charging = error_str.contains("充电专享") 
-                                || error_str.contains("需要充电") 
+                            let is_charging = error_str.contains("充电专享")
+                                || error_str.contains("需要充电")
                                 || error_str.contains("试看视频")
                                 || error_str.contains("大会员专享")
                                 || error_str.contains("access denied");
@@ -429,14 +427,25 @@ impl<'a> Video<'a> {
                                 tracing::info!("视频需要充电才能观看");
                             }
                             // 对于充电专享视频，统一返回87007错误以便上层正确处理
-                            return Err(crate::bilibili::BiliError::RequestFailed(87007, "充电专享视频，需要为UP主充电才能观看".to_string()).into());
+                            return Err(crate::bilibili::BiliError::RequestFailed(
+                                87007,
+                                "充电专享视频，需要为UP主充电才能观看".to_string(),
+                            )
+                            .into());
                         } else {
                             tracing::error!("所有质量级别都获取失败");
                             // 检查是否可能是隐蔽的充电专享视频（API成功但实际是试看片段）
                             let error_str = e.to_string().to_lowercase();
-                            if error_str.contains("检测到试看") || error_str.contains("试看模式") || error_str.contains("试看片段") {
+                            if error_str.contains("检测到试看")
+                                || error_str.contains("试看模式")
+                                || error_str.contains("试看片段")
+                            {
                                 tracing::info!("检测到隐蔽的充电专享视频（试看片段模式）");
-                                return Err(crate::bilibili::BiliError::RequestFailed(87008, "充电专享视频（试看片段），需要为UP主充电才能观看".to_string()).into());
+                                return Err(crate::bilibili::BiliError::RequestFailed(
+                                    87008,
+                                    "充电专享视频（试看片段），需要为UP主充电才能观看".to_string(),
+                                )
+                                .into());
                             }
                         }
                         return Err(e);
@@ -454,7 +463,11 @@ impl<'a> Video<'a> {
     /// 带API降级的视频流获取（普通视频->番剧API）
     /// 当普通视频API返回 -404 "啥都木有" 时，自动尝试番剧API
     /// 如果缺少ep_id，会先尝试从视频详情API获取epid信息
-    pub async fn get_page_analyzer_with_api_fallback(&self, page: &PageInfo, ep_id: Option<&str>) -> Result<PageAnalyzer> {
+    pub async fn get_page_analyzer_with_api_fallback(
+        &self,
+        page: &PageInfo,
+        ep_id: Option<&str>,
+    ) -> Result<PageAnalyzer> {
         tracing::debug!("开始API降级获取视频流，BVID: {}, CID: {}", self.bvid, page.cid);
 
         // 首先尝试普通视频API
@@ -465,18 +478,19 @@ impl<'a> Video<'a> {
             }
             Err(e) => {
                 // 检查错误类型，判断是否需要降级到番剧API
-                let should_fallback_to_bangumi = if let Some(bili_err) = e.downcast_ref::<crate::bilibili::BiliError>() {
+                let should_fallback_to_bangumi = if let Some(bili_err) = e.downcast_ref::<crate::bilibili::BiliError>()
+                {
                     match bili_err {
                         crate::bilibili::BiliError::RequestFailed(-404, msg) => {
                             // -404 错误，检查消息是否包含"啥都木有"或其他表示内容不存在的关键词
                             let msg_lower = msg.to_lowercase();
-                            msg_lower.contains("啥都木有") 
-                                || msg_lower.contains("nothing found") 
+                            msg_lower.contains("啥都木有")
+                                || msg_lower.contains("nothing found")
                                 || msg_lower.contains("not found")
                                 || msg_lower.contains("无内容")
                                 || msg_lower.contains("视频不存在")
                         }
-                        _ => false
+                        _ => false,
                     }
                 } else {
                     false
@@ -484,7 +498,7 @@ impl<'a> Video<'a> {
 
                 if should_fallback_to_bangumi {
                     tracing::info!("普通视频API返回-404错误，尝试降级到番剧API: {}", e);
-                    
+
                     // 获取epid：优先使用传入的ep_id，如果没有则从视频详情API获取
                     let epid_to_use = if let Some(provided_epid) = ep_id {
                         tracing::debug!("使用提供的ep_id: {}", provided_epid);
@@ -568,8 +582,11 @@ impl<'a> Video<'a> {
             .await?;
 
         // 添加详细的API响应日志
-        tracing::debug!("API完整响应: {}", serde_json::to_string_pretty(&res).unwrap_or_else(|_| "无法序列化".to_string()));
-        
+        tracing::debug!(
+            "API完整响应: {}",
+            serde_json::to_string_pretty(&res).unwrap_or_else(|_| "无法序列化".to_string())
+        );
+
         // 记录关键字段
         if let Some(code) = res["code"].as_i64() {
             tracing::debug!("API返回code: {}", code);
@@ -577,15 +594,25 @@ impl<'a> Video<'a> {
         if let Some(message) = res["message"].as_str() {
             tracing::debug!("API返回message: {}", message);
         }
-        
+
         // 检查data字段是否存在
         if res["data"].is_null() {
             tracing::debug!("API返回的data字段为null");
         } else if let Some(dash) = res["data"]["dash"].as_object() {
-            tracing::debug!("dash对象存在，视频流数量: {}", 
-                dash.get("video").and_then(|v| v.as_array()).map(|v| v.len()).unwrap_or(0));
-            tracing::debug!("dash对象存在，音频流数量: {}", 
-                dash.get("audio").and_then(|v| v.as_array()).map(|v| v.len()).unwrap_or(0));
+            tracing::debug!(
+                "dash对象存在，视频流数量: {}",
+                dash.get("video")
+                    .and_then(|v| v.as_array())
+                    .map(|v| v.len())
+                    .unwrap_or(0)
+            );
+            tracing::debug!(
+                "dash对象存在，音频流数量: {}",
+                dash.get("audio")
+                    .and_then(|v| v.as_array())
+                    .map(|v| v.len())
+                    .unwrap_or(0)
+            );
         } else {
             tracing::debug!("API返回的data.dash字段不存在或不是对象");
         }
@@ -601,28 +628,43 @@ impl<'a> Video<'a> {
         // 检查是否有可用的视频流 (只接受dash格式，durl是试看片段)
         let has_dash_video = res["data"]["dash"]["video"].as_array().is_some_and(|v| !v.is_empty());
         let has_durl_only = res["data"]["durl"].as_array().is_some_and(|v| !v.is_empty()) && !has_dash_video;
-        
+
         if has_durl_only {
             // 只在debug级别记录试看视频详情，避免日志过多
-            tracing::debug!("试看视频data字段: {}", 
-                serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string()));
+            tracing::debug!(
+                "试看视频data字段: {}",
+                serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string())
+            );
             // 返回充电视频错误，触发自动删除
-            return Err(crate::bilibili::BiliError::RequestFailed(87008, "试看视频，需要充电才能观看完整版".to_string()).into());
+            return Err(crate::bilibili::BiliError::RequestFailed(
+                87008,
+                "试看视频，需要充电才能观看完整版".to_string(),
+            )
+            .into());
         }
-        
+
         // 检查是否为可疑的充电视频：API返回成功但可能是试看片段
         if has_dash_video {
             // 检查视频时长是否异常短（可能是试看片段）
             if let Some(timelength) = res["data"]["timelength"].as_u64() {
                 // 如果视频时长小于30秒且同时存在durl字段，可能是试看视频
                 if timelength < 30000 && res["data"]["durl"].as_array().is_some_and(|v| !v.is_empty()) {
-                    tracing::debug!("检测到可疑的短视频片段，时长: {}ms，可能为充电专享视频的试看片段", timelength);
-                    tracing::debug!("可疑试看视频data字段: {}", 
-                        serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string()));
-                    return Err(crate::bilibili::BiliError::RequestFailed(87008, "检测到试看片段，可能为充电专享视频".to_string()).into());
+                    tracing::debug!(
+                        "检测到可疑的短视频片段，时长: {}ms，可能为充电专享视频的试看片段",
+                        timelength
+                    );
+                    tracing::debug!(
+                        "可疑试看视频data字段: {}",
+                        serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string())
+                    );
+                    return Err(crate::bilibili::BiliError::RequestFailed(
+                        87008,
+                        "检测到试看片段，可能为充电专享视频".to_string(),
+                    )
+                    .into());
                 }
             }
-            
+
             // 检查是否存在特定的充电专享视频标识字段
             if let Some(result) = res["data"]["result"].as_str() {
                 if result == "suee" {
@@ -630,17 +672,25 @@ impl<'a> Video<'a> {
                     let has_limited_content = res["data"]["durl"].as_array().is_some_and(|v| !v.is_empty());
                     if has_limited_content {
                         tracing::debug!("检测到result=suee且存在durl，可能为充电专享视频的试看模式");
-                        tracing::debug!("疑似充电专享视频data字段: {}", 
-                            serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string()));
-                        return Err(crate::bilibili::BiliError::RequestFailed(87008, "检测到试看模式，可能为充电专享视频".to_string()).into());
+                        tracing::debug!(
+                            "疑似充电专享视频data字段: {}",
+                            serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string())
+                        );
+                        return Err(crate::bilibili::BiliError::RequestFailed(
+                            87008,
+                            "检测到试看模式，可能为充电专享视频".to_string(),
+                        )
+                        .into());
                     }
                 }
             }
         }
-        
+
         if !has_dash_video {
-            tracing::error!("视频流为空，完整的data字段: {}", 
-                serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string()));
+            tracing::error!(
+                "视频流为空，完整的data字段: {}",
+                serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string())
+            );
             return Err(crate::bilibili::BiliError::VideoStreamEmpty("API返回的视频流为空".to_string()).into());
         }
 
@@ -719,7 +769,13 @@ impl<'a> Video<'a> {
                 if let Some(id) = audio["id"].as_u64() {
                     let codec = audio["codecs"].as_str().unwrap_or("unknown");
                     let bandwidth = audio["bandwidth"].as_u64().unwrap_or(0);
-                    tracing::debug!("普通视频音频流{}: ID={}, codec={}, bandwidth={}", i, id, codec, bandwidth);
+                    tracing::debug!(
+                        "普通视频音频流{}: ID={}, codec={}, bandwidth={}",
+                        i,
+                        id,
+                        codec,
+                        bandwidth
+                    );
                 }
             }
             tracing::debug!("=== 普通视频音频流信息结束 ===");
@@ -796,19 +852,19 @@ impl<'a> Video<'a> {
                                 crate::bilibili::BiliError::RequestFailed(87007 | 87008, _) => true,
                                 crate::bilibili::BiliError::RequestFailed(code, msg) => {
                                     // 检查其他可能的充电专享视频错误码或消息
-                                    msg.contains("充电专享") 
-                                        || msg.contains("需要充电") 
+                                    msg.contains("充电专享")
+                                        || msg.contains("需要充电")
                                         || msg.contains("试看视频")
                                         || msg.contains("大会员专享")
                                         || (*code == -403 && msg.contains("access denied"))
-                                },
-                                _ => false
+                                }
+                                _ => false,
                             }
                         } else {
                             // 检查非BiliError类型的错误是否可能是充电专享视频错误
                             let error_str = e.to_string().to_lowercase();
-                            error_str.contains("充电专享") 
-                                || error_str.contains("需要充电") 
+                            error_str.contains("充电专享")
+                                || error_str.contains("需要充电")
                                 || error_str.contains("试看视频")
                                 || error_str.contains("大会员专享")
                                 || error_str.contains("access denied")
@@ -826,7 +882,11 @@ impl<'a> Video<'a> {
                         if is_charging_video_error {
                             tracing::info!("番剧需要充电才能观看");
                             // 对于充电专享番剧，统一返回87007错误以便上层正确处理
-                            return Err(crate::bilibili::BiliError::RequestFailed(87007, "充电专享视频，需要为UP主充电才能观看".to_string()).into());
+                            return Err(crate::bilibili::BiliError::RequestFailed(
+                                87007,
+                                "充电专享视频，需要为UP主充电才能观看".to_string(),
+                            )
+                            .into());
                         } else {
                             tracing::error!("所有番剧质量级别都获取失败");
                         }
@@ -881,8 +941,11 @@ impl<'a> Video<'a> {
             .await?;
 
         // 添加详细的番剧API响应日志
-        tracing::debug!("番剧API完整响应: {}", serde_json::to_string_pretty(&res).unwrap_or_else(|_| "无法序列化".to_string()));
-        
+        tracing::debug!(
+            "番剧API完整响应: {}",
+            serde_json::to_string_pretty(&res).unwrap_or_else(|_| "无法序列化".to_string())
+        );
+
         // 记录关键字段
         if let Some(code) = res["code"].as_i64() {
             tracing::debug!("番剧API返回code: {}", code);
@@ -890,15 +953,25 @@ impl<'a> Video<'a> {
         if let Some(message) = res["message"].as_str() {
             tracing::debug!("番剧API返回message: {}", message);
         }
-        
+
         // 检查result字段是否存在
         if res["result"].is_null() {
             tracing::debug!("番剧API返回的result字段为null");
         } else if let Some(dash) = res["result"]["dash"].as_object() {
-            tracing::debug!("番剧dash对象存在，视频流数量: {}", 
-                dash.get("video").and_then(|v| v.as_array()).map(|v| v.len()).unwrap_or(0));
-            tracing::debug!("番剧dash对象存在，音频流数量: {}", 
-                dash.get("audio").and_then(|v| v.as_array()).map(|v| v.len()).unwrap_or(0));
+            tracing::debug!(
+                "番剧dash对象存在，视频流数量: {}",
+                dash.get("video")
+                    .and_then(|v| v.as_array())
+                    .map(|v| v.len())
+                    .unwrap_or(0)
+            );
+            tracing::debug!(
+                "番剧dash对象存在，音频流数量: {}",
+                dash.get("audio")
+                    .and_then(|v| v.as_array())
+                    .map(|v| v.len())
+                    .unwrap_or(0)
+            );
         } else {
             tracing::debug!("番剧API返回的result.dash字段不存在或不是对象");
         }
@@ -913,8 +986,10 @@ impl<'a> Video<'a> {
 
         // 检查是否有可用的番剧视频流
         if res["result"]["dash"]["video"].as_array().is_none_or(|v| v.is_empty()) {
-            tracing::error!("番剧视频流为空，完整的result字段: {}", 
-                serde_json::to_string_pretty(&res["result"]).unwrap_or_else(|_| "无法序列化".to_string()));
+            tracing::error!(
+                "番剧视频流为空，完整的result字段: {}",
+                serde_json::to_string_pretty(&res["result"]).unwrap_or_else(|_| "无法序列化".to_string())
+            );
             return Err(crate::bilibili::BiliError::VideoStreamEmpty("番剧API返回的视频流为空".to_string()).into());
         }
 
@@ -952,7 +1027,7 @@ impl<'a> Video<'a> {
         tracing::debug!("请求参数: {:?}", params);
 
         let request_url = "https://api.bilibili.com/pgc/player/web/playurl";
-        
+
         // 构建完整的URL用于日志显示
         let mut full_url = format!("{}?", request_url);
         for (i, (key, value)) in params.iter().enumerate() {
@@ -961,7 +1036,7 @@ impl<'a> Video<'a> {
             }
             full_url.push_str(&format!("{}={}", key, value));
         }
-        
+
         tracing::debug!("==================== 番剧API请求 ====================");
         tracing::debug!("完整请求URL: {}", full_url);
         tracing::debug!("==================================================");

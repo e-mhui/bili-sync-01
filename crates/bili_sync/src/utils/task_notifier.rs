@@ -42,7 +42,7 @@ impl TaskStatusNotifier {
         // 从配置中获取实际的扫描间隔
         let config = crate::config::reload_config();
         let interval_seconds = config.interval as i64;
-        
+
         let now = chrono::Local::now();
         let _ = self.tx.send(Arc::new(TaskStatus {
             is_running: false,

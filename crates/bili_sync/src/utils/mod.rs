@@ -55,12 +55,12 @@ where
 
         if let Some(message) = visitor.message {
             let target = event.metadata().target().to_string();
-            
+
             // 写入文件日志
             if let Some(ref writer) = *file_logger::FILE_LOG_WRITER {
                 writer.write_log(&now_standard_string(), level_str, &message, Some(&target));
             }
-            
+
             // 添加到内存缓冲区
             add_log_entry(level, message, Some(target));
         }

@@ -39,7 +39,6 @@ use crate::utils::nfo::NFO;
 use crate::utils::notification::NewVideoInfo;
 use crate::utils::status::{PageStatus, VideoStatus, STATUS_OK};
 
-
 // 新增：番剧季信息结构体
 #[derive(Debug, Clone)]
 pub struct SeasonInfo {
@@ -212,16 +211,16 @@ async fn update_bangumi_cache(
     bili_client: &BiliClient,
     season_info: Option<SeasonInfo>,
 ) -> Result<()> {
-    use bili_sync_entity::video_source;
     use crate::utils::bangumi_cache::{serialize_cache, BangumiCache};
+    use bili_sync_entity::video_source;
     use sea_orm::ActiveValue::Set;
-    
+
     // 获取番剧源信息
     let source = video_source::Entity::find_by_id(source_id)
         .one(connection)
         .await?
         .ok_or_else(|| anyhow::anyhow!("番剧源不存在"))?;
-    
+
     // 如果没有提供season_info，尝试从API获取
     let season_info = if let Some(info) = season_info {
         info
@@ -238,10 +237,10 @@ async fn update_bangumi_cache(
         debug!("番剧源 {} 没有season_id，跳过缓存更新", source_id);
         return Ok(());
     };
-    
+
     // 构建episodes数组
     let mut episodes = Vec::new();
-    
+
     // 查询该番剧源的所有视频和分页信息
     let videos_with_pages = bili_sync_entity::video::Entity::find()
         .filter(bili_sync_entity::video::Column::SourceId.eq(source_id))
@@ -249,7 +248,7 @@ async fn update_bangumi_cache(
         .find_with_related(bili_sync_entity::page::Entity)
         .all(connection)
         .await?;
-    
+
     // 从数据库记录构建episodes信息
     for (video, pages) in &videos_with_pages {
         if let Some(page) = pages.first() {
@@ -265,16 +264,16 @@ async fn update_bangumi_cache(
                 "pub_time": video.pubtime.and_utc().timestamp(),
                 "section_type": 0, // 正片
             });
-            
+
             // 如果有share_copy，添加到episode中
             if let Some(share_copy) = &video.share_copy {
                 episode["share_copy"] = serde_json::Value::String(share_copy.clone());
             }
-            
+
             episodes.push(episode);
         }
     }
-    
+
     // 如果没有视频数据，使用API提供的episodes
     if episodes.is_empty() && !season_info.episodes.is_empty() {
         for ep_info in &season_info.episodes {
@@ -286,7 +285,7 @@ async fn update_bangumi_cache(
             }));
         }
     }
-    
+
     // 构建season_info JSON
     let season_json = serde_json::json!({
         "title": season_info.title,
@@ -305,13 +304,10 @@ async fn update_bangumi_cache(
         "horizontal_cover_169": season_info.horizontal_cover_169,
         "bkg_cover": season_info.bkg_cover,
     });
-    
+
     // 获取最新的剧集时间
-    let last_episode_time = videos_with_pages
-        .iter()
-        .map(|(v, _)| v.pubtime.and_utc())
-        .max();
-    
+    let last_episode_time = videos_with_pages.iter().map(|(v, _)| v.pubtime.and_utc()).max();
+
     // 创建缓存对象
     let cache = BangumiCache {
         season_info: season_json,
@@ -319,10 +315,10 @@ async fn update_bangumi_cache(
         last_episode_time,
         total_episodes: season_info.total_episodes.unwrap_or(episodes.len() as i32) as usize,
     };
-    
+
     // 序列化缓存
     let cache_json = serialize_cache(&cache)?;
-    
+
     // 更新数据库
     let active_model = video_source::ActiveModel {
         id: Set(source_id),
@@ -330,16 +326,16 @@ async fn update_bangumi_cache(
         cache_updated_at: Set(Some(crate::utils::time_format::now_standard_string())),
         ..Default::default()
     };
-    
+
     active_model.update(connection).await?;
-    
+
     info!(
         "番剧源 {} ({}) 缓存更新成功，共 {} 集",
         source_id,
         season_info.title,
         episodes.len()
     );
-    
+
     Ok(())
 }
 
@@ -394,21 +390,31 @@ pub async fn refresh_video_source<'a>(
         for video_info in &videos_info {
             let (title, bvid, upper_name, episode_num) = match video_info {
                 VideoInfo::Detail { title, bvid, upper, .. } => (title.clone(), bvid.clone(), upper.name.clone(), None),
-                VideoInfo::Favorite { title, bvid, upper, .. } => (title.clone(), bvid.clone(), upper.name.clone(), None),
+                VideoInfo::Favorite { title, bvid, upper, .. } => {
+                    (title.clone(), bvid.clone(), upper.name.clone(), None)
+                }
                 VideoInfo::Collection { title, bvid, arc, .. } => {
                     // 从arc字段中提取upper信息
-                    let upper_name = arc.as_ref()
+                    let upper_name = arc
+                        .as_ref()
                         .and_then(|a| a["author"]["name"].as_str())
                         .unwrap_or("未知")
                         .to_string();
                     (title.clone(), bvid.clone(), upper_name, None)
                 }
-                VideoInfo::WatchLater { title, bvid, upper, .. } => (title.clone(), bvid.clone(), upper.name.clone(), None),
+                VideoInfo::WatchLater { title, bvid, upper, .. } => {
+                    (title.clone(), bvid.clone(), upper.name.clone(), None)
+                }
                 VideoInfo::Submission { title, bvid, .. } => {
                     // Submission 没有 upper 信息，使用默认值
                     (title.clone(), bvid.clone(), "未知".to_string(), None)
                 }
-                VideoInfo::Bangumi { title, bvid, episode_number, .. } => {
+                VideoInfo::Bangumi {
+                    title,
+                    bvid,
+                    episode_number,
+                    ..
+                } => {
                     // Bangumi 没有 upper 信息，使用番剧名称
                     (title.clone(), bvid.clone(), "番剧".to_string(), *episode_number)
                 }
@@ -417,16 +423,17 @@ pub async fn refresh_video_source<'a>(
         }
 
         // 获取所有视频的BVID，用于后续判断哪些是新增的
-        let video_bvids: Vec<String> = videos_info.iter().map(|v| {
-            match v {
+        let video_bvids: Vec<String> = videos_info
+            .iter()
+            .map(|v| match v {
                 VideoInfo::Detail { bvid, .. } => bvid.clone(),
                 VideoInfo::Favorite { bvid, .. } => bvid.clone(),
                 VideoInfo::Collection { bvid, .. } => bvid.clone(),
                 VideoInfo::WatchLater { bvid, .. } => bvid.clone(),
                 VideoInfo::Submission { bvid, .. } => bvid.clone(),
                 VideoInfo::Bangumi { bvid, .. } => bvid.clone(),
-            }
-        }).collect();
+            })
+            .collect();
 
         create_videos(videos_info, video_source, connection).await?;
 
@@ -440,27 +447,28 @@ pub async fn refresh_video_source<'a>(
             // 查询这批视频中哪些是新插入的（根据创建时间）
             let now = chrono::Utc::now();
             let recent_threshold = now - chrono::Duration::seconds(10); // 10秒内创建的视频
-            
+
             let newly_inserted = video::Entity::find()
                 .filter(video_source.filter_expr())
                 .filter(video::Column::Bvid.is_in(video_bvids.clone()))
                 .filter(video::Column::CreatedAt.gte(recent_threshold.format("%Y-%m-%d %H:%M:%S").to_string()))
                 .all(connection)
                 .await?;
-            
+
             debug!("查询到 {} 个新插入的视频记录", newly_inserted.len());
 
             // 为每个新插入的视频创建通知信息
             for new_video in newly_inserted {
                 // 查找对应的视频信息
-                if let Some(idx) = temp_video_infos.iter().position(|(_, bvid, _, _)| bvid == &new_video.bvid) {
+                if let Some(idx) = temp_video_infos
+                    .iter()
+                    .position(|(_, bvid, _, _)| bvid == &new_video.bvid)
+                {
                     let (title, _, upper_name, bangumi_episode) = &temp_video_infos[idx];
-                    
+
                     // 使用数据库中的发布时间（已经是北京时间）
-                    let pubtime = new_video.pubtime
-                        .format("%Y-%m-%d %H:%M:%S")
-                        .to_string();
-                    
+                    let pubtime = new_video.pubtime.format("%Y-%m-%d %H:%M:%S").to_string();
+
                     // 获取集数信息
                     let episode_number = if let Some(ep) = bangumi_episode {
                         // 番剧：使用从VideoInfo中获取的集数
@@ -469,7 +477,7 @@ pub async fn refresh_video_source<'a>(
                         // 其他类型：使用数据库中的episode_number字段
                         new_video.episode_number
                     };
-                    
+
                     new_videos.push(NewVideoInfo {
                         title: title.clone(),
                         bvid: new_video.bvid.clone(),
@@ -482,7 +490,7 @@ pub async fn refresh_video_source<'a>(
                     });
                 }
             }
-            
+
             debug!("实际收集到 {} 个新视频信息用于推送", new_videos.len());
         }
     }
@@ -497,7 +505,7 @@ pub async fn refresh_video_source<'a>(
             .save(connection)
             .await?;
     }
-    
+
     // 番剧源：更新缓存
     if let VideoSourceEnum::BangumiSource(bangumi_source) = video_source {
         // 检查是否需要更新缓存
@@ -509,7 +517,7 @@ pub async fn refresh_video_source<'a>(
             let source_model = bili_sync_entity::video_source::Entity::find_by_id(bangumi_source.id)
                 .one(connection)
                 .await?;
-            
+
             if let Some(source) = source_model {
                 // 如果缓存不存在，需要创建
                 source.cached_episodes.is_none()
@@ -517,12 +525,12 @@ pub async fn refresh_video_source<'a>(
                 false
             }
         };
-        
+
         if should_update_cache {
             update_bangumi_cache(bangumi_source.id, connection, bili_client, None).await?;
         }
     }
-    
+
     video_source.log_refresh_video_end(count);
     debug!("workflow返回: count={}, new_videos.len()={}", count, new_videos.len());
     Ok((count, new_videos))
@@ -635,7 +643,7 @@ pub async fn fetch_video_details(
                 } else {
                     connection
                 };
-                
+
                 let txn = db_conn.begin().await?;
 
                 let (actual_cid, duration) = if let Some(ep_id) = &video_model.ep_id {
@@ -723,10 +731,17 @@ pub async fn fetch_video_details(
                             }
                         }
                         Ok((tags, mut view_info)) => {
-                            let VideoInfo::Detail { pages, staff, ref is_upower_exclusive, ref is_upower_play, .. } = &mut view_info else {
+                            let VideoInfo::Detail {
+                                pages,
+                                staff,
+                                ref is_upower_exclusive,
+                                ref is_upower_play,
+                                ..
+                            } = &mut view_info
+                            else {
                                 unreachable!()
                             };
-                            
+
                             // 革命性充电视频检测：基于API返回的upower字段进行精确判断
                             if let (Some(true), Some(false)) = (is_upower_exclusive, is_upower_play) {
                                 info!("「{}」检测到充电专享视频（未充电），将自动删除", &video_model.name);
@@ -735,25 +750,27 @@ pub async fn fetch_video_details(
                                     video_id: video_model.id,
                                     task_id: format!("auto_delete_upower_{}", video_model.id),
                                 };
-                                
-                                if let Err(delete_err) = VIDEO_DELETE_TASK_QUEUE.enqueue_task(delete_task, connection).await {
+
+                                if let Err(delete_err) =
+                                    VIDEO_DELETE_TASK_QUEUE.enqueue_task(delete_task, connection).await
+                                {
                                     error!("创建充电视频删除任务失败「{}」: {:#}", &video_model.name, delete_err);
                                 } else {
                                     debug!("充电视频删除任务已加入队列「{}」", &video_model.name);
                                 }
-                                
+
                                 // 跳过后续处理，返回成功完成这个视频的处理
                                 return Ok(());
                             }
-                            
+
                             // 日志记录upower字段状态（仅debug级别）
                             if is_upower_exclusive.is_some() || is_upower_play.is_some() {
                                 debug!(
-                                    "视频「{}」upower状态: exclusive={:?}, play={:?}", 
+                                    "视频「{}」upower状态: exclusive={:?}, play={:?}",
                                     &video_model.name, is_upower_exclusive, is_upower_play
                                 );
                             }
-                            
+
                             let pages = std::mem::take(pages);
                             let pages_len = pages.len();
 
@@ -889,14 +906,15 @@ pub async fn fetch_video_details(
                             }
 
                             // 检查是否在内存模式，如果是则使用内存数据库连接
-                            let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+                            let optimized_conn =
+                                crate::utils::global_memory_optimizer::get_optimized_connection().await;
                             let db_conn = if let Some(ref conn) = optimized_conn {
                                 debug!("使用内存数据库连接处理普通视频");
                                 conn.as_ref()
                             } else {
                                 connection
                             };
-                            
+
                             let txn = db_conn.begin().await?;
                             // 将分页信息写入数据库
                             create_pages(pages, &video_model_mut, &txn).await?;
@@ -2142,7 +2160,8 @@ pub async fn dispatch_download_page(args: DownloadPageArgs<'_>, token: Cancellat
                     downloader,
                     base_path,
                     token_clone,
-                ).await;
+                )
+                .await;
                 // 返回结果和分页信息
                 (result, page_pid, page_name)
             }
@@ -2178,13 +2197,19 @@ pub async fn dispatch_download_page(args: DownloadPageArgs<'_>, token: Cancellat
                     || error_msg.contains("用户主动暂停任务")
                     || (error_msg.contains("Download cancelled") && crate::task::TASK_CONTROLLER.is_paused())
                 {
-                    info!("分页下载任务因用户暂停而终止 - 第{}页 {}: {}", page_pid, page_name, error_msg);
+                    info!(
+                        "分页下载任务因用户暂停而终止 - 第{}页 {}: {}",
+                        page_pid, page_name, error_msg
+                    );
                     continue; // 跳过暂停相关的错误，不触发风控或其他处理
                 }
 
                 // 2. 检查是否是真正的风控错误（DownloadAbortError）
                 if e.downcast_ref::<DownloadAbortError>().is_some() {
-                    warn!("检测到真正的风控错误，中止所有下载任务 - 第{}页 {}", page_pid, page_name);
+                    warn!(
+                        "检测到真正的风控错误，中止所有下载任务 - 第{}页 {}",
+                        page_pid, page_name
+                    );
                     if !download_aborted {
                         token.cancel();
                         download_aborted = true;
@@ -2197,22 +2222,22 @@ pub async fn dispatch_download_page(args: DownloadPageArgs<'_>, token: Cancellat
                 // 4. 处理其他类型的错误（包括普通的Download cancelled）
                 // 记录更详细的错误信息，包括错误链
                 error!("下载分页子任务失败 - 第{}页 {}: {:#}", page_pid, page_name, e);
-                
+
                 // 输出错误链中的所有错误信息
                 let mut error_chain = String::new();
                 let mut current_error: &dyn std::error::Error = &*e;
                 error_chain.push_str(&format!("错误: {}", current_error));
-                
+
                 while let Some(source) = current_error.source() {
                     error_chain.push_str(&format!("\n  原因: {}", source));
                     current_error = source;
                 }
-                
+
                 error!("完整错误链: {}", error_chain);
-                
+
                 // 收集失败信息，包含分页标识
                 failed_pages.push(format!("第{}页 {}: {}", page_pid, page_name, e));
-                
+
                 // 如果失败的任务没有达到 STATUS_OK，记录当前状态
                 if target_status != STATUS_OK {
                     error!("当前分页下载状态: {}, 视频: {}", target_status, &args.video_model.name);
@@ -2234,22 +2259,18 @@ pub async fn dispatch_download_page(args: DownloadPageArgs<'_>, token: Cancellat
         // 提供更详细的错误信息，保留原始错误上下文
         error!(
             "视频「{}」分页下载失败，状态码: {}",
-            &args.video_model.name,
-            target_status
+            &args.video_model.name, target_status
         );
-        
+
         // 构建详细的错误信息
         let details = if !failed_pages.is_empty() {
             format!("失败的分页: {}", failed_pages.join("; "))
         } else {
             "请检查网络连接、文件系统权限或重试下载。".to_string()
         };
-        
+
         // 返回ProcessPageError，携带详细信息
-        let process_error = ProcessPageError::new(
-            args.video_model.name.clone(),
-            target_status,
-        ).with_details(details);
+        let process_error = ProcessPageError::new(args.video_model.name.clone(), target_status).with_details(details);
         return Err(process_error.into());
     }
     Ok(ExecutionStatus::Succeeded)
@@ -2780,7 +2801,10 @@ pub async fn fetch_page_video(
                 if quality_value < requested_quality {
                     let quality_gap = requested_quality - quality_value;
                     if requested_quality >= 120 && quality_value < 120 {
-                        debug!("⚠️  未获得4K+质量(请求{}，实际{})", filter_option.video_max_quality, quality);
+                        debug!(
+                            "⚠️  未获得4K+质量(请求{}，实际{})",
+                            filter_option.video_max_quality, quality
+                        );
                     } else if quality_gap >= 40 {
                         warn!(
                             "⚠️  视频质量显著低于预期(请求{}，实际{}) - 视频源可能不支持更高质量",
@@ -3919,7 +3943,7 @@ async fn process_bangumi_video(
     } else {
         connection
     };
-    
+
     let txn = db_conn.begin().await?;
 
     let (actual_cid, duration) = if let Some(ep_id) = &video_model.ep_id {

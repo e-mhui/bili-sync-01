@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::pin::Pin;
 
+use crate::utils::time_format::now_standard_string;
 use anyhow::{Context, Result};
 use bili_sync_entity::*;
 use chrono::Utc;
@@ -10,7 +11,6 @@ use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::{OnConflict, SimpleExpr};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{DatabaseConnection, Unchanged};
-use crate::utils::time_format::now_standard_string;
 
 use crate::adapter::{VideoSource, VideoSourceEnum, _ActiveModel};
 use crate::bilibili::{BiliClient, FavoriteList, VideoInfo};

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
-use sea_orm::{DatabaseConnection, Statement, ConnectionTrait, DatabaseBackend, TransactionTrait};
-use tracing::{debug, info, warn, error};
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, TransactionTrait};
 use std::sync::Arc;
+use tracing::{debug, error, info, warn};
 
 /// 内存数据库扫描优化器
 /// 负责在扫描期间使用内存数据库提升性能，特别是在NAS环境下
@@ -39,7 +39,7 @@ impl MemoryDbOptimizer {
         // 创建共享内存数据库连接
         // 使用命名的共享内存数据库确保连接稳定性
         let memory_db_url = "sqlite:file:bili_sync_memory?mode=memory&cache=shared";
-        
+
         // 配置内存数据库连接选项
         let mut memory_db_options = sea_orm::ConnectOptions::new(memory_db_url);
         memory_db_options
@@ -49,7 +49,7 @@ impl MemoryDbOptimizer {
             .idle_timeout(std::time::Duration::from_secs(600)) // 10分钟空闲超时
             .max_lifetime(std::time::Duration::from_secs(3600)) // 1小时最大生命周期
             .sqlx_logging(false); // 禁用详细日志
-        
+
         let memory_db = sea_orm::Database::connect(memory_db_options)
             .await
             .context("连接共享内存数据库失败")?;
@@ -58,7 +58,7 @@ impl MemoryDbOptimizer {
         let keeper_connection = sea_orm::Database::connect(memory_db_url)
             .await
             .context("创建守护连接失败")?;
-        
+
         info!("已创建内存数据库守护连接，确保数据库持久性");
 
         // 配置内存数据库以获得最佳性能
@@ -84,14 +84,17 @@ impl MemoryDbOptimizer {
     /// 启动守护连接心跳机制
     async fn start_keeper_heartbeat(&self, keeper_conn: Arc<DatabaseConnection>) {
         info!("启动内存数据库守护连接心跳机制");
-        
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
             loop {
                 interval.tick().await;
-                
+
                 // 执行心跳查询，保持连接活跃
-                match keeper_conn.execute(Statement::from_string(DatabaseBackend::Sqlite, "SELECT 1")).await {
+                match keeper_conn
+                    .execute(Statement::from_string(DatabaseBackend::Sqlite, "SELECT 1"))
+                    .await
+                {
                     Ok(_) => {
                         debug!("守护连接心跳正常");
                     }
@@ -107,13 +110,13 @@ impl MemoryDbOptimizer {
     /// 配置内存数据库以获得最佳性能
     async fn configure_memory_db(&self, memory_db: &DatabaseConnection) -> Result<()> {
         let performance_pragmas = vec![
-            "PRAGMA synchronous = OFF",        // 关闭同步，内存数据库不需要
-            "PRAGMA journal_mode = MEMORY",    // 日志模式设为内存
-            "PRAGMA temp_store = MEMORY",      // 临时存储使用内存
-            "PRAGMA cache_size = -64000",      // 缓存大小64MB
-            "PRAGMA page_size = 4096",         // 页面大小4KB
-            "PRAGMA locking_mode = NORMAL",    // 使用NORMAL模式而非EXCLUSIVE，避免锁定问题
-            "PRAGMA cache = shared",           // 确保缓存共享
+            "PRAGMA synchronous = OFF",     // 关闭同步，内存数据库不需要
+            "PRAGMA journal_mode = MEMORY", // 日志模式设为内存
+            "PRAGMA temp_store = MEMORY",   // 临时存储使用内存
+            "PRAGMA cache_size = -64000",   // 缓存大小64MB
+            "PRAGMA page_size = 4096",      // 页面大小4KB
+            "PRAGMA locking_mode = NORMAL", // 使用NORMAL模式而非EXCLUSIVE，避免锁定问题
+            "PRAGMA cache = shared",        // 确保缓存共享
         ];
 
         for pragma in performance_pragmas {
@@ -131,7 +134,8 @@ impl MemoryDbOptimizer {
     async fn copy_table_schemas(&self, memory_db: &DatabaseConnection) -> Result<()> {
         // 获取主数据库中的所有表
         let get_tables_sql = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
-        let rows = self.main_db
+        let rows = self
+            .main_db
             .query_all(Statement::from_string(DatabaseBackend::Sqlite, get_tables_sql))
             .await?;
 
@@ -139,20 +143,21 @@ impl MemoryDbOptimizer {
 
         for row in rows {
             let table_name: String = row.try_get("", "name")?;
-            
+
             // 获取表结构
             let schema_sql = format!(
                 "SELECT sql FROM sqlite_master WHERE type='table' AND name='{}'",
                 table_name
             );
-            
-            let schema_rows = self.main_db
+
+            let schema_rows = self
+                .main_db
                 .query_all(Statement::from_string(DatabaseBackend::Sqlite, &schema_sql))
                 .await?;
 
             if let Some(schema_row) = schema_rows.first() {
                 let create_sql: String = schema_row.try_get("", "sql")?;
-                
+
                 // 在内存数据库中创建表
                 memory_db
                     .execute(Statement::from_string(DatabaseBackend::Sqlite, &create_sql))
@@ -172,17 +177,18 @@ impl MemoryDbOptimizer {
     /// 复制索引到内存数据库
     async fn copy_indexes(&self, memory_db: &DatabaseConnection) -> Result<()> {
         let index_sql = "SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL";
-        let rows = self.main_db
+        let rows = self
+            .main_db
             .query_all(Statement::from_string(DatabaseBackend::Sqlite, index_sql))
             .await?;
 
         for row in rows {
             let create_index_sql: String = row.try_get("", "sql")?;
-            
+
             // 在内存数据库中创建索引
             if let Err(e) = memory_db
                 .execute(Statement::from_string(DatabaseBackend::Sqlite, &create_index_sql))
-                .await 
+                .await
             {
                 warn!("创建索引失败（可能是重复索引）: {}", e);
             }
@@ -197,12 +203,12 @@ impl MemoryDbOptimizer {
         // 核心业务表：需要复制全部数据
         let core_tables = vec![
             "collection",
-            "favorite", 
+            "favorite",
             "submission",
             "watch_later",
             "video_source",
-            "video",      // 视频表
-            "page",       // 分页表
+            "video", // 视频表
+            "page",  // 分页表
         ];
 
         debug!("开始复制核心业务表数据");
@@ -212,11 +218,7 @@ impl MemoryDbOptimizer {
         }
 
         // 配置和状态表：复制现有数据（如果有的话）
-        let config_tables = vec![
-            "config_items",
-            "config_changes", 
-            "task_queue",
-        ];
+        let config_tables = vec!["config_items", "config_changes", "task_queue"];
 
         debug!("开始复制配置和状态表数据");
         for table_name in config_tables {
@@ -226,7 +228,10 @@ impl MemoryDbOptimizer {
                     // 特别记录config_changes表的复制情况
                     if table_name == "config_changes" {
                         let count_sql = "SELECT COUNT(*) as count FROM config_changes";
-                        if let Ok(rows) = memory_db.query_all(Statement::from_string(DatabaseBackend::Sqlite, count_sql)).await {
+                        if let Ok(rows) = memory_db
+                            .query_all(Statement::from_string(DatabaseBackend::Sqlite, count_sql))
+                            .await
+                        {
                             if let Some(row) = rows.first() {
                                 if let Ok(count) = row.try_get::<i64>("", "count") {
                                     debug!("已复制config_changes表数据: {} 条记录", count);
@@ -250,7 +255,8 @@ impl MemoryDbOptimizer {
     async fn copy_table_data(&self, table_name: &str, memory_db: &DatabaseConnection) -> Result<()> {
         // 从主数据库读取所有数据
         let select_sql = format!("SELECT * FROM {}", table_name);
-        let rows = self.main_db
+        let rows = self
+            .main_db
             .query_all(Statement::from_string(DatabaseBackend::Sqlite, &select_sql))
             .await?;
 
@@ -293,7 +299,8 @@ impl MemoryDbOptimizer {
     /// 获取表的列名
     async fn get_table_columns(&self, table_name: &str) -> Result<Vec<String>> {
         let pragma_sql = format!("PRAGMA table_info({})", table_name);
-        let rows = self.main_db
+        let rows = self
+            .main_db
             .query_all(Statement::from_string(DatabaseBackend::Sqlite, &pragma_sql))
             .await?;
 
@@ -337,7 +344,6 @@ impl MemoryDbOptimizer {
         // 如果所有类型都失败，返回NULL
         Ok(sea_orm::Value::String(None))
     }
-
 
     /// 获取当前活动的数据库连接（内存模式时返回内存数据库）
     pub fn get_active_connection(&self) -> Arc<DatabaseConnection> {
@@ -398,14 +404,17 @@ impl MemoryDbOptimizer {
             "collection",
             "favorite",
             "submission",
-            "watch_later", 
+            "watch_later",
             "video_source",
             "task_queue",
             "config_items",
             "config_changes",
         ];
 
-        debug!("开始完整同步 {} 个表的变更到主数据库（支持增删改）", tables_to_sync.len());
+        debug!(
+            "开始完整同步 {} 个表的变更到主数据库（支持增删改）",
+            tables_to_sync.len()
+        );
 
         for table_name in tables_to_sync {
             // 使用完整同步方法，支持删除操作
@@ -429,7 +438,6 @@ impl MemoryDbOptimizer {
         Ok(())
     }
 
-
     /// 通用的表同步方法
     async fn sync_table_changes(
         &self,
@@ -440,17 +448,23 @@ impl MemoryDbOptimizer {
         // 为video_source表添加详细的数据状态检查（调试时使用）
         if table_name == "video_source" {
             let count_sql = "SELECT COUNT(*) as count FROM video_source";
-            if let Ok(count_rows) = memory_db.query_all(Statement::from_string(DatabaseBackend::Sqlite, count_sql)).await {
+            if let Ok(count_rows) = memory_db
+                .query_all(Statement::from_string(DatabaseBackend::Sqlite, count_sql))
+                .await
+            {
                 if let Some(count_row) = count_rows.first() {
                     if let Ok(count) = count_row.try_get::<i64>("", "count") {
                         debug!("内存数据库中video_source表总记录数: {}", count);
                     }
                 }
             }
-            
+
             // 检查最新的几条记录
             let latest_sql = "SELECT id, name, season_id FROM video_source ORDER BY id DESC LIMIT 5";
-            if let Ok(latest_rows) = memory_db.query_all(Statement::from_string(DatabaseBackend::Sqlite, latest_sql)).await {
+            if let Ok(latest_rows) = memory_db
+                .query_all(Statement::from_string(DatabaseBackend::Sqlite, latest_sql))
+                .await
+            {
                 debug!("内存数据库中video_source表最新5条记录:");
                 for row in latest_rows {
                     let id = row.try_get::<i32>("", "id").unwrap_or(0);
@@ -473,7 +487,7 @@ impl MemoryDbOptimizer {
         }
 
         debug!("表 {} 开始同步 {} 条记录到主数据库", table_name, rows.len());
-        
+
         // 特别记录config_changes表的同步情况
         if table_name == "config_changes" {
             debug!("config_changes表准备同步 {} 条记录到主数据库", rows.len());
@@ -481,10 +495,10 @@ impl MemoryDbOptimizer {
 
         // 获取表的列名
         let columns = self.get_table_columns(table_name).await?;
-        
+
         // 获取主键信息
         let primary_keys = self.get_table_primary_keys(table_name).await.unwrap_or_default();
-        
+
         let mut sync_count = 0;
         let mut insert_count = 0;
         let mut update_count = 0;
@@ -499,39 +513,42 @@ impl MemoryDbOptimizer {
 
             // 根据不同表使用不同的唯一性检查策略
             let (record_exists, existing_id) = match table_name {
-                "video" => {
-                    match self.check_video_exists_by_unique_index(&row, &self.main_db).await? {
-                        Some(id) => (true, Some(id)),
-                        None => (false, None),
-                    }
-                }
-                "favorite" => {
-                    match self.check_favorite_exists_by_unique_index(&row, &self.main_db).await? {
-                        Some(id) => (true, Some(id)),
-                        None => (false, None),
-                    }
-                }
+                "video" => match self.check_video_exists_by_unique_index(&row, &self.main_db).await? {
+                    Some(id) => (true, Some(id)),
+                    None => (false, None),
+                },
+                "favorite" => match self.check_favorite_exists_by_unique_index(&row, &self.main_db).await? {
+                    Some(id) => (true, Some(id)),
+                    None => (false, None),
+                },
                 "collection" => {
-                    match self.check_collection_exists_by_unique_index(&row, &self.main_db).await? {
+                    match self
+                        .check_collection_exists_by_unique_index(&row, &self.main_db)
+                        .await?
+                    {
                         Some(id) => (true, Some(id)),
                         None => (false, None),
                     }
                 }
-                "page" => {
-                    match self.check_page_exists_by_unique_index(&row, &self.main_db).await? {
-                        Some(id) => (true, Some(id)),
-                        None => (false, None),
-                    }
-                }
+                "page" => match self.check_page_exists_by_unique_index(&row, &self.main_db).await? {
+                    Some(id) => (true, Some(id)),
+                    None => (false, None),
+                },
                 "submission" => {
-                    match self.check_submission_exists_by_unique_index(&row, &self.main_db).await? {
+                    match self
+                        .check_submission_exists_by_unique_index(&row, &self.main_db)
+                        .await?
+                    {
                         Some(id) => (true, Some(id)),
                         None => (false, None),
                     }
                 }
                 "config_items" => {
                     // config_items表使用字符串主键，需要特殊处理
-                    match self.check_config_items_exists_by_unique_index(&row, &self.main_db).await? {
+                    match self
+                        .check_config_items_exists_by_unique_index(&row, &self.main_db)
+                        .await?
+                    {
                         Some(_) => (true, None), // 存在，但不返回ID（使用字符串主键）
                         None => (false, None),
                     }
@@ -539,7 +556,8 @@ impl MemoryDbOptimizer {
                 _ => {
                     // 其他表使用原有的主键检查
                     let exists = if !primary_keys.is_empty() {
-                        self.check_record_exists(table_name, &primary_keys, &row, &self.main_db).await?
+                        self.check_record_exists(table_name, &primary_keys, &row, &self.main_db)
+                            .await?
                     } else {
                         false
                     };
@@ -563,7 +581,8 @@ impl MemoryDbOptimizer {
                 (update_sql, "UPDATE")
             } else {
                 // 记录不存在，使用INSERT（对于自增主键，忽略ID列）
-                let (insert_sql, insert_values) = self.build_insert_sql(table_name, &columns, &values, &primary_keys)?;
+                let (insert_sql, insert_values) =
+                    self.build_insert_sql(table_name, &columns, &values, &primary_keys)?;
                 values = insert_values;
                 (insert_sql, "INSERT")
             };
@@ -574,30 +593,36 @@ impl MemoryDbOptimizer {
                     let name_value = row.try_get::<String>("", "name").unwrap_or_default();
                     let season_id = row.try_get::<Option<String>>("", "season_id").unwrap_or(None);
                     let type_val = row.try_get::<i32>("", "type").unwrap_or(0);
-                    debug!("同步video_source记录: id={}, name={}, type={}, season_id={:?}, 操作={}, 已存在={}", 
-                        id_value, name_value, type_val, season_id, operation, record_exists);
+                    debug!(
+                        "同步video_source记录: id={}, name={}, type={}, season_id={:?}, 操作={}, 已存在={}",
+                        id_value, name_value, type_val, season_id, operation, record_exists
+                    );
                 }
             }
-            
+
             // 为video表添加详细日志
             if table_name == "video" {
                 if let Ok(bvid) = row.try_get::<String>("", "bvid") {
                     let mem_id = row.try_get::<i32>("", "id").unwrap_or(0);
-                    debug!("同步video记录: bvid={}, 内存DB id={}, 主DB id={:?}, 操作={}", 
-                        bvid, mem_id, existing_id, operation);
+                    debug!(
+                        "同步video记录: bvid={}, 内存DB id={}, 主DB id={:?}, 操作={}",
+                        bvid, mem_id, existing_id, operation
+                    );
                 }
             }
-            
+
             // 为favorite表添加详细日志
             if table_name == "favorite" {
                 if let Ok(f_id) = row.try_get::<i64>("", "f_id") {
                     let mem_id = row.try_get::<i32>("", "id").unwrap_or(0);
                     let name = row.try_get::<String>("", "name").unwrap_or_default();
-                    debug!("同步favorite记录: f_id={}, name={}, 内存DB id={}, 主DB id={:?}, 操作={}", 
-                        f_id, name, mem_id, existing_id, operation);
+                    debug!(
+                        "同步favorite记录: f_id={}, name={}, 内存DB id={}, 主DB id={:?}, 操作={}",
+                        f_id, name, mem_id, existing_id, operation
+                    );
                 }
             }
-            
+
             // 为collection表添加详细日志
             if table_name == "collection" {
                 if let Ok(s_id) = row.try_get::<i64>("", "s_id") {
@@ -605,11 +630,13 @@ impl MemoryDbOptimizer {
                     let m_id = row.try_get::<i64>("", "m_id").unwrap_or(0);
                     let r_type = row.try_get::<i32>("", "type").unwrap_or(0);
                     let name = row.try_get::<String>("", "name").unwrap_or_default();
-                    debug!("同步collection记录: s_id={}, m_id={}, type={}, name={}, 内存DB id={}, 主DB id={:?}, 操作={}", 
-                        s_id, m_id, r_type, name, mem_id, existing_id, operation);
+                    debug!(
+                        "同步collection记录: s_id={}, m_id={}, type={}, name={}, 内存DB id={}, 主DB id={:?}, 操作={}",
+                        s_id, m_id, r_type, name, mem_id, existing_id, operation
+                    );
                 }
             }
-            
+
             // 为page表添加详细日志
             if table_name == "page" {
                 if let Ok(video_id) = row.try_get::<i32>("", "video_id") {
@@ -617,35 +644,36 @@ impl MemoryDbOptimizer {
                     let pid = row.try_get::<i32>("", "pid").unwrap_or(0);
                     let cid = row.try_get::<i64>("", "cid").unwrap_or(0);
                     let name = row.try_get::<String>("", "name").unwrap_or_default();
-                    debug!("同步page记录: video_id={}, pid={}, cid={}, name={}, 内存DB id={}, 主DB id={:?}, 操作={}", 
-                        video_id, pid, cid, name, mem_id, existing_id, operation);
+                    debug!(
+                        "同步page记录: video_id={}, pid={}, cid={}, name={}, 内存DB id={}, 主DB id={:?}, 操作={}",
+                        video_id, pid, cid, name, mem_id, existing_id, operation
+                    );
                 }
             }
-            
+
             // 为submission表添加详细日志
             if table_name == "submission" {
                 if let Ok(upper_id) = row.try_get::<i64>("", "upper_id") {
                     let mem_id = row.try_get::<i32>("", "id").unwrap_or(0);
                     let name = row.try_get::<String>("", "upper_name").unwrap_or_default();
-                    debug!("同步submission记录: upper_id={}, name={}, 内存DB id={}, 主DB id={:?}, 操作={}", 
-                        upper_id, name, mem_id, existing_id, operation);
-                }
-            }
-            
-            // 为config_items表添加详细日志
-            if table_name == "config_items" {
-                if let Ok(key_name) = row.try_get::<String>("", "key_name") {
-                    debug!("同步config_items记录: key_name={}, 操作={}", 
-                        key_name, operation);
+                    debug!(
+                        "同步submission记录: upper_id={}, name={}, 内存DB id={}, 主DB id={:?}, 操作={}",
+                        upper_id, name, mem_id, existing_id, operation
+                    );
                 }
             }
 
-            match txn.execute(Statement::from_sql_and_values(
-                DatabaseBackend::Sqlite,
-                &sql,
-                values,
-            ))
-            .await {
+            // 为config_items表添加详细日志
+            if table_name == "config_items" {
+                if let Ok(key_name) = row.try_get::<String>("", "key_name") {
+                    debug!("同步config_items记录: key_name={}, 操作={}", key_name, operation);
+                }
+            }
+
+            match txn
+                .execute(Statement::from_sql_and_values(DatabaseBackend::Sqlite, &sql, values))
+                .await
+            {
                 Ok(result) => {
                     sync_count += 1;
                     if operation == "INSERT" {
@@ -654,7 +682,11 @@ impl MemoryDbOptimizer {
                         update_count += 1;
                     }
                     if table_name == "video_source" {
-                        debug!("video_source记录{}成功，影响行数: {}", operation, result.rows_affected());
+                        debug!(
+                            "video_source记录{}成功，影响行数: {}",
+                            operation,
+                            result.rows_affected()
+                        );
                     }
                 }
                 Err(e) => {
@@ -667,11 +699,15 @@ impl MemoryDbOptimizer {
         if sync_count > 0 {
             // 只有在有新增记录时才使用info级别
             if insert_count > 0 {
-                info!("表 {} 同步完成，成功同步 {} 条记录（新增: {}, 更新: {}）", 
-                    table_name, sync_count, insert_count, update_count);
+                info!(
+                    "表 {} 同步完成，成功同步 {} 条记录（新增: {}, 更新: {}）",
+                    table_name, sync_count, insert_count, update_count
+                );
             } else {
-                debug!("表 {} 同步完成，成功同步 {} 条记录（新增: {}, 更新: {}）", 
-                    table_name, sync_count, insert_count, update_count);
+                debug!(
+                    "表 {} 同步完成，成功同步 {} 条记录（新增: {}, 更新: {}）",
+                    table_name, sync_count, insert_count, update_count
+                );
             }
         } else {
             debug!("表 {} 无数据需要同步", table_name);
@@ -690,28 +726,34 @@ impl MemoryDbOptimizer {
 
         // 重要：内存数据库是程序启动时的快照，其自增ID与主数据库不对应
         // 必须基于业务唯一键来判断记录是否相同，而不能基于自增ID
-        
+
         // 根据表的唯一约束获取用于比较的字段
         let unique_key_columns: Vec<String> = match table_name {
-            "video" => vec!["collection_id", "favorite_id", "watch_later_id", "submission_id", "source_id", "bvid"]
-                .into_iter().map(|s| s.to_string()).collect(),
+            "video" => vec![
+                "collection_id",
+                "favorite_id",
+                "watch_later_id",
+                "submission_id",
+                "source_id",
+                "bvid",
+            ]
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect(),
             "collection" => vec!["s_id", "m_id", "type"]
-                .into_iter().map(|s| s.to_string()).collect(),
-            "page" => vec!["video_id", "pid"]
-                .into_iter().map(|s| s.to_string()).collect(),
-            "favorite" => vec!["f_id"]
-                .into_iter().map(|s| s.to_string()).collect(),
-            "submission" => vec!["upper_id"]
-                .into_iter().map(|s| s.to_string()).collect(),
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect(),
+            "page" => vec!["video_id", "pid"].into_iter().map(|s| s.to_string()).collect(),
+            "favorite" => vec!["f_id"].into_iter().map(|s| s.to_string()).collect(),
+            "submission" => vec!["upper_id"].into_iter().map(|s| s.to_string()).collect(),
             "watch_later" => {
                 // watch_later表业务上全局唯一（只能有一个），使用简单逻辑
                 debug!("watch_later表使用简单同步逻辑：检查主数据库是否已存在记录");
                 return self.sync_watch_later_simple(memory_db, txn).await;
-            },
-            "config_items" => vec!["key_name"]
-                .into_iter().map(|s| s.to_string()).collect(),
-            "video_source" => vec!["season_id"]
-                .into_iter().map(|s| s.to_string()).collect(),
+            }
+            "config_items" => vec!["key_name"].into_iter().map(|s| s.to_string()).collect(),
+            "video_source" => vec!["season_id"].into_iter().map(|s| s.to_string()).collect(),
             _ => {
                 // 其他表没有业务唯一键，不支持删除操作，只做增量同步
                 debug!("表 {} 没有定义业务唯一键，跳过删除检查，只做增量同步", table_name);
@@ -720,18 +762,25 @@ impl MemoryDbOptimizer {
         };
 
         // 基于唯一键获取主数据库的记录
-        let main_unique_keys = self.get_table_record_ids(table_name, &unique_key_columns, &self.main_db).await?;
-        
+        let main_unique_keys = self
+            .get_table_record_ids(table_name, &unique_key_columns, &self.main_db)
+            .await?;
+
         // 基于唯一键获取内存数据库的记录
-        let memory_unique_keys = self.get_table_record_ids(table_name, &unique_key_columns, memory_db).await?;
+        let memory_unique_keys = self
+            .get_table_record_ids(table_name, &unique_key_columns, memory_db)
+            .await?;
 
         // 找出需要删除的记录（在主数据库中但不在内存数据库中）
         let to_delete: Vec<_> = main_unique_keys.difference(&memory_unique_keys).collect();
         let delete_count = to_delete.len();
-        
+
         // 删除不存在的记录
         if delete_count > 0 {
-            warn!("表 {} 检测到 {} 条记录需要删除（基于唯一键: {:?}）", table_name, delete_count, unique_key_columns);
+            warn!(
+                "表 {} 检测到 {} 条记录需要删除（基于唯一键: {:?}）",
+                table_name, delete_count, unique_key_columns
+            );
             for unique_values in to_delete {
                 debug!("删除记录: 表={}, 唯一键值={:?}", table_name, unique_values);
                 // 基于唯一键构建删除条件
@@ -746,13 +795,9 @@ impl MemoryDbOptimizer {
                         }
                     })
                     .collect();
-                
-                let delete_sql = format!(
-                    "DELETE FROM {} WHERE {}",
-                    table_name,
-                    conditions.join(" AND ")
-                );
-                
+
+                let delete_sql = format!("DELETE FROM {} WHERE {}", table_name, conditions.join(" AND "));
+
                 txn.execute(Statement::from_string(DatabaseBackend::Sqlite, &delete_sql))
                     .await?;
             }
@@ -769,7 +814,8 @@ impl MemoryDbOptimizer {
     /// 获取表的主键列名
     async fn get_table_primary_keys(&self, table_name: &str) -> Result<Vec<String>> {
         let pragma_sql = format!("PRAGMA table_info({})", table_name);
-        let rows = self.main_db
+        let rows = self
+            .main_db
             .query_all(Statement::from_string(DatabaseBackend::Sqlite, &pragma_sql))
             .await?;
 
@@ -799,7 +845,7 @@ impl MemoryDbOptimizer {
     ) -> Result<std::collections::HashSet<Vec<String>>> {
         let key_columns = primary_keys.join(", ");
         let select_sql = format!("SELECT {} FROM {}", key_columns, table_name);
-        
+
         let rows = db
             .query_all(Statement::from_string(DatabaseBackend::Sqlite, &select_sql))
             .await?;
@@ -817,7 +863,6 @@ impl MemoryDbOptimizer {
 
         Ok(ids)
     }
-
 
     /// 从查询结果行中提取值并转换为字符串
     fn extract_value_as_string(&self, row: &sea_orm::QueryResult, column: &str) -> Result<String> {
@@ -895,7 +940,6 @@ impl MemoryDbOptimizer {
             Ok(false)
         }
     }
-
 
     /// 专门检查favorite表记录是否存在（基于f_id唯一约束）
     async fn check_favorite_exists_by_unique_index(
@@ -1083,14 +1127,8 @@ impl MemoryDbOptimizer {
         }
     }
 
-
     /// 构建UPDATE SQL语句
-    fn build_update_sql(
-        &self,
-        table_name: &str,
-        columns: &[String],
-        primary_keys: &[String],
-    ) -> Result<String> {
+    fn build_update_sql(&self, table_name: &str, columns: &[String], primary_keys: &[String]) -> Result<String> {
         let mut set_clauses = Vec::new();
         let mut where_clauses = Vec::new();
 
@@ -1217,14 +1255,21 @@ impl MemoryDbOptimizer {
         if let Some(row) = result {
             let count: i64 = row.try_get("", "count")?;
             let is_valid = count >= 7;
-            
+
             if !is_valid {
-                warn!("内存数据库表验证失败：发现 {}/7 个关键表（使用{}连接验证）", 
-                    count, if self.keeper_connection.is_some() { "守护" } else { "业务" });
+                warn!(
+                    "内存数据库表验证失败：发现 {}/7 个关键表（使用{}连接验证）",
+                    count,
+                    if self.keeper_connection.is_some() {
+                        "守护"
+                    } else {
+                        "业务"
+                    }
+                );
             } else {
                 debug!("内存数据库表验证成功：发现 {}/7 个关键表", count);
             }
-            
+
             Ok(is_valid)
         } else {
             warn!("无法验证内存数据库表状态");
@@ -1235,8 +1280,8 @@ impl MemoryDbOptimizer {
     /// KISS原则：watch_later表简单同步逻辑
     /// 业务上只能有一个watch_later记录，简单比较内存数据库和主数据库的状态
     async fn sync_watch_later_simple(
-        &self, 
-        memory_db: &DatabaseConnection, 
+        &self,
+        memory_db: &DatabaseConnection,
         txn: &sea_orm::DatabaseTransaction,
     ) -> Result<(), anyhow::Error> {
         // 检查主数据库的记录数量
@@ -1246,13 +1291,13 @@ impl MemoryDbOptimizer {
                 "SELECT COUNT(*) as count FROM watch_later",
             ))
             .await?;
-        
+
         let main_record_count = if let Some(row) = main_count {
             row.try_get::<i64>("", "count")?
         } else {
             0
         };
-        
+
         // 检查内存数据库的记录数量
         let memory_rows = memory_db
             .query_all(Statement::from_string(
@@ -1260,9 +1305,9 @@ impl MemoryDbOptimizer {
                 "SELECT * FROM watch_later",
             ))
             .await?;
-        
+
         let memory_record_count = memory_rows.len() as i64;
-        
+
         match (main_record_count, memory_record_count) {
             (0, 0) => {
                 debug!("主数据库和内存数据库都没有watch_later记录，无需同步");
@@ -1275,7 +1320,7 @@ impl MemoryDbOptimizer {
                 let latest_row_at = row.try_get::<String>("", "latest_row_at")?;
                 let enabled = row.try_get::<bool>("", "enabled")?;
                 let scan_deleted_videos = row.try_get::<bool>("", "scan_deleted_videos")?;
-                
+
                 txn.execute(Statement::from_sql_and_values(
                     DatabaseBackend::Sqlite,
                     "INSERT INTO watch_later (path, created_at, latest_row_at, enabled, scan_deleted_videos) VALUES (?, ?, ?, ?, ?)",
@@ -1288,7 +1333,7 @@ impl MemoryDbOptimizer {
                     ],
                 ))
                 .await?;
-                
+
                 info!("表 watch_later 同步完成，成功同步 1 条记录（新增: 1, 更新: 0）");
             }
             (_, 0) => {
@@ -1298,19 +1343,20 @@ impl MemoryDbOptimizer {
                     "DELETE FROM watch_later",
                 ))
                 .await?;
-                
-                info!("表 watch_later 同步完成，成功同步 {} 条记录（新增: 0, 更新: 0），删除了 {} 条记录", 
-                    0, main_record_count);
+
+                info!(
+                    "表 watch_later 同步完成，成功同步 {} 条记录（新增: 0, 更新: 0），删除了 {} 条记录",
+                    0, main_record_count
+                );
             }
             (_, _) => {
                 // 都有记录：比较并更新（暂时跳过复杂比较，业务上应该很少出现）
                 debug!("主数据库和内存数据库都有watch_later记录，跳过同步");
             }
         }
-        
+
         Ok(())
     }
-
 }
 
 impl Drop for MemoryDbOptimizer {

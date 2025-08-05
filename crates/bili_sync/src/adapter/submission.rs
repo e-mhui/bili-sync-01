@@ -1,10 +1,10 @@
 use std::path::Path;
 use std::pin::Pin;
 
+use crate::utils::time_format::{now_standard_string, parse_time_string};
 use anyhow::{Context, Result};
 use bili_sync_entity::*;
 use chrono::Utc;
-use crate::utils::time_format::{now_standard_string, parse_time_string};
 use futures::Stream;
 use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::{OnConflict, SimpleExpr};
@@ -135,12 +135,10 @@ impl VideoSource for submission::Model {
 
     fn get_created_at(&self) -> Option<chrono::DateTime<chrono::Utc>> {
         // 使用统一的时间解析函数
-        parse_time_string(&self.created_at)
-            .map(|dt| dt.and_utc())
-            .or_else(|| {
-                warn!("解析 created_at 时间失败，原始值: {}", self.created_at);
-                None
-            })
+        parse_time_string(&self.created_at).map(|dt| dt.and_utc()).or_else(|| {
+            warn!("解析 created_at 时间失败，原始值: {}", self.created_at);
+            None
+        })
     }
 
     fn source_type_display(&self) -> String {

@@ -1,8 +1,8 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sea_orm::sea_query::{Alias, ColumnDef, Table};
 use sea_orm::{ConnectionTrait, DbConn};
+use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 
 /// 番剧缓存数据结构
@@ -17,7 +17,7 @@ pub struct BangumiCache {
 /// 创建番剧缓存相关的数据库字段
 pub async fn ensure_cache_columns(db: &DbConn) -> Result<()> {
     let backend = db.get_database_backend();
-    
+
     // 检查是否已有缓存字段
     let check_sql = match backend {
         sea_orm::DatabaseBackend::Sqlite => {
@@ -28,12 +28,12 @@ pub async fn ensure_cache_columns(db: &DbConn) -> Result<()> {
             return Ok(());
         }
     };
-    
+
     let result: Option<i32> = db
         .query_one(sea_orm::Statement::from_string(backend, check_sql))
         .await?
         .and_then(|row| row.try_get_by_index(0).ok());
-    
+
     // 如果字段已存在，跳过
     if let Some(count) = result {
         if count >= 2 {
@@ -41,27 +41,19 @@ pub async fn ensure_cache_columns(db: &DbConn) -> Result<()> {
             return Ok(());
         }
     }
-    
+
     // 添加 cached_episodes 字段
     let add_cached_episodes = Table::alter()
         .table(Alias::new("video_source"))
-        .add_column_if_not_exists(
-            ColumnDef::new(Alias::new("cached_episodes"))
-                .text()
-                .null()
-        )
+        .add_column_if_not_exists(ColumnDef::new(Alias::new("cached_episodes")).text().null())
         .to_owned();
-    
+
     // 添加 cache_updated_at 字段
     let add_cache_updated_at = Table::alter()
         .table(Alias::new("video_source"))
-        .add_column_if_not_exists(
-            ColumnDef::new(Alias::new("cache_updated_at"))
-                .date_time()
-                .null()
-        )
+        .add_column_if_not_exists(ColumnDef::new(Alias::new("cache_updated_at")).date_time().null())
         .to_owned();
-    
+
     // 执行迁移
     match db.execute(backend.build(&add_cached_episodes)).await {
         Ok(_) => info!("成功添加 cached_episodes 字段"),
@@ -72,7 +64,7 @@ pub async fn ensure_cache_columns(db: &DbConn) -> Result<()> {
             }
         }
     }
-    
+
     match db.execute(backend.build(&add_cache_updated_at)).await {
         Ok(_) => info!("成功添加 cache_updated_at 字段"),
         Err(e) => {
@@ -82,7 +74,7 @@ pub async fn ensure_cache_columns(db: &DbConn) -> Result<()> {
             }
         }
     }
-    
+
     info!("番剧缓存数据库迁移完成");
     Ok(())
 }
