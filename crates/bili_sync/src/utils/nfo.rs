@@ -379,18 +379,18 @@ impl NFO<'_> {
                         }
                     } else {
                         // 备选：使用UP主信息作为创作者
-                        let actor_name = Self::get_actor_name(movie.upper_name, config);
-                        if let Some(name) = actor_name {
+                        let actor_info = Self::get_actor_info(movie.upper_id, movie.upper_name, config);
+                        if let Some((actor_name, role_name)) = actor_info {
                             writer
                                 .create_element("actor")
                                 .write_inner_content_async::<_, _, Error>(|writer| async move {
                                     writer
                                         .create_element("name")
-                                        .write_text_content_async(BytesText::new(&name))
+                                        .write_text_content_async(BytesText::new(&actor_name))
                                         .await?;
                                     writer
                                         .create_element("role")
-                                        .write_text_content_async(BytesText::new("创作者"))
+                                        .write_text_content_async(BytesText::new(&role_name))
                                         .await?;
                                     writer
                                         .create_element("order")
@@ -680,18 +680,18 @@ impl NFO<'_> {
                         }
                     } else {
                         // 备选：使用UP主信息作为创作者
-                        let actor_name = Self::get_actor_name(tvshow.upper_name, config);
-                        if let Some(name) = actor_name {
+                        let actor_info = Self::get_actor_info(tvshow.upper_id, tvshow.upper_name, config);
+                        if let Some((actor_name, role_name)) = actor_info {
                             writer
                                 .create_element("actor")
                                 .write_inner_content_async::<_, _, Error>(|writer| async move {
                                     writer
                                         .create_element("name")
-                                        .write_text_content_async(BytesText::new(&name))
+                                        .write_text_content_async(BytesText::new(&actor_name))
                                         .await?;
                                     writer
                                         .create_element("role")
-                                        .write_text_content_async(BytesText::new("创作者"))
+                                        .write_text_content_async(BytesText::new(&role_name))
                                         .await?;
                                     writer
                                         .create_element("order")
@@ -1201,18 +1201,18 @@ impl NFO<'_> {
                         }
                     } else {
                         // 备选：使用UP主信息作为创作者
-                        let actor_name = Self::get_actor_name(season.upper_name, config);
-                        if let Some(name) = actor_name {
+                        let actor_info = Self::get_actor_info(season.upper_id, season.upper_name, config);
+                        if let Some((actor_name, role_name)) = actor_info {
                             writer
                                 .create_element("actor")
                                 .write_inner_content_async::<_, _, Error>(|writer| async move {
                                     writer
                                         .create_element("name")
-                                        .write_text_content_async(BytesText::new(&name))
+                                        .write_text_content_async(BytesText::new(&actor_name))
                                         .await?;
                                     writer
                                         .create_element("role")
-                                        .write_text_content_async(BytesText::new("创作者"))
+                                        .write_text_content_async(BytesText::new(&role_name))
                                         .await?;
                                     writer
                                         .create_element("order")
@@ -1411,20 +1411,41 @@ impl NFO<'_> {
         // BV号最少10位
     }
 
-    /// 根据配置策略获取演员名称
-    fn get_actor_name(upper_name: &str, config: &NFOConfig) -> Option<String> {
+    /// 根据配置策略获取演员信息（返回演员名称和角色名称）
+    fn get_actor_info(upper_id: i64, upper_name: &str, config: &NFOConfig) -> Option<(String, String)> {
         let trimmed_name = upper_name.trim();
-
+        
+        // 如果upper_id有效（大于0），使用UID作为演员名称，UP主名称作为角色
+        if upper_id > 0 {
+            let role_name = if !trimmed_name.is_empty() {
+                trimmed_name.to_string()
+            } else {
+                // UP主名称为空时，根据策略处理角色名称
+                match config.empty_upper_strategy {
+                    EmptyUpperStrategy::Skip => return None,
+                    EmptyUpperStrategy::Placeholder => config.empty_upper_placeholder.clone(),
+                    EmptyUpperStrategy::Default => config.empty_upper_default_name.clone(),
+                }
+            };
+            return Some((upper_id.to_string(), role_name));
+        }
+        
+        // UID无效时，使用UP主名称作为演员名称和角色名称
         if !trimmed_name.is_empty() {
-            // UP主名称不为空，直接使用
-            return Some(trimmed_name.to_string());
+            return Some((trimmed_name.to_string(), trimmed_name.to_string()));
         }
 
         // UP主名称为空，根据策略处理
         match config.empty_upper_strategy {
             EmptyUpperStrategy::Skip => None,
-            EmptyUpperStrategy::Placeholder => Some(config.empty_upper_placeholder.clone()),
-            EmptyUpperStrategy::Default => Some(config.empty_upper_default_name.clone()),
+            EmptyUpperStrategy::Placeholder => {
+                let name = config.empty_upper_placeholder.clone();
+                Some((name.clone(), name))
+            }
+            EmptyUpperStrategy::Default => {
+                let name = config.empty_upper_default_name.clone();
+                Some((name.clone(), name))
+            }
         }
     }
 
@@ -2066,9 +2087,9 @@ mod tests {
         assert!(generated_movie.contains(r#"<uniqueid type="bilibili" default="true">BV1nWcSeeEkV</uniqueid>"#));
         assert!(generated_movie.contains("<country>中国</country>"));
         assert!(generated_movie.contains("<studio>哔哩哔哩</studio>"));
-        assert!(generated_movie.contains("<role>创作者</role>"));
+        assert!(generated_movie.contains("<name>1</name>")); // upper_id=1
+        assert!(generated_movie.contains("<role>upper_name</role>"));
         assert!(generated_movie.contains("<thumb>https://example.com/cover.jpg</thumb>"));
-        assert!(generated_movie.contains("<fanart>https://example.com/cover.jpg</fanart>"));
 
         let generated_tvshow = NFO::TVShow((&video).into()).generate_nfo().await.unwrap();
         // 检查TVShow的关键字段
@@ -2079,9 +2100,9 @@ mod tests {
         assert!(generated_tvshow.contains("<totalseasons>1</totalseasons>"));
         assert!(generated_tvshow.contains("<country>中国</country>"));
         assert!(generated_tvshow.contains("<studio>哔哩哔哩</studio>"));
-        assert!(generated_tvshow.contains("<role>创作者</role>"));
+        assert!(generated_tvshow.contains("<name>1</name>")); // upper_id=1
+        assert!(generated_tvshow.contains("<role>upper_name</role>"));
         assert!(generated_tvshow.contains("<thumb>https://example.com/cover.jpg</thumb>"));
-        assert!(generated_tvshow.contains("<fanart>https://example.com/cover.jpg</fanart>"));
 
         assert_eq!(
             NFO::Upper((&video).into()).generate_nfo().await.unwrap(),
@@ -2268,8 +2289,8 @@ mod tests {
 
         // 创建一个自定义的Movie结构并手动生成NFO
         let movie = Movie::from(&video);
-        let actor_name = NFO::get_actor_name(movie.upper_name, &config);
-        assert_eq!(actor_name, None);
+        let actor_info = NFO::get_actor_info(movie.upper_id, movie.upper_name, &config);
+        assert_eq!(actor_info, None);
 
         // 测试Placeholder策略
         let config = NFOConfig {
@@ -2278,8 +2299,8 @@ mod tests {
             ..Default::default()
         };
 
-        let actor_name = NFO::get_actor_name(movie.upper_name, &config);
-        assert_eq!(actor_name, Some("官方内容".to_string()));
+        let actor_info = NFO::get_actor_info(movie.upper_id, movie.upper_name, &config);
+        assert_eq!(actor_info, Some(("官方内容".to_string(), "官方内容".to_string())));
 
         // 测试Default策略
         let config = NFOConfig {
@@ -2288,12 +2309,16 @@ mod tests {
             ..Default::default()
         };
 
-        let actor_name = NFO::get_actor_name(movie.upper_name, &config);
-        assert_eq!(actor_name, Some("哔哩哔哩".to_string()));
+        let actor_info = NFO::get_actor_info(movie.upper_id, movie.upper_name, &config);
+        assert_eq!(actor_info, Some(("哔哩哔哩".to_string(), "哔哩哔哩".to_string())));
 
-        // 测试非空UP主名称（应该直接使用原名称，不受策略影响）
-        let actor_name = NFO::get_actor_name("测试UP主", &config);
-        assert_eq!(actor_name, Some("测试UP主".to_string()));
+        // 测试非空UP主名称（应该优先使用UID作为name，UP主名称作为role）
+        let actor_info = NFO::get_actor_info(123456, "测试UP主", &config);
+        assert_eq!(actor_info, Some(("123456".to_string(), "测试UP主".to_string()))); // UID作为name，UP主名称作为role
+        
+        // 测试无效UID（0或负数）时使用昵称
+        let actor_info = NFO::get_actor_info(0, "测试UP主", &config);
+        assert_eq!(actor_info, Some(("测试UP主".to_string(), "测试UP主".to_string()))); // UID无效，昵称同时作为name和role
 
         println!("空UP主处理策略测试通过");
     }
@@ -2758,5 +2783,51 @@ mod tests {
         println!("Emby标准Season NFO测试通过");
         println!("生成的Season NFO:");
         println!("{}", season_nfo);
+    }
+
+    #[tokio::test]
+    async fn test_nfo_actor_info_with_uid_and_role() {
+        // 测试NFO生成中使用UID作为name，UP主名称作为role
+        let video = video::Model {
+            intro: "测试视频介绍".to_string(),
+            name: "测试视频".to_string(),
+            upper_id: 123456789, // 有效的UID
+            upper_name: "知名UP主".to_string(),
+            cover: "https://example.com/cover.jpg".to_string(),
+            favtime: chrono::NaiveDateTime::new(
+                chrono::NaiveDate::from_ymd_opt(2023, 6, 15).unwrap(),
+                chrono::NaiveTime::from_hms_opt(14, 30, 0).unwrap(),
+            ),
+            pubtime: chrono::NaiveDateTime::new(
+                chrono::NaiveDate::from_ymd_opt(2023, 6, 15).unwrap(),
+                chrono::NaiveTime::from_hms_opt(14, 30, 0).unwrap(),
+            ),
+            bvid: "BV1TestUID123".to_string(),
+            tags: Some(serde_json::json!(["科技", "教程"])),
+            ..Default::default()
+        };
+
+        let movie_nfo = NFO::Movie((&video).into()).generate_nfo().await.unwrap();
+
+        // 验证使用UID作为name，UP主名称作为role
+        assert!(movie_nfo.contains("<actor>"));
+        assert!(movie_nfo.contains("<name>123456789</name>")); // UID作为name
+        assert!(movie_nfo.contains("<role>知名UP主</role>")); // UP主名称作为role
+        assert!(movie_nfo.contains("<order>1</order>"));
+
+        // 测试UID无效的情况
+        let video_no_uid = video::Model {
+            upper_id: 0, // 无效UID
+            upper_name: "另一个UP主".to_string(),
+            ..video
+        };
+
+        let movie_nfo_no_uid = NFO::Movie((&video_no_uid).into()).generate_nfo().await.unwrap();
+
+        // 验证无效UID时，UP主名称同时作为name和role
+        assert!(movie_nfo_no_uid.contains("<name>另一个UP主</name>"));
+        assert!(movie_nfo_no_uid.contains("<role>另一个UP主</role>"));
+
+        println!("NFO演员信息（UID和角色）测试通过");
     }
 }
