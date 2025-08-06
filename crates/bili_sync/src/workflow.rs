@@ -487,6 +487,7 @@ pub async fn refresh_video_source<'a>(
                         pubtime: Some(pubtime),
                         episode_number,
                         season_number: None,
+                        video_id: Some(new_video.id), // 添加视频ID，用于后续过滤
                     });
                 }
             }

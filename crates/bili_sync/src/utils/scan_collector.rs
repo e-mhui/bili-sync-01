@@ -133,5 +133,6 @@ pub fn create_new_video_info(
         pubtime: None,
         episode_number: None,
         season_number: None,
+        video_id: None, // 测试代码中没有video_id
     }
 }

@@ -86,6 +86,7 @@ pub struct NewVideoInfo {
     pub pubtime: Option<String>, // 使用字符串格式的北京时间
     pub episode_number: Option<i32>,
     pub season_number: Option<i32>,
+    pub video_id: Option<i32>, // 添加视频ID字段，用于过滤删除队列中的视频
 }
 
 #[derive(Debug, Clone)]

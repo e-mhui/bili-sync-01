@@ -478,13 +478,44 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
                         // 检查是否有新视频信息需要添加到收集器（修复：同时检查数量和向量）
                         if !new_videos.is_empty() {
-                            if let Ok((video_source, _)) =
-                                crate::adapter::video_source_from(args, path, &bili_client, &optimized_connection).await
-                            {
-                                debug!("向scan_collector添加 {} 个新视频信息", new_videos.len());
-                                scan_collector.add_new_videos(&video_source, new_videos);
+                            // 获取待删除的视频ID列表，过滤掉充电专享视频
+                            let pending_delete_video_ids = crate::task::VIDEO_DELETE_TASK_QUEUE.get_pending_video_ids().await;
+                            
+                            // 过滤掉待删除队列中的视频
+                            let filtered_videos: Vec<_> = new_videos
+                                .into_iter()
+                                .filter(|video| {
+                                    // 如果视频有ID，检查是否在删除队列中
+                                    if let Some(video_id) = video.video_id {
+                                        let is_pending_delete = pending_delete_video_ids.contains(&video_id);
+                                        if is_pending_delete {
+                                            debug!("过滤掉待删除的充电视频: {} (ID: {})", video.title, video_id);
+                                        }
+                                        !is_pending_delete
+                                    } else {
+                                        // 如果没有video_id，保留该视频
+                                        true
+                                    }
+                                })
+                                .collect();
+                            
+                            let filtered_count = filtered_videos.len();
+                            let original_count = new_video_count;
+                            if filtered_count < original_count {
+                                info!("过滤充电视频: 原始 {} 个，过滤后 {} 个", original_count, filtered_count);
+                            }
+                            
+                            if !filtered_videos.is_empty() {
+                                if let Ok((video_source, _)) =
+                                    crate::adapter::video_source_from(args, path, &bili_client, &optimized_connection).await
+                                {
+                                    debug!("向scan_collector添加 {} 个新视频信息（已过滤充电视频）", filtered_videos.len());
+                                    scan_collector.add_new_videos(&video_source, filtered_videos);
+                                } else {
+                                    warn!("无法获取视频源信息，跳过添加新视频到收集器");
+                                }
                             } else {
-                                warn!("无法获取视频源信息，跳过添加新视频到收集器");
+                                debug!("所有新视频都在删除队列中，跳过推送通知");
                             }
                         } else if new_video_count > 0 {
                             warn!("发现不一致：new_video_count={} 但 new_videos 为空", new_video_count);

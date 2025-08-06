@@ -11,7 +11,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -511,6 +511,12 @@ impl VideoDeleteTaskQueue {
     pub async fn queue_length(&self) -> usize {
         let queue = self.queue.lock().await;
         queue.len()
+    }
+
+    /// 获取所有待删除的视频ID
+    pub async fn get_pending_video_ids(&self) -> HashSet<i32> {
+        let queue = self.queue.lock().await;
+        queue.iter().map(|task| task.video_id).collect()
     }
 
     /// 检查是否正在处理视频删除任务
