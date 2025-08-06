@@ -265,7 +265,7 @@
 		}
 	}
 
-	// 导出日志
+	// 导出日志（从内存缓冲区）
 	async function exportLogs() {
 		if (!isAuthenticated) return;
 
@@ -337,10 +337,66 @@
 			link.download = fileName;
 			link.click();
 
-			toast.success(`成功导出 ${allLogs.length} 条${levelText}日志`);
+			toast.success(`成功导出 ${allLogs.length} 条${levelText}日志（来自内存缓冲区）`);
 		} catch (error: unknown) {
 			console.error('导出日志失败:', error);
 			toast.error('导出日志失败', {
+				description: error instanceof Error ? error.message : '未知错误'
+			});
+		} finally {
+			isLoading = false;
+		}
+	}
+	
+	// 下载日志文件（从磁盘文件）
+	async function downloadLogFile() {
+		if (!isAuthenticated) return;
+		try {
+			isLoading = true;
+			const token = localStorage.getItem('auth_token');
+			if (!token) {
+				throw new Error('未找到认证token');
+			}
+			
+			// 构建请求参数
+			const params = new URLSearchParams();
+			params.append('level', currentTab === 'all' ? 'all' : currentTab);
+			
+			// 直接下载文件
+			const response = await fetch(`/api/logs/download?${params.toString()}`, {
+				headers: {
+					Authorization: token
+				}
+			});
+			
+			if (!response.ok) {
+				throw new Error(`HTTP ${response.status}: 下载日志文件失败`);
+			}
+			
+			// 从响应头获取文件名
+			const contentDisposition = response.headers.get('content-disposition');
+			let fileName = `logs-${currentTab}-${new Date().toISOString().split('T')[0]}.csv`;
+			if (contentDisposition) {
+				const matches = /filename="([^"]+)"/.exec(contentDisposition);
+				if (matches) {
+					fileName = matches[1];
+				}
+			}
+			
+			// 下载文件
+			const blob = await response.blob();
+			const link = document.createElement('a');
+			link.href = URL.createObjectURL(blob);
+			link.download = fileName;
+			link.click();
+			
+			// 清理URL对象
+			URL.revokeObjectURL(link.href);
+			
+			toast.success(`成功下载完整日志文件`);
+		} catch (error: unknown) {
+			console.error('下载日志文件失败:', error);
+			toast.error('下载日志文件失败', {
 				description: error instanceof Error ? error.message : '未知错误'
 			});
 		} finally {
@@ -434,9 +490,21 @@
 					size="sm"
 					onclick={exportLogs}
 					disabled={isLoading || !isAuthenticated}
+					title="从内存缓冲区导出日志（最多10000条）"
 				>
 					<Download class="h-4 w-4" />
-					导出{currentTab === 'all' ? '全部' : currentTab}日志
+					导出日志
+				</Button>
+				
+				<Button
+					variant="outline"
+					size="sm"
+					onclick={downloadLogFile}
+					disabled={isLoading || !isAuthenticated}
+					title="下载完整日志文件（无限制）"
+				>
+					<Download class="h-4 w-4" />
+					下载完整文件
 				</Button>
 			</div>
 		</div>

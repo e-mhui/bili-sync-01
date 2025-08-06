@@ -231,7 +231,7 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
         .route("/api/submission/{up_id}/videos", get(get_submission_videos))
         .route("/api/logs", get(get_logs))
         .route("/api/logs/files", get(get_log_files))
-        .route("/api/logs/download/{filename}", get(download_log_file))
+        .route("/api/logs/download", get(download_log_file))
         .route("/api/queue-status", get(get_queue_status))
         .route("/api/proxy/image", get(proxy_image))
         .route("/api/task-control/status", get(get_task_control_status))
