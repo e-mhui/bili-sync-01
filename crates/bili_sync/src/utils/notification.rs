@@ -33,13 +33,15 @@ where
     let value = serde_json::Value::deserialize(deserializer)?;
 
     match value {
-        serde_json::Value::Number(n) => n
-            .as_i64()
-            .and_then(|v| i32::try_from(v).ok())
-            .ok_or_else(|| D::Error::custom("code is not a valid i32")),
-        serde_json::Value::String(s) => s
-            .parse::<i32>()
-            .map_err(|_| D::Error::custom(format!("code string '{}' is not a valid i32", s))),
+        serde_json::Value::Number(n) => {
+            n.as_i64()
+                .and_then(|v| i32::try_from(v).ok())
+                .ok_or_else(|| D::Error::custom("code is not a valid i32"))
+        }
+        serde_json::Value::String(s) => {
+            s.parse::<i32>()
+                .map_err(|_| D::Error::custom(format!("code string '{}' is not a valid i32", s)))
+        }
         _ => Err(D::Error::custom("code must be a number or string")),
     }
 }
@@ -197,12 +199,9 @@ impl NotificationClient {
                     // 如果内容已经很长，停止添加更多内容
                     if content.len() > MAX_CONTENT_LENGTH - 500 {
                         let remaining_videos = summary.total_new_videos - videos_shown;
-                        let remaining_sources = summary
-                            .source_results
-                            .iter()
+                        let remaining_sources = summary.source_results.iter()
                             .filter(|s| !s.new_videos.is_empty())
-                            .count()
-                            - sources_shown;
+                            .count() - sources_shown;
                         content.push_str(&format!(
                             "\n...还有 {} 个视频源的 {} 个新视频（内容过长已省略）\n",
                             remaining_sources, remaining_videos
@@ -254,10 +253,7 @@ impl NotificationClient {
                     for (idx, video) in sorted_videos.iter().take(videos_to_show).enumerate() {
                         // 如果内容过长，提前结束
                         if content.len() > MAX_CONTENT_LENGTH - 1000 {
-                            content.push_str(&format!(
-                                "...还有 {} 个视频（内容过长已省略）\n",
-                                sorted_videos.len() - idx
-                            ));
+                            content.push_str(&format!("...还有 {} 个视频（内容过长已省略）\n", sorted_videos.len() - idx));
                             break;
                         }
 
