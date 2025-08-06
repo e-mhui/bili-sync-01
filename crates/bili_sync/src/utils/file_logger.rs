@@ -42,7 +42,7 @@ impl FileLogWriter {
         // 创建各级别的日志文件
         let startup_time = &*STARTUP_TIME;
 
-        let all_path = log_dir.join(format!("logs-全部-{}.csv", startup_time));
+        let all_path = log_dir.join(format!("logs-all-{}.csv", startup_time));
         let debug_path = log_dir.join(format!("logs-debug-{}.csv", startup_time));
         let info_path = log_dir.join(format!("logs-info-{}.csv", startup_time));
         let warn_path = log_dir.join(format!("logs-warn-{}.csv", startup_time));

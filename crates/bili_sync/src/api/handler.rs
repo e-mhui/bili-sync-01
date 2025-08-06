@@ -6396,7 +6396,7 @@ pub async fn download_log_file(
         "info" => format!("logs-info-{}.csv", startup_time),
         "warn" => format!("logs-warn-{}.csv", startup_time),
         "error" => format!("logs-error-{}.csv", startup_time),
-        _ => format!("logs-全部-{}.csv", startup_time),
+        _ => format!("logs-all-{}.csv", startup_time),
     };
     
     let file_path = log_dir.join(&file_name);
@@ -6444,7 +6444,7 @@ pub async fn get_log_files(
     
     // 检查各个日志文件是否存在
     let log_files = vec![
-        ("all", format!("logs-全部-{}.csv", startup_time)),
+        ("all", format!("logs-all-{}.csv", startup_time)),
         ("debug", format!("logs-debug-{}.csv", startup_time)),
         ("info", format!("logs-info-{}.csv", startup_time)),
         ("warn", format!("logs-warn-{}.csv", startup_time)),
