@@ -501,7 +501,7 @@
 					size="sm"
 					onclick={downloadLogFile}
 					disabled={isLoading || !isAuthenticated}
-					title="下载完整日志文件（无限制）"
+					title="下载完整日志文件（自动刷新缓冲区，无限制）"
 				>
 					<Download class="h-4 w-4" />
 					下载完整文件

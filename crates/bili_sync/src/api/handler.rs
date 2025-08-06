@@ -6381,6 +6381,9 @@ pub async fn download_log_file(
     use axum::http::header;
     use tokio::fs;
     
+    // 先刷新所有缓冲的日志到文件，确保下载的是最新的
+    crate::utils::file_logger::flush_file_logger();
+    
     // 获取日志级别参数
     let level = params.get("level").map(|s| s.as_str()).unwrap_or("all");
     

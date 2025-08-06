@@ -4,7 +4,7 @@ use once_cell::sync::Lazy;
 use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 // 全局启动时间，用于生成日志文件名
@@ -251,22 +251,3 @@ pub fn shutdown_file_logger() {
     }
 }
 
-// 获取当前会话的日志文件列表
-pub fn get_current_session_logs() -> Vec<PathBuf> {
-    let log_dir = CONFIG_DIR.join("logs");
-    let startup_time = &*STARTUP_TIME;
-
-    let patterns = vec![
-        format!("logs-全部-{}.csv", startup_time),
-        format!("logs-debug-{}.csv", startup_time),
-        format!("logs-info-{}.csv", startup_time),
-        format!("logs-warn-{}.csv", startup_time),
-        format!("logs-error-{}.csv", startup_time),
-    ];
-
-    patterns
-        .into_iter()
-        .map(|name| log_dir.join(name))
-        .filter(|path| path.exists())
-        .collect()
-}
