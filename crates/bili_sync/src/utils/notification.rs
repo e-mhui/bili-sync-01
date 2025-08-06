@@ -216,6 +216,9 @@ impl NotificationClient {
             let mut videos_shown = 0;
             let mut sources_shown = 0;
 
+            let mut videos_shown = 0;
+            let mut sources_shown = 0;
+
             for source_result in &summary.source_results {
                 if !source_result.new_videos.is_empty() {
                     // 如果内容已经很长，停止添加更多内容
