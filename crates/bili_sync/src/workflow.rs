@@ -4152,6 +4152,102 @@ async fn get_collection_video_episode_number(
     Err(anyhow!("视频 {} 在合集 {} 中未找到", bvid, collection_id))
 }
 
+/// 填充数据库中所有缺失cid的视频
+/// 这个函数在迁移完成后运行，用于批量获取并填充视频的cid
+pub async fn populate_missing_video_cids(
+    bili_client: &BiliClient,
+    connection: &DatabaseConnection,
+    token: CancellationToken,
+) -> Result<()> {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    
+    info!("开始检查并填充缺失的视频cid");
+    
+    // 查询所有cid为空的视频
+    let videos_without_cid = video::Entity::find()
+        .filter(video::Column::Cid.is_null())
+        .filter(video::Column::Valid.eq(true))
+        .filter(video::Column::Deleted.eq(0))
+        .all(connection)
+        .await?;
+    
+    if videos_without_cid.is_empty() {
+        info!("所有视频都已有cid，无需填充");
+        return Ok(());
+    }
+    
+    info!("发现 {} 个视频需要填充cid", videos_without_cid.len());
+    
+    // 批量处理视频，每批10个
+    let chunk_size = 10;
+    let total_batches = (videos_without_cid.len() + chunk_size - 1) / chunk_size;
+    
+    for (batch_idx, chunk) in videos_without_cid.chunks(chunk_size).enumerate() {
+        if token.is_cancelled() {
+            info!("cid填充任务被取消");
+            return Ok(());
+        }
+        
+        info!("处理第 {}/{} 批视频", batch_idx + 1, total_batches);
+        
+        let futures = chunk.iter().map(|video_model| {
+            let bili_client = bili_client.clone();
+            let connection = connection.clone();
+            let token = token.clone();
+            let video_model = video_model.clone();
+            
+            async move {
+                // 获取视频详情
+                let video = Video::new(&bili_client, video_model.bvid.clone());
+                
+                let view_info = tokio::select! {
+                    biased;
+                    _ = token.cancelled() => return Err(anyhow!("任务被取消")),
+                    res = video.get_view_info() => res,
+                };
+                
+                match view_info {
+                    Ok(VideoInfo::Detail { pages, .. }) => {
+                        // 获取第一个page的cid
+                        if let Some(first_page) = pages.first() {
+                            let bvid = video_model.bvid.clone();
+                            let cid = first_page.cid;
+                            let mut video_active_model: video::ActiveModel = video_model.into();
+                            video_active_model.cid = Set(Some(cid));
+                            video_active_model.save(&connection).await?;
+                            debug!("成功更新视频 {} 的cid: {}", bvid, cid);
+                        }
+                    }
+                    Err(e) => {
+                        warn!("获取视频 {} 详情失败，跳过cid填充: {}", video_model.bvid, e);
+                    }
+                    _ => {
+                        warn!("视频 {} 返回了非预期的信息类型", video_model.bvid);
+                    }
+                }
+                
+                Ok::<_, anyhow::Error>(())
+            }
+        });
+        
+        let results: Vec<_> = futures::future::join_all(futures).await;
+        
+        for result in results {
+            if let Err(e) = result {
+                error!("处理视频时出错: {}", e);
+            }
+        }
+        
+        // 批次之间添加延迟，避免触发风控
+        if batch_idx < total_batches - 1 {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+    }
+    
+    info!("cid填充任务完成");
+    Ok(())
+}
+
 /// 检查文件夹是否为同一视频的文件夹
 fn is_same_video_folder(folder_path: &std::path::Path, video_model: &video::Model) -> bool {
     use std::fs;

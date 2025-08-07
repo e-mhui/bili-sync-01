@@ -200,6 +200,13 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
         error!("启动时初始化视频源失败: {}", e);
     } else {
         debug!("启动时视频源初始化成功");
+        
+        // 检查并填充缺失的视频cid（仅在启动时执行一次）
+        info!("检查是否需要填充视频cid...");
+        let token = tokio_util::sync::CancellationToken::new();
+        if let Err(e) = crate::workflow::populate_missing_video_cids(&bili_client, &startup_connection, token).await {
+            error!("填充视频cid失败: {}", e);
+        }
     }
 
     loop {
