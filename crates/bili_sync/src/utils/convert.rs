@@ -45,6 +45,7 @@ impl VideoInfo {
                     upper_id: Set(upper_id.unwrap_or_default()),
                     upper_name: Set(upper_name.unwrap_or_default()),
                     upper_face: Set(upper_face.unwrap_or_default()),
+                    cid: Set(None), // 后续通过get_view_info填充
                     ..default
                 }
             }
@@ -73,6 +74,7 @@ impl VideoInfo {
                 upper_id: Set(upper.mid),
                 upper_name: Set(upper.name),
                 upper_face: Set(upper.face),
+                cid: Set(None), // 后续通过get_view_info填充
                 ..default
             },
             VideoInfo::WatchLater {
@@ -99,6 +101,7 @@ impl VideoInfo {
                 upper_id: Set(upper.mid),
                 upper_name: Set(upper.name),
                 upper_face: Set(upper.face),
+                cid: Set(None), // 后续通过get_view_info填充
                 ..default
             },
             VideoInfo::Submission {
@@ -116,6 +119,7 @@ impl VideoInfo {
                 pubtime: Set(ctime.naive_utc()), // 使用ctime作为pubtime
                 category: Set(2),                // 投稿视频的内容类型肯定是视频
                 valid: Set(true),
+                cid: Set(None), // 后续通过get_view_info填充
                 ..default
             },
             VideoInfo::Bangumi {
@@ -123,6 +127,7 @@ impl VideoInfo {
                 bvid,
                 season_id,
                 ep_id,
+                cid,
                 cover,
                 intro,
                 pubtime,
@@ -179,6 +184,7 @@ impl VideoInfo {
                     share_copy: Set(share_copy),
                     show_season_type: Set(show_season_type),
                     actors: Set(actors),
+                    cid: Set(cid.parse::<i64>().ok()), // 番剧直接有cid
                     ..default
                 }
             }
@@ -230,6 +236,7 @@ impl VideoInfo {
                 upper_face: Set(upper.face),
                 // 保存staff信息到数据库
                 staff_info: Set(staff.map(|s| serde_json::to_value(s).unwrap_or(serde_json::Value::Null))),
+                // cid字段将在workflow.rs中从pages中提取并设置
                 ..base_model.into_active_model()
             },
             _ => unreachable!(),

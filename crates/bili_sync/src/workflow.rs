@@ -774,6 +774,9 @@ pub async fn fetch_video_details(
 
                             let pages = std::mem::take(pages);
                             let pages_len = pages.len();
+                            
+                            // 提取第一个page的cid用于更新video表
+                            let first_page_cid = pages.first().map(|p| p.cid);
 
                             // 调试日志：检查staff信息
                             if let Some(staff_list) = staff {
@@ -923,6 +926,12 @@ pub async fn fetch_video_details(
                             video_source.set_relation_id(&mut video_active_model);
                             video_active_model.single_page = Set(Some(pages_len == 1));
                             video_active_model.tags = Set(Some(serde_json::to_value(tags)?));
+                            
+                            // 更新video表的cid字段（从第一个page获取）
+                            if let Some(cid) = first_page_cid {
+                                video_active_model.cid = Set(Some(cid));
+                                debug!("更新视频 {} 的cid: {}", video_model_mut.bvid, cid);
+                            }
 
                             // 只有合作视频更新时才覆盖upper信息，保持其他视频的API更新不被影响
                             if collaboration_video_updated {

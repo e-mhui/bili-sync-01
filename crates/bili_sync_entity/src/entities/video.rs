@@ -41,6 +41,7 @@ pub struct Model {
     pub show_season_type: Option<i32>,
     pub actors: Option<String>,
     pub auto_download: bool,
+    pub cid: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
