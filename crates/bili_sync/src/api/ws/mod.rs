@@ -11,7 +11,10 @@ use futures::stream::{SplitSink, SplitStream};
 use futures::{future, SinkExt, StreamExt};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use sysinfo::{get_current_pid, Disks, System};
+use sysinfo::{
+    get_current_pid, CpuRefreshKind, DiskRefreshKind, Disks, MemoryRefreshKind,
+    ProcessRefreshKind, RefreshKind, System,
+};
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::{IntervalStream, WatchStream};
 use uuid::Uuid;
@@ -150,14 +153,16 @@ impl WebSocketHandler {
                 return;
             }
             *write_guard = Some(tokio::spawn(async move {
-                let mut system = System::new_all();
-                let mut disks = Disks::new_with_refreshed_list();
+                let mut system = System::new();
+                let mut disks = Disks::new();
+                let sys_refresh_kind = sys_refresh_kind();
+                let disk_refresh_kind = disk_refresh_kind();
                 // 对于 linux/mac/windows 平台，该方法永远返回 Some(pid)，expect 基本是安全的
                 let self_pid = get_current_pid().expect("Unsupported platform");
                 let mut stream =
                     IntervalStream::new(tokio::time::interval(Duration::from_secs(2))).filter_map(move |_| {
-                        system.refresh_all();
-                        disks.refresh();
+                        system.refresh_specifics(sys_refresh_kind);
+                        disks.refresh_specifics(true, disk_refresh_kind);
                         let process = match system.process(self_pid) {
                             Some(p) => p,
                             None => return futures::future::ready(None),
@@ -205,4 +210,15 @@ async fn handle_socket(socket: WebSocket) {
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     tokio::spawn(WEBSOCKET_HANDLER.handle_sender(ws_sender, rx));
     tokio::spawn(WEBSOCKET_HANDLER.handle_receiver(ws_receiver, tx, uuid));
+}
+
+fn sys_refresh_kind() -> RefreshKind {
+    RefreshKind::nothing()
+        .with_cpu(CpuRefreshKind::nothing().with_cpu_usage())
+        .with_memory(MemoryRefreshKind::nothing().with_ram())
+        .with_processes(ProcessRefreshKind::nothing().with_cpu().with_memory())
+}
+
+fn disk_refresh_kind() -> DiskRefreshKind {
+    DiskRefreshKind::nothing().with_storage()
 }
