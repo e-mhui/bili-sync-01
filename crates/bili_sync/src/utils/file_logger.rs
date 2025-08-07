@@ -122,9 +122,14 @@ impl FileLogWriter {
         // 添加到缓冲区，非阻塞操作
         if let Ok(mut buffer) = self.log_buffer.lock() {
             buffer.push_back(entry);
-            // 如果缓冲区过大，移除旧条目防止内存溢出
-            if buffer.len() > 10000 {
-                buffer.pop_front();
+            // 当缓冲区达到1000条时自动刷新到文件
+            if buffer.len() >= 1000 {
+                // 先取出所有日志，避免死锁
+                let entries: Vec<LogEntry> = buffer.drain(..).collect();
+                drop(buffer); // 释放锁
+                
+                // 写入文件
+                self.write_entries_to_files(entries);
             }
         }
     }
@@ -134,6 +139,40 @@ impl FileLogWriter {
             format!("\"{}\"", field.replace('"', "\"\""))
         } else {
             field.to_string()
+        }
+    }
+
+    // 内部方法：直接写入日志条目到文件
+    fn write_entries_to_files(&self, entries: Vec<LogEntry>) {
+        for entry in entries {
+            let escaped_message = Self::escape_csv(&entry.message);
+            let escaped_target = Self::escape_csv(&entry.target);
+            let log_line = format!(
+                "{},{},{},{}\n",
+                entry.timestamp, entry.level, escaped_message, escaped_target
+            );
+
+            // 写入全部日志文件（不包含debug级别）
+            if entry.level.to_lowercase() != "debug" {
+                if let Ok(mut writer) = self.all_writer.lock() {
+                    let _ = writer.write_all(log_line.as_bytes());
+                    let _ = writer.flush(); // 立即刷新
+                }
+            }
+
+            // 根据级别写入对应文件
+            let level_writer = match entry.level.to_lowercase().as_str() {
+                "debug" => &self.debug_writer,
+                "info" => &self.info_writer,
+                "warn" => &self.warn_writer,
+                "error" => &self.error_writer,
+                _ => continue,
+            };
+
+            if let Ok(mut writer) = level_writer.lock() {
+                let _ = writer.write_all(log_line.as_bytes());
+                let _ = writer.flush(); // 立即刷新
+            }
         }
     }
 
