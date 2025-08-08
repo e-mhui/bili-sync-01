@@ -204,8 +204,14 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
         // 检查并填充缺失的视频cid（仅在启动时执行一次）
         info!("检查是否需要填充视频cid...");
         let token = tokio_util::sync::CancellationToken::new();
-        if let Err(e) = crate::workflow::populate_missing_video_cids(&bili_client, &startup_connection, token).await {
+        if let Err(e) = crate::workflow::populate_missing_video_cids(&bili_client, &startup_connection, token.clone()).await {
             error!("填充视频cid失败: {}", e);
+        }
+        
+        // 修复page表的video_id（仅在启动时执行一次）
+        info!("检查是否需要修复page表的video_id...");
+        if let Err(e) = crate::workflow::fix_page_video_ids(&startup_connection, token).await {
+            error!("修复page表video_id失败: {}", e);
         }
     }
 

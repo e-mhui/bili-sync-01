@@ -9,7 +9,7 @@ use futures::stream::FuturesUnordered;
 use futures::{Stream, StreamExt, TryStreamExt};
 use sea_orm::entity::prelude::*;
 use sea_orm::ActiveValue::Set;
-use sea_orm::TransactionTrait;
+use sea_orm::{DatabaseBackend, Statement, TransactionTrait};
 use tokio::fs;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
@@ -4150,6 +4150,175 @@ async fn get_collection_video_episode_number(
 
     // 如果没找到，返回错误
     Err(anyhow!("视频 {} 在合集 {} 中未找到", bvid, collection_id))
+}
+
+/// 修复page表中错误的video_id
+/// 通过比对video表和page表的cid来找到正确的video_id并更新
+pub async fn fix_page_video_ids(
+    connection: &DatabaseConnection,
+    token: CancellationToken,
+) -> Result<()> {
+    
+    info!("开始检查并修复page表的video_id");
+    
+    // 1. 首先统计有多少page记录需要修复
+    let wrong_pages_count: i64 = connection
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            r#"
+            SELECT COUNT(*) as count 
+            FROM page p 
+            LEFT JOIN video v ON p.video_id = v.id 
+            WHERE v.id IS NULL
+            "#,
+            vec![],
+        ))
+        .await?
+        .and_then(|row| row.try_get_by_index::<i64>(0).ok())
+        .unwrap_or(0);
+    
+    if wrong_pages_count == 0 {
+        info!("所有page记录的video_id都正确，无需修复");
+        return Ok(());
+    }
+    
+    info!("发现 {} 条page记录需要修复video_id", wrong_pages_count);
+    
+    // 2. 修复单P视频（pid=1）的video_id
+    info!("开始修复单P视频的video_id...");
+    let fix_single_page_sql = r#"
+        UPDATE page
+        SET video_id = (
+            SELECT v.id 
+            FROM video v 
+            WHERE v.cid = page.cid
+            LIMIT 1
+        )
+        WHERE pid = 1
+        AND video_id NOT IN (SELECT id FROM video)
+        AND EXISTS (SELECT 1 FROM video v WHERE v.cid = page.cid)
+    "#;
+    
+    let result = connection
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            fix_single_page_sql,
+            vec![],
+        ))
+        .await?;
+    
+    info!("修复了 {} 条单P视频的page记录", result.rows_affected());
+    
+    // 3. 修复多P视频（pid>1）的video_id
+    info!("开始修复多P视频的video_id...");
+    
+    // 获取所有需要修复的多P视频组
+    let multi_page_groups = connection
+        .query_all(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            r#"
+            SELECT DISTINCT p1.video_id as wrong_video_id
+            FROM page p1
+            LEFT JOIN video v ON p1.video_id = v.id
+            WHERE v.id IS NULL
+            AND p1.pid > 1
+            "#,
+            vec![],
+        ))
+        .await?;
+    
+    let mut fixed_multi_count = 0u64;
+    
+    for row in multi_page_groups {
+        if token.is_cancelled() {
+            info!("修复任务被取消");
+            return Ok(());
+        }
+        
+        if let Ok(wrong_video_id) = row.try_get_by_index::<i32>(0) {
+            // 找到这组page中pid=1的记录的cid
+            let first_page_cid = connection
+                .query_one(Statement::from_sql_and_values(
+                    DatabaseBackend::Sqlite,
+                    r#"
+                    SELECT cid 
+                    FROM page 
+                    WHERE video_id = ? AND pid = 1
+                    LIMIT 1
+                    "#,
+                    vec![wrong_video_id.into()],
+                ))
+                .await?
+                .and_then(|row| row.try_get_by_index::<i64>(0).ok());
+            
+            if let Some(cid) = first_page_cid {
+                // 通过cid找到正确的video_id
+                let correct_video_id = connection
+                    .query_one(Statement::from_sql_and_values(
+                        DatabaseBackend::Sqlite,
+                        r#"
+                        SELECT id 
+                        FROM video 
+                        WHERE cid = ?
+                        LIMIT 1
+                        "#,
+                        vec![cid.into()],
+                    ))
+                    .await?
+                    .and_then(|row| row.try_get_by_index::<i32>(0).ok());
+                
+                if let Some(correct_id) = correct_video_id {
+                    // 更新整组page的video_id
+                    let update_result = connection
+                        .execute(Statement::from_sql_and_values(
+                            DatabaseBackend::Sqlite,
+                            r#"
+                            UPDATE page 
+                            SET video_id = ? 
+                            WHERE video_id = ?
+                            "#,
+                            vec![correct_id.into(), wrong_video_id.into()],
+                        ))
+                        .await?;
+                    
+                    fixed_multi_count += update_result.rows_affected();
+                    debug!(
+                        "修复多P视频组：wrong_video_id={} -> correct_video_id={}, 影响{}条记录",
+                        wrong_video_id, correct_id, update_result.rows_affected()
+                    );
+                }
+            }
+        }
+    }
+    
+    info!("修复了 {} 条多P视频的page记录", fixed_multi_count);
+    
+    // 4. 最后统计还有多少无法修复的记录
+    let remaining_wrong_count: i64 = connection
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            r#"
+            SELECT COUNT(*) as count 
+            FROM page p 
+            LEFT JOIN video v ON p.video_id = v.id 
+            WHERE v.id IS NULL
+            "#,
+            vec![],
+        ))
+        .await?
+        .and_then(|row| row.try_get_by_index::<i64>(0).ok())
+        .unwrap_or(0);
+    
+    if remaining_wrong_count > 0 {
+        warn!(
+            "仍有 {} 条page记录无法修复（可能是孤立记录或video表缺少对应数据）",
+            remaining_wrong_count
+        );
+    } else {
+        info!("所有page记录的video_id修复完成");
+    }
+    
+    Ok(())
 }
 
 /// 填充数据库中所有缺失cid的视频
