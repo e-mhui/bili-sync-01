@@ -4156,7 +4156,6 @@ async fn get_collection_video_episode_number(
 /// 使用两阶段策略避免唯一约束冲突
 pub async fn fix_page_video_ids(
     connection: &DatabaseConnection,
-    token: CancellationToken,
 ) -> Result<()> {
     
     info!("开始检查并修复page表的video_id和cid不匹配问题");
