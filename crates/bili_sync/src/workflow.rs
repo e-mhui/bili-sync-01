@@ -4453,9 +4453,9 @@ pub async fn fix_page_video_ids(
         
         // 只设置那些不在fixed_video_ids中的video
         let mut disabled_count = 0;
-        for video_id in videos_to_disable {
+        for video_id in &videos_to_disable {
             // 如果这个video已经被修复（有正确的page记录），则跳过
-            if fixed_video_ids.contains(&video_id) {
+            if fixed_video_ids.contains(video_id) {
                 continue;
             }
             
@@ -4463,7 +4463,7 @@ pub async fn fix_page_video_ids(
                 .execute(Statement::from_sql_and_values(
                     DatabaseBackend::Sqlite,
                     r#"UPDATE video SET deleted = 1 WHERE id = ?"#,
-                    vec![video_id.into()],
+                    vec![(*video_id).into()],
                 ))
                 .await?;
             
@@ -4473,6 +4473,163 @@ pub async fn fix_page_video_ids(
         }
         
         info!("已标记 {} 个video为已删除（排除了已修复的记录）", disabled_count);
+        
+        // 6.5 自动为涉及的源启用 scan_deleted_videos
+        if disabled_count > 0 {
+            info!("检测到视频被标记为已删除，正在自动启用相关源的'扫描已删除视频'功能...");
+            
+            // 查询刚刚被标记为已删除的视频的源信息
+            let deleted_videos_sources = txn
+                .query_all(Statement::from_sql_and_values(
+                    DatabaseBackend::Sqlite,
+                    r#"
+                    SELECT DISTINCT 
+                        submission_id,
+                        collection_id,
+                        favorite_id,
+                        watch_later_id,
+                        source_id,
+                        source_type
+                    FROM video 
+                    WHERE deleted = 1 
+                    AND id IN (SELECT value FROM json_each(?))
+                    "#,
+                    vec![serde_json::to_string(&videos_to_disable)?.into()],
+                ))
+                .await?;
+            
+            // 收集各类型源的ID
+            let mut submission_ids = std::collections::HashSet::new();
+            let mut collection_ids = std::collections::HashSet::new();
+            let mut favorite_ids = std::collections::HashSet::new();
+            let mut watch_later_ids = std::collections::HashSet::new();
+            let mut bangumi_source_ids = std::collections::HashSet::new();
+            
+            for row in deleted_videos_sources {
+                if let Ok(Some(id)) = row.try_get::<Option<i32>>("", "submission_id") {
+                    submission_ids.insert(id);
+                }
+                if let Ok(Some(id)) = row.try_get::<Option<i32>>("", "collection_id") {
+                    collection_ids.insert(id);
+                }
+                if let Ok(Some(id)) = row.try_get::<Option<i32>>("", "favorite_id") {
+                    favorite_ids.insert(id);
+                }
+                if let Ok(Some(id)) = row.try_get::<Option<i32>>("", "watch_later_id") {
+                    watch_later_ids.insert(id);
+                }
+                // 番剧通过source_id和source_type=1判断
+                if let (Ok(Some(source_id)), Ok(Some(source_type))) = 
+                    (row.try_get::<Option<i32>>("", "source_id"), 
+                     row.try_get::<Option<i32>>("", "source_type")) {
+                    if source_type == 1 {
+                        bangumi_source_ids.insert(source_id);
+                    }
+                }
+            }
+            
+            // 批量更新各个源表的scan_deleted_videos字段
+            let mut enabled_sources = vec![];
+            
+            // UP主投稿
+            if !submission_ids.is_empty() {
+                let placeholders = submission_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+                let result = txn
+                    .execute(Statement::from_sql_and_values(
+                        DatabaseBackend::Sqlite,
+                        &format!(
+                            "UPDATE submission SET scan_deleted_videos = 1 
+                             WHERE id IN ({}) AND scan_deleted_videos = 0",
+                            placeholders
+                        ),
+                        submission_ids.iter().map(|id| (*id).into()).collect::<Vec<_>>(),
+                    ))
+                    .await?;
+                if result.rows_affected() > 0 {
+                    enabled_sources.push(format!("{}个UP主投稿", result.rows_affected()));
+                }
+            }
+            
+            // 合集
+            if !collection_ids.is_empty() {
+                let placeholders = collection_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+                let result = txn
+                    .execute(Statement::from_sql_and_values(
+                        DatabaseBackend::Sqlite,
+                        &format!(
+                            "UPDATE collection SET scan_deleted_videos = 1 
+                             WHERE id IN ({}) AND scan_deleted_videos = 0",
+                            placeholders
+                        ),
+                        collection_ids.iter().map(|id| (*id).into()).collect::<Vec<_>>(),
+                    ))
+                    .await?;
+                if result.rows_affected() > 0 {
+                    enabled_sources.push(format!("{}个合集", result.rows_affected()));
+                }
+            }
+            
+            // 收藏夹
+            if !favorite_ids.is_empty() {
+                let placeholders = favorite_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+                let result = txn
+                    .execute(Statement::from_sql_and_values(
+                        DatabaseBackend::Sqlite,
+                        &format!(
+                            "UPDATE favorite SET scan_deleted_videos = 1 
+                             WHERE id IN ({}) AND scan_deleted_videos = 0",
+                            placeholders
+                        ),
+                        favorite_ids.iter().map(|id| (*id).into()).collect::<Vec<_>>(),
+                    ))
+                    .await?;
+                if result.rows_affected() > 0 {
+                    enabled_sources.push(format!("{}个收藏夹", result.rows_affected()));
+                }
+            }
+            
+            // 稍后再看
+            if !watch_later_ids.is_empty() {
+                let placeholders = watch_later_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+                let result = txn
+                    .execute(Statement::from_sql_and_values(
+                        DatabaseBackend::Sqlite,
+                        &format!(
+                            "UPDATE watch_later SET scan_deleted_videos = 1 
+                             WHERE id IN ({}) AND scan_deleted_videos = 0",
+                            placeholders
+                        ),
+                        watch_later_ids.iter().map(|id| (*id).into()).collect::<Vec<_>>(),
+                    ))
+                    .await?;
+                if result.rows_affected() > 0 {
+                    enabled_sources.push(format!("{}个稍后再看", result.rows_affected()));
+                }
+            }
+            
+            // 番剧
+            if !bangumi_source_ids.is_empty() {
+                let placeholders = bangumi_source_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+                let result = txn
+                    .execute(Statement::from_sql_and_values(
+                        DatabaseBackend::Sqlite,
+                        &format!(
+                            "UPDATE video_source SET scan_deleted_videos = 1 
+                             WHERE id IN ({}) AND scan_deleted_videos = 0",
+                            placeholders
+                        ),
+                        bangumi_source_ids.iter().map(|id| (*id).into()).collect::<Vec<_>>(),
+                    ))
+                    .await?;
+                if result.rows_affected() > 0 {
+                    enabled_sources.push(format!("{}个番剧", result.rows_affected()));
+                }
+            }
+            
+            if !enabled_sources.is_empty() {
+                info!("已自动启用以下视频源的'扫描已删除视频'功能: {}", enabled_sources.join(", "));
+            }
+        }
     }
     
     // 7. 提交事务
