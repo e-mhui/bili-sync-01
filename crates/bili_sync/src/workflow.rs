@@ -4181,9 +4181,35 @@ pub async fn fix_page_video_ids(
         .and_then(|row| row.try_get_by_index::<i64>(0).ok())
         .unwrap_or(0);
     
+    // 创建临时表来跟踪需要设置auto_download=0的video
+    let mut videos_to_disable = Vec::new();
+    
     if cid_mismatch_count > 0 {
         warn!("发现 {} 条cid不匹配的page记录，这些记录的内容已变化，将删除", cid_mismatch_count);
         
+        // 先收集这些记录对应的video_id（用于后续设置auto_download=0）
+        let mismatch_videos = txn
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                r#"
+                SELECT DISTINCT p.video_id
+                FROM page p 
+                JOIN video v ON p.video_id = v.id 
+                WHERE p.pid = 1 
+                AND v.cid IS NOT NULL 
+                AND p.cid != v.cid
+                "#,
+                vec![],
+            ))
+            .await?;
+        
+        for row in mismatch_videos {
+            if let Ok(video_id) = row.try_get_by_index::<i64>(0) {
+                videos_to_disable.push(video_id);
+            }
+        }
+        
+        // 删除cid不匹配的page记录
         let delete_mismatch_result = txn
             .execute(Statement::from_sql_and_values(
                 DatabaseBackend::Sqlite,
@@ -4400,10 +4426,59 @@ pub async fn fix_page_video_ids(
         info!("已删除 {} 条孤立的page记录", delete_result.rows_affected());
     }
     
-    // 6. 提交事务
+    // 6. 设置cid不匹配的video的auto_download为0
+    // 但要排除已修复的video（即在修复过程中成功更新的video）
+    if !videos_to_disable.is_empty() {
+        info!("设置 {} 个cid不匹配video的auto_download为0", videos_to_disable.len());
+        
+        // 收集所有已修复的video_id（这些不应该被设置为auto_download=0）
+        let fixed_videos = txn
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                r#"
+                SELECT DISTINCT video_id 
+                FROM page 
+                WHERE video_id > 0
+                "#,
+                vec![],
+            ))
+            .await?;
+        
+        let mut fixed_video_ids = std::collections::HashSet::new();
+        for row in fixed_videos {
+            if let Ok(video_id) = row.try_get_by_index::<i64>(0) {
+                fixed_video_ids.insert(video_id);
+            }
+        }
+        
+        // 只设置那些不在fixed_video_ids中的video
+        let mut disabled_count = 0;
+        for video_id in videos_to_disable {
+            // 如果这个video已经被修复（有正确的page记录），则跳过
+            if fixed_video_ids.contains(&video_id) {
+                continue;
+            }
+            
+            let update_result = txn
+                .execute(Statement::from_sql_and_values(
+                    DatabaseBackend::Sqlite,
+                    r#"UPDATE video SET auto_download = 0 WHERE id = ?"#,
+                    vec![video_id.into()],
+                ))
+                .await?;
+            
+            if update_result.rows_affected() > 0 {
+                disabled_count += 1;
+            }
+        }
+        
+        info!("已设置 {} 个video的auto_download为0（排除了已修复的记录）", disabled_count);
+    }
+    
+    // 7. 提交事务
     txn.commit().await?;
     
-    // 7. 最终验证
+    // 8. 最终验证
     let final_check: i64 = connection
         .query_one(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
