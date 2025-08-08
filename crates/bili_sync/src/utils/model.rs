@@ -258,6 +258,7 @@ pub async fn create_videos(
                         deleted: Set(0),
                         download_status: Set(0),   // 重置下载状态为未开始，强制重新下载
                         path: Set("".to_string()), // 清空原有路径，因为文件可能已经不存在
+                        single_page: Set(None),    // 设为NULL，让filter_unfilled_videos识别并重新获取完整信息
                         // 更新其他可能变化的字段
                         name: model.name.clone(),
                         intro: model.intro.clone(),
@@ -267,15 +268,14 @@ pub async fn create_videos(
                     };
                     update_model.save(db_conn).await?;
 
-                    // 同时重置该视频的所有页面状态，强制重新下载
-                    page::Entity::update_many()
-                        .col_expr(page::Column::DownloadStatus, sea_orm::prelude::Expr::value(0)) // 重置为未开始状态
-                        .col_expr(page::Column::Path, sea_orm::prelude::Expr::value(Option::<String>::None)) // 清空文件路径
+                    // 删除该视频的所有旧page记录（如果存在的话）
+                    // 因为视频信息可能已经变化，旧的page记录可能不准确
+                    page::Entity::delete_many()
                         .filter(page::Column::VideoId.eq(existing.id))
                         .exec(db_conn)
                         .await?;
 
-                    info!("恢复已删除的视频并重置下载状态: {}", existing.name);
+                    info!("恢复已删除的视频，将重新获取详细信息: {}", existing.name);
                 } else {
                     // 视频存在且未删除，检查是否需要更新字段
                     let mut needs_update = false;
