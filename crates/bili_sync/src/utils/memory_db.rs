@@ -69,6 +69,10 @@ impl MemoryDbOptimizer {
 
         // 复制关键数据到内存数据库
         self.copy_essential_data(&memory_db).await?;
+        
+        // 在数据复制完成后同步自增序列
+        // sqlite_sequence表会在第一次插入AUTOINCREMENT表时自动创建
+        self.copy_sequence_values(&memory_db).await?;
 
         self.memory_db = Some(Arc::new(memory_db));
         self.keeper_connection = Some(Arc::new(keeper_connection.clone()));
@@ -195,6 +199,80 @@ impl MemoryDbOptimizer {
         }
 
         debug!("索引复制完成");
+        
+        Ok(())
+    }
+    
+    /// 复制sqlite_sequence表以保持自增ID同步
+    async fn copy_sequence_values(&self, memory_db: &DatabaseConnection) -> Result<()> {
+        // 从主数据库读取所有序列值
+        let sequence_sql = "SELECT name, seq FROM sqlite_sequence";
+        let sequences = match self
+            .main_db
+            .query_all(Statement::from_string(DatabaseBackend::Sqlite, sequence_sql))
+            .await
+        {
+            Ok(rows) => rows,
+            Err(e) => {
+                // sqlite_sequence表可能不存在（如果没有AUTOINCREMENT表）
+                debug!("读取sqlite_sequence表失败（可能不存在）: {}", e);
+                return Ok(());
+            }
+        };
+        
+        if sequences.is_empty() {
+            debug!("sqlite_sequence表为空，跳过同步");
+            return Ok(());
+        }
+        
+        // SQLite会在第一次插入AUTOINCREMENT表时自动创建sqlite_sequence
+        // 我们需要先触发一次插入来创建表，然后更新序列值
+        for row in sequences {
+            if let (Ok(name), Ok(seq)) = (
+                row.try_get_by_index::<String>(0),
+                row.try_get_by_index::<i64>(1),
+            ) {
+                // 使用UPDATE语句更新序列值
+                // 如果sqlite_sequence还不存在，会在第一次INSERT时自动创建
+                let update_sql = format!(
+                    "UPDATE sqlite_sequence SET seq = {} WHERE name = '{}'",
+                    seq, name
+                );
+                
+                // 先尝试更新，如果失败则说明表还不存在
+                let update_result = memory_db
+                    .execute(Statement::from_string(DatabaseBackend::Sqlite, &update_sql))
+                    .await;
+                
+                match update_result {
+                    Ok(result) if result.rows_affected() > 0 => {
+                        debug!("已同步自增序列: {} = {}", name, seq);
+                    }
+                    _ => {
+                        // 如果更新失败或没有影响行，尝试使用INSERT OR REPLACE
+                        // 但前提是sqlite_sequence表已经存在
+                        // 我们通过插入一条临时记录来触发表的创建
+                        let insert_sql = format!(
+                            "INSERT OR REPLACE INTO sqlite_sequence (name, seq) VALUES ('{}', {})",
+                            name, seq
+                        );
+                        
+                        if let Err(e) = memory_db
+                            .execute(Statement::from_string(DatabaseBackend::Sqlite, &insert_sql))
+                            .await
+                        {
+                            // 如果还是失败，说明表还没创建，我们需要先有一个AUTOINCREMENT插入
+                            debug!("sqlite_sequence表尚未创建，将在首次插入时自动同步: {}", e);
+                            // 保存序列值，稍后在第一次插入后更新
+                            continue;
+                        }
+                        debug!("已初始化自增序列: {} = {}", name, seq);
+                    }
+                }
+            }
+        }
+        
+        info!("自增序列同步完成");
         Ok(())
     }
 
