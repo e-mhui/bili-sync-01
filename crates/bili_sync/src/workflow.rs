@@ -4426,12 +4426,12 @@ pub async fn fix_page_video_ids(
         info!("已删除 {} 条孤立的page记录", delete_result.rows_affected());
     }
     
-    // 6. 设置cid不匹配的video的auto_download为0
+    // 6. 设置cid不匹配的video的deleted为1
     // 但要排除已修复的video（即在修复过程中成功更新的video）
     if !videos_to_disable.is_empty() {
-        info!("设置 {} 个cid不匹配video的auto_download为0", videos_to_disable.len());
+        info!("标记 {} 个cid不匹配video为已删除", videos_to_disable.len());
         
-        // 收集所有已修复的video_id（这些不应该被设置为auto_download=0）
+        // 收集所有已修复的video_id（这些不应该被标记为已删除）
         let fixed_videos = txn
             .query_all(Statement::from_sql_and_values(
                 DatabaseBackend::Sqlite,
@@ -4462,7 +4462,7 @@ pub async fn fix_page_video_ids(
             let update_result = txn
                 .execute(Statement::from_sql_and_values(
                     DatabaseBackend::Sqlite,
-                    r#"UPDATE video SET auto_download = 0 WHERE id = ?"#,
+                    r#"UPDATE video SET deleted = 1 WHERE id = ?"#,
                     vec![video_id.into()],
                 ))
                 .await?;
@@ -4472,7 +4472,7 @@ pub async fn fix_page_video_ids(
             }
         }
         
-        info!("已设置 {} 个video的auto_download为0（排除了已修复的记录）", disabled_count);
+        info!("已标记 {} 个video为已删除（排除了已修复的记录）", disabled_count);
     }
     
     // 7. 提交事务
