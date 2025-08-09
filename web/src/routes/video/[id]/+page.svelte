@@ -100,10 +100,10 @@
 	onMount(() => {
 		setBreadcrumb([
 			{
-				label: '主页',
+				label: '视频管理',
 				onClick: () => {
 					const query = ToQuery($appStateStore);
-					goto(query ? `/?${query}` : '/');
+					goto(query ? `/videos?${query}` : '/videos');
 				}
 			},
 			{ label: '视频详情', isActive: true }
