@@ -5366,37 +5366,23 @@ async fn rename_existing_files(
             // 使用视频记录中的路径信息
             let video_path = Path::new(&video.path);
             
-            // **修复重复目录层级问题：智能检测并调整基础路径**
-            // 检查处理后的路径是否包含路径分隔符（如 庄心妍/庄心妍的采访）
-            let contains_path_separator = base_video_name.contains('/');
-            
-            // 智能计算正确的基础路径
-            let base_parent_dir = if contains_path_separator {
-                // 处理后的路径包含目录结构，需要检查是否已经在UP主目录中
-                if let Some(parent) = video_path.parent() {
-                    // 提取处理后路径中的第一级目录（通常是UP主名称）
-                    let first_dir = base_video_name.split('/').next().unwrap_or("");
-                    
-                    // 检查当前父目录是否已经是这个目录
-                    if let Some(current_dir_name) = parent.file_name() {
-                        let current_dir = current_dir_name.to_string_lossy();
-                        if current_dir == first_dir {
-                            // 已经在UP主目录中，需要回退一级
-                            info!("🔧 检测到重复目录层级，当前已在 '{}' 目录中，回退到上级目录", current_dir);
-                            parent.parent().unwrap_or(parent)
-                        } else {
-                            parent
-                        }
-                    } else {
-                        parent
-                    }
-                } else {
-                    video_path.parent().unwrap_or(Path::new("."))
-                }
+            // **修复重复目录层级问题：重命名时只使用模板的最后一部分**
+            // 如果模板生成的路径包含目录结构（如 "庄心妍/庄心妍的采访"）
+            // 在重命名时应该只使用最后的文件夹名部分，避免创建重复层级
+            let final_folder_name = if base_video_name.contains('/') {
+                // 模板包含路径分隔符，只取最后一部分作为文件夹名
+                let parts: Vec<&str> = base_video_name.split('/').collect();
+                let last_part = parts.last().map(|s| (*s).to_owned()).unwrap_or_else(|| base_video_name.clone());
+                info!("🔧 模板包含路径分隔符，重命名时只使用最后部分: '{}' -> '{}'", 
+                    base_video_name, last_part);
+                last_part
             } else {
-                // 路径不包含目录结构，使用原有逻辑
-                video_path.parent().unwrap_or(Path::new("."))
+                // 模板不包含路径分隔符，直接使用
+                base_video_name.clone()
             };
+            
+            // 使用当前视频的父目录作为基础路径
+            let base_parent_dir = video_path.parent().unwrap_or(Path::new("."));
             
             if base_parent_dir.exists() {
                 // **智能判断：根据模板内容决定是否需要去重**
@@ -5429,11 +5415,11 @@ async fn rename_existing_files(
                 let expected_new_path = if needs_deduplication {
                     // 使用智能去重生成唯一文件夹名
                     let unique_folder_name =
-                        generate_unique_folder_name(base_parent_dir, &base_video_name, &video.bvid, &formatted_pubtime);
+                        generate_unique_folder_name(base_parent_dir, &final_folder_name, &video.bvid, &formatted_pubtime);
                     base_parent_dir.join(&unique_folder_name)
                 } else {
                     // 不使用去重，允许多个视频共享同一文件夹
-                    base_parent_dir.join(&base_video_name)
+                    base_parent_dir.join(&final_folder_name)
                 };
 
                 // **修复分离逻辑：从合并文件夹中提取单个视频的文件**

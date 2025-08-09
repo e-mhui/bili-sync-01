@@ -39,6 +39,7 @@ futures = "0.3.31"
 # glob = "0.3.1" # 已移除：未使用
 handlebars = "6.3.2"
 hex = "0.4.3"
+html-escape = "0.2.13"
 leaky-bucket = "1.1.2"
 md5 = "0.7.0"
 memchr = "2.7.4"
