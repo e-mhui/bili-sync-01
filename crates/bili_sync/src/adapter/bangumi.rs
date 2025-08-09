@@ -40,6 +40,7 @@ impl BangumiSource {
         video_model: &bili_sync_entity::video::Model,
         page_model: &bili_sync_entity::page::Model,
         db: &sea_orm::DatabaseConnection,
+        api_title: Option<&str>,  // 新增参数：API提供的番剧标题
     ) -> Result<String> {
         use crate::utils::format_arg::bangumi_page_format_args;
 
@@ -70,7 +71,7 @@ impl BangumiSource {
             }
         }
 
-        let format_args = bangumi_page_format_args(video_model, page_model, None);
+        let format_args = bangumi_page_format_args(video_model, page_model, api_title);
 
         // 使用ConfigBundle的模板渲染功能以保持一致性
         let final_name = if template == current_config.bangumi_name {

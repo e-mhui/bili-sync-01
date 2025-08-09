@@ -2367,8 +2367,15 @@ pub async fn download_page(
     } else if is_bangumi {
         // 番剧使用专用的模板方法
         if let VideoSourceEnum::BangumiSource(bangumi_source) = video_source {
+            // 获取API标题（如果有season_id）
+            let api_title = if let Some(ref season_id) = video_model.season_id {
+                get_cached_season_title(bili_client, season_id, token.clone()).await
+            } else {
+                None
+            };
+            
             bangumi_source
-                .render_page_name(video_model, &page_model, connection)
+                .render_page_name(video_model, &page_model, connection, api_title.as_deref())
                 .await?
         } else {
             // 如果类型不匹配，使用最新配置手动渲染

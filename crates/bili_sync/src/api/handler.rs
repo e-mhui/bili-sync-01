@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 use axum::extract::{Extension, Path, Query};
+use chrono::Datelike;
 
 use crate::utils::time_format::{now_standard_string, to_standard_string};
 use bili_sync_entity::{collection, favorite, page, submission, video, video_source, watch_later};
@@ -5209,6 +5210,56 @@ async fn rename_existing_files(
             serde_json::Value::String(video.upper_id.to_string()),
         );
 
+        // 为番剧视频添加特殊变量
+        if is_bangumi {
+            // 从视频名称提取 series_title
+            let series_title = extract_bangumi_series_title(&video.name);
+            let season_title = extract_bangumi_season_title(&video.name);
+            
+            template_data.insert("series_title".to_string(), 
+                serde_json::Value::String(series_title));
+            template_data.insert("season_title".to_string(), 
+                serde_json::Value::String(season_title));
+            
+            // 添加其他番剧相关变量
+            template_data.insert("season_number".to_string(), 
+                serde_json::Value::Number(serde_json::Number::from(video.season_number.unwrap_or(1))));
+            template_data.insert("episode_number".to_string(), 
+                serde_json::Value::Number(serde_json::Number::from(video.episode_number.unwrap_or(1))));
+            template_data.insert("season".to_string(), 
+                serde_json::Value::String(video.season_number.unwrap_or(1).to_string()));
+            template_data.insert("season_pad".to_string(), 
+                serde_json::Value::String(format!("{:02}", video.season_number.unwrap_or(1))));
+            template_data.insert("episode".to_string(), 
+                serde_json::Value::String(video.episode_number.unwrap_or(1).to_string()));
+            template_data.insert("episode_pad".to_string(), 
+                serde_json::Value::String(format!("{:02}", video.episode_number.unwrap_or(1))));
+            
+            // 添加其他信息
+            if let Some(ref season_id) = video.season_id {
+                template_data.insert("season_id".to_string(), 
+                    serde_json::Value::String(season_id.clone()));
+            }
+            if let Some(ref ep_id) = video.ep_id {
+                template_data.insert("ep_id".to_string(), 
+                    serde_json::Value::String(ep_id.clone()));
+            }
+            if let Some(ref share_copy) = video.share_copy {
+                template_data.insert("share_copy".to_string(), 
+                    serde_json::Value::String(share_copy.clone()));
+            }
+            if let Some(ref actors) = video.actors {
+                template_data.insert("actors".to_string(), 
+                    serde_json::Value::String(actors.clone()));
+            }
+            
+            // 添加年份
+            template_data.insert("year".to_string(), 
+                serde_json::Value::Number(serde_json::Number::from(video.pubtime.year())));
+            template_data.insert("studio".to_string(), 
+                serde_json::Value::String(video.upper_name.clone()));
+        }
+
         // 为合集添加额外的模板变量
         if let Some(ref coll_name) = collection_name {
             template_data.insert(
@@ -5510,6 +5561,31 @@ async fn rename_existing_files(
 
             // 为多P视频和番剧添加season相关变量
             if !is_single_page || is_bangumi {
+                if is_bangumi {
+                    // 番剧需要添加 series_title 等变量
+                    let series_title = extract_bangumi_series_title(&video.name);
+                    let season_title = extract_bangumi_season_title(&video.name);
+                    
+                    page_template_data.insert("series_title".to_string(), 
+                        serde_json::Value::String(series_title));
+                    page_template_data.insert("season_title".to_string(), 
+                        serde_json::Value::String(season_title));
+                    
+                    // 添加其他番剧特有变量
+                    if let Some(ref share_copy) = video.share_copy {
+                        page_template_data.insert("share_copy".to_string(), 
+                            serde_json::Value::String(share_copy.clone()));
+                    }
+                    if let Some(ref actors) = video.actors {
+                        page_template_data.insert("actors".to_string(), 
+                            serde_json::Value::String(actors.clone()));
+                    }
+                    page_template_data.insert("year".to_string(), 
+                        serde_json::Value::Number(serde_json::Number::from(video.pubtime.year())));
+                    page_template_data.insert("studio".to_string(), 
+                        serde_json::Value::String(video.upper_name.clone()));
+                }
+                
                 let season_number = if is_bangumi {
                     video.season_number.unwrap_or(1)
                 } else {
@@ -5532,6 +5608,11 @@ async fn rename_existing_files(
                 page_template_data.insert("pid".to_string(), serde_json::Value::String(episode_number.to_string()));
                 page_template_data.insert(
                     "pid_pad".to_string(),
+                    serde_json::Value::String(format!("{:02}", episode_number)),
+                );
+                page_template_data.insert("episode".to_string(), serde_json::Value::String(episode_number.to_string()));
+                page_template_data.insert(
+                    "episode_pad".to_string(),
                     serde_json::Value::String(format!("{:02}", episode_number)),
                 );
             }
@@ -9632,5 +9713,58 @@ pub async fn get_notification_status() -> Result<ApiResponse<crate::api::respons
     };
 
     Ok(ApiResponse::ok(status))
+}
+
+/// 从番剧标题中提取系列名称
+/// 例如：《灵笼 第二季》第1话 末世桃源 -> 灵笼
+fn extract_bangumi_series_title(full_title: &str) -> String {
+    // 移除开头的书名号
+    let title = full_title.trim_start_matches('《');
+    
+    // 找到书名号结束位置
+    if let Some(end_pos) = title.find('》') {
+        let season_title = &title[..end_pos];
+        
+        // 移除季度信息："灵笼 第二季" -> "灵笼"
+        if let Some(space_pos) = season_title.rfind(' ') {
+            // 检查空格后面是否是季度标记
+            let after_space = &season_title[space_pos + 1..];
+            if after_space.starts_with("第") && after_space.ends_with("季") {
+                return season_title[..space_pos].to_string();
+            }
+        }
+        // 如果没有季度信息，返回整个标题
+        return season_title.to_string();
+    }
+    
+    // 如果没有书名号，尝试其他模式
+    if let Some(space_pos) = full_title.find(' ') {
+        return full_title[..space_pos].to_string();
+    }
+    
+    full_title.to_string()
+}
+
+/// 从番剧标题中提取季度标题
+/// 例如：《灵笼 第二季》第1话 末世桃源 -> 灵笼 第二季
+fn extract_bangumi_season_title(full_title: &str) -> String {
+    let title = full_title.trim_start_matches('《');
+    
+    if let Some(end_pos) = title.find('》') {
+        return title[..end_pos].to_string();
+    }
+    
+    // 如果没有书名号，找到"第X话"之前的部分
+    if let Some(episode_pos) = full_title.find("第") {
+        if let Some(hua_pos) = full_title[episode_pos..].find("话") {
+            // 确保这是"第X话"而不是"第X季"
+            let between = &full_title[episode_pos + 3..episode_pos + hua_pos];
+            if between.chars().all(|c| c.is_numeric()) && episode_pos > 0 {
+                return full_title[..episode_pos].trim().to_string();
+            }
+        }
+    }
+    
+    full_title.to_string()
 }
 
