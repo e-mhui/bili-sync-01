@@ -5365,7 +5365,40 @@ async fn rename_existing_files(
 
             // 使用视频记录中的路径信息
             let video_path = Path::new(&video.path);
-            if let Some(parent_dir) = video_path.parent() {
+            
+            // **修复重复目录层级问题：智能检测并调整基础路径**
+            // 检查处理后的路径是否包含路径分隔符（如 庄心妍/庄心妍的采访）
+            let contains_path_separator = base_video_name.contains('/');
+            
+            // 智能计算正确的基础路径
+            let base_parent_dir = if contains_path_separator {
+                // 处理后的路径包含目录结构，需要检查是否已经在UP主目录中
+                if let Some(parent) = video_path.parent() {
+                    // 提取处理后路径中的第一级目录（通常是UP主名称）
+                    let first_dir = base_video_name.split('/').next().unwrap_or("");
+                    
+                    // 检查当前父目录是否已经是这个目录
+                    if let Some(current_dir_name) = parent.file_name() {
+                        let current_dir = current_dir_name.to_string_lossy();
+                        if current_dir == first_dir {
+                            // 已经在UP主目录中，需要回退一级
+                            info!("🔧 检测到重复目录层级，当前已在 '{}' 目录中，回退到上级目录", current_dir);
+                            parent.parent().unwrap_or(parent)
+                        } else {
+                            parent
+                        }
+                    } else {
+                        parent
+                    }
+                } else {
+                    video_path.parent().unwrap_or(Path::new("."))
+                }
+            } else {
+                // 路径不包含目录结构，使用原有逻辑
+                video_path.parent().unwrap_or(Path::new("."))
+            };
+            
+            if base_parent_dir.exists() {
                 // **智能判断：根据模板内容决定是否需要去重**
                 // 如果模板包含会产生相同名称的变量（如upper_name），则不使用智能去重
                 // 如果模板包含会产生不同名称的变量（如title），则使用智能去重避免冲突
@@ -5396,11 +5429,11 @@ async fn rename_existing_files(
                 let expected_new_path = if needs_deduplication {
                     // 使用智能去重生成唯一文件夹名
                     let unique_folder_name =
-                        generate_unique_folder_name(parent_dir, &base_video_name, &video.bvid, &formatted_pubtime);
-                    parent_dir.join(&unique_folder_name)
+                        generate_unique_folder_name(base_parent_dir, &base_video_name, &video.bvid, &formatted_pubtime);
+                    base_parent_dir.join(&unique_folder_name)
                 } else {
                     // 不使用去重，允许多个视频共享同一文件夹
-                    parent_dir.join(&base_video_name)
+                    base_parent_dir.join(&base_video_name)
                 };
 
                 // **修复分离逻辑：从合并文件夹中提取单个视频的文件**
@@ -5409,32 +5442,46 @@ async fn rename_existing_files(
                     Some(video_path.to_path_buf())
                 } else {
                     // 在父目录中查找包含此视频文件的文件夹
-                    if let Ok(entries) = std::fs::read_dir(parent_dir) {
-                        let mut found_path = None;
-                        for entry in entries.flatten() {
-                            let entry_path = entry.path();
-                            if entry_path.is_dir() {
-                                // 检查文件夹内是否包含属于此视频的文件
-                                if let Ok(files) = std::fs::read_dir(&entry_path) {
-                                    for file_entry in files.flatten() {
-                                        let file_name_os = file_entry.file_name();
-                                        let file_name = file_name_os.to_string_lossy();
-                                        // 通过bvid匹配文件
-                                        if file_name.contains(&video.bvid) {
-                                            found_path = Some(entry_path.clone());
+                    // 先尝试在原父目录查找，如果找不到再尝试基础父目录
+                    let search_dirs = if let Some(original_parent) = video_path.parent() {
+                        if original_parent != base_parent_dir {
+                            vec![original_parent, base_parent_dir]
+                        } else {
+                            vec![base_parent_dir]
+                        }
+                    } else {
+                        vec![base_parent_dir]
+                    };
+                    
+                    let mut found_path = None;
+                    for search_dir in search_dirs {
+                        if let Ok(entries) = std::fs::read_dir(search_dir) {
+                            for entry in entries.flatten() {
+                                let entry_path = entry.path();
+                                if entry_path.is_dir() {
+                                    // 检查文件夹内是否包含属于此视频的文件
+                                    if let Ok(files) = std::fs::read_dir(&entry_path) {
+                                        for file_entry in files.flatten() {
+                                            let file_name_os = file_entry.file_name();
+                                            let file_name = file_name_os.to_string_lossy();
+                                            // 通过bvid匹配文件
+                                            if file_name.contains(&video.bvid) {
+                                                found_path = Some(entry_path.clone());
+                                                break;
+                                            }
+                                        }
+                                        if found_path.is_some() {
                                             break;
                                         }
-                                    }
-                                    if found_path.is_some() {
-                                        break;
                                     }
                                 }
                             }
                         }
-                        found_path
-                    } else {
-                        None
+                        if found_path.is_some() {
+                            break;
+                        }
                     }
+                    found_path
                 };
 
                 // 处理文件提取和移动的情况
