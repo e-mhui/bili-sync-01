@@ -4908,10 +4908,13 @@ pub async fn update_config_internal(
         let rename_bangumi = updated_fields.contains(&"bangumi_name") || updated_fields.contains(&"video_name");
         let rename_folder_structure = updated_fields.contains(&"folder_structure");
 
+        // 重新获取最新的配置，确保使用重新加载后的配置
+        let latest_config = crate::config::with_config(|bundle| bundle.config.clone());
+
         // 执行文件重命名并等待完成
         match rename_existing_files(
             db.clone(),
-            &config,
+            &latest_config,
             rename_single_page,
             rename_multi_page,
             rename_bangumi,
@@ -5034,11 +5037,39 @@ pub async fn update_config_internal(
 
 /// 查找分页文件的原始命名模式
 fn find_page_file_pattern(video_path: &std::path::Path, page: &bili_sync_entity::page::Model) -> Result<String> {
-    if !video_path.exists() {
-        return Ok(String::new());
+    // 首先尝试在主目录查找
+    if let Some(pattern) = find_page_file_in_dir(video_path, page) {
+        return Ok(pattern);
+    }
+    
+    // 如果主目录没找到，尝试在Season子目录中查找
+    // 检查所有Season格式的子目录
+    if video_path.exists() {
+        if let Ok(entries) = std::fs::read_dir(video_path) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let dir_name = path.file_name().unwrap_or_default().to_string_lossy();
+                    if dir_name.starts_with("Season") {
+                        if let Some(pattern) = find_page_file_in_dir(&path, page) {
+                            return Ok(pattern);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(String::new())
+}
+
+/// 在指定目录中查找分页文件
+fn find_page_file_in_dir(dir_path: &std::path::Path, page: &bili_sync_entity::page::Model) -> Option<String> {
+    if !dir_path.exists() {
+        return None;
     }
 
-    if let Ok(entries) = std::fs::read_dir(video_path) {
+    if let Ok(entries) = std::fs::read_dir(dir_path) {
         for entry in entries.flatten() {
             let file_path = entry.path();
             let file_name = file_path.file_name().unwrap_or_default().to_string_lossy();
@@ -5051,13 +5082,13 @@ fn find_page_file_pattern(video_path: &std::path::Path, page: &bili_sync_entity:
             {
                 // 找到MP4文件，提取文件名（不包括扩展名）
                 if let Some(file_stem) = file_path.file_stem() {
-                    return Ok(file_stem.to_string_lossy().to_string());
+                    return Some(file_stem.to_string_lossy().to_string());
                 }
             }
         }
     }
 
-    Ok(String::new())
+    None
 }
 
 /// 重命名已下载的文件以匹配新的命名规则
@@ -5096,12 +5127,19 @@ async fn rename_existing_files(
     // **修复：使用更唯一的分隔符标记，避免与文件名中的下划线冲突**
     let video_template = config.video_name.replace(['/', '\\'], "___PATH_SEP___");
     let page_template = config.page_name.replace(['/', '\\'], "___PATH_SEP___");
+    let multi_page_template = config.multi_page_name.replace(['/', '\\'], "___PATH_SEP___");
+    let bangumi_template = config.bangumi_name.replace(['/', '\\'], "___PATH_SEP___");
 
     info!("🔧 原始视频模板: '{}'", config.video_name);
     info!("🔧 处理后视频模板: '{}'", video_template);
+    info!("🔧 原始番剧模板: '{}'", config.bangumi_name);
+    info!("🔧 处理后番剧模板: '{}'", bangumi_template);
+    info!("🔧 从配置中读取的bangumi_name: '{}'", config.bangumi_name);
 
     handlebars.register_template_string("video", video_template)?;
     handlebars.register_template_string("page", page_template)?;
+    handlebars.register_template_string("multi_page", multi_page_template)?;
+    handlebars.register_template_string("bangumi", bangumi_template)?;
 
     // 分别处理不同类型的视频
     let mut all_videos = Vec::new();
@@ -5634,10 +5672,11 @@ async fn rename_existing_files(
             let page_template_value = serde_json::Value::Object(page_template_data.into_iter().collect());
             let rendered_page_name = if is_bangumi {
                 // 番剧使用bangumi_name模板
-                match handlebars.render_template(&config.bangumi_name, &page_template_value) {
+                match handlebars.render("bangumi", &page_template_value) {
                     Ok(rendered) => rendered,
-                    Err(_) => {
+                    Err(e) => {
                         // 如果渲染失败，使用默认番剧格式
+                        warn!("番剧模板渲染失败: {}", e);
                         let season_number = video.season_number.unwrap_or(1);
                         let episode_number = video.episode_number.unwrap_or(page.pid);
                         format!("S{:02}E{:02}-{:02}", season_number, episode_number, episode_number)
@@ -5660,10 +5699,11 @@ async fn rename_existing_files(
                 }
             } else {
                 // 多P视频使用multi_page_name模板
-                match handlebars.render_template(&config.multi_page_name, &page_template_value) {
+                match handlebars.render("multi_page", &page_template_value) {
                     Ok(rendered) => rendered,
-                    Err(_) => {
+                    Err(e) => {
                         // 如果渲染失败，使用默认格式
+                        warn!("多P模板渲染失败: {}", e);
                         format!("S01E{:02}-{:02}", page.pid, page.pid)
                     }
                 }
@@ -5694,21 +5734,64 @@ async fn rename_existing_files(
                     page.pid, old_page_name, new_page_name
                 );
 
-                if final_video_path.exists() {
-                    if let Ok(entries) = std::fs::read_dir(&final_video_path) {
+                // 根据page的path确定实际文件所在目录
+                let actual_file_dir = if let Some(ref page_path) = page.path {
+                    // 从page.path中提取目录路径
+                    let page_file_path = Path::new(page_path);
+                    if let Some(parent) = page_file_path.parent() {
+                        PathBuf::from(parent)
+                    } else {
+                        final_video_path.clone()
+                    }
+                } else {
+                    // 如果page.path为空，尝试在Season子目录中查找
+                    // 对于使用Season结构的视频，文件可能在Season子目录中
+                    let season_dir = if is_bangumi && config.bangumi_use_season_structure {
+                        // 番剧使用Season结构
+                        let season_number = video.season_number.unwrap_or(1);
+                        final_video_path.join(format!("Season {:02}", season_number))
+                    } else if !is_single_page && config.multi_page_use_season_structure {
+                        // 多P视频使用Season结构
+                        final_video_path.join("Season 01")
+                    } else if is_collection && config.collection_use_season_structure {
+                        // 合集使用Season结构
+                        final_video_path.join("Season 01")
+                    } else {
+                        final_video_path.clone()
+                    };
+                    
+                    // 检查Season目录是否存在
+                    if season_dir.exists() {
+                        season_dir
+                    } else {
+                        final_video_path.clone()
+                    }
+                };
+
+                if actual_file_dir.exists() {
+                    debug!("检查目录: {:?}", actual_file_dir);
+                    if let Ok(entries) = std::fs::read_dir(&actual_file_dir) {
+                        let mut found_any_file = false;
                         for entry in entries.flatten() {
                             let file_path = entry.path();
                             let file_name = file_path.file_name().unwrap_or_default().to_string_lossy();
+                            
+                            // 记录所有文件以便调试
+                            if !found_any_file {
+                                debug!("目录中的文件: {}", file_name);
+                                found_any_file = true;
+                            }
 
                             // 检查文件是否属于当前分页（使用原始文件名模式匹配）
                             // 匹配规则：文件名以原始模式开头，后面可以跟扩展名或其他后缀
                             if file_name.starts_with(&old_page_name) {
+                                debug!("找到匹配文件: {} (匹配模式: {})", file_name, old_page_name);
                                 // 提取原始文件名后面的部分（扩展名和其他后缀）
                                 let suffix = file_name.strip_prefix(&old_page_name).unwrap_or("");
 
                                 // 构建新的文件名：新模式 + 原有的后缀
                                 let new_file_name = format!("{}{}", new_page_name, suffix);
-                                let new_file_path = final_video_path.join(new_file_name);
+                                let new_file_path = actual_file_dir.join(new_file_name);
 
                                 // 只有当新旧路径不同时才进行重命名
                                 if file_path != new_file_path {
@@ -5718,7 +5801,7 @@ async fn rename_existing_files(
                                         let file_stem = new_file_path.file_stem().unwrap_or_default().to_string_lossy();
                                         let file_extension =
                                             new_file_path.extension().unwrap_or_default().to_string_lossy();
-                                        let parent_dir = new_file_path.parent().unwrap_or(&final_video_path);
+                                        let parent_dir = new_file_path.parent().unwrap_or(&actual_file_dir);
 
                                         // 尝试添加BV号后缀避免冲突
                                         let bvid_suffix = &video.bvid;
