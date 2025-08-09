@@ -314,24 +314,25 @@
 
 <div class="space-y-6">
 	<!-- 搜索和筛选栏 -->
-	<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-		<div class="max-w-md flex-1">
-			<SearchBar
-				placeholder="搜索视频标题..."
-				value={$appStateStore.query}
-				onSearch={(value) => {
-					setQuery(value);
-					resetCurrentPage();
-					goto(`/videos?${ToQuery($appStateStore)}`);
-				}}
-			/>
-		</div>
+	<div class="flex flex-col gap-4">
+		<!-- 搜索栏 -->
+		<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+			<div class="w-full sm:max-w-md sm:flex-1">
+				<SearchBar
+					placeholder="搜索视频标题..."
+					value={$appStateStore.query}
+					onSearch={(value) => {
+						setQuery(value);
+						resetCurrentPage();
+						goto(`/videos?${ToQuery($appStateStore)}`);
+					}}
+				/>
+			</div>
 
-		<div class="flex items-center gap-2">
-			<!-- 排序下拉框 -->
-			<div class="flex items-center gap-2">
+			<!-- 排序下拉框 - 在移动端占满宽度 -->
+			<div class="w-full sm:w-auto">
 				<select 
-					class="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+					class="w-full sm:w-auto h-9 rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
 					value="{currentSortBy}_{currentSortOrder}"
 					onchange={(e) => {
 						const [sortBy, sortOrder] = e.currentTarget.value.split('_') as [SortBy, SortOrder];
@@ -348,21 +349,27 @@
 					<option value="created_at_asc">创建时间 (最早)</option>
 				</select>
 			</div>
-			
+		</div>
+
+		<!-- 操作按钮栏 - 移动端使用网格布局 -->
+		<div class="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-2 sm:justify-end">
 			<!-- 筛选按钮 -->
 			<Button
 				variant={showFilters ? 'default' : 'outline'}
 				size="sm"
+				class="w-full sm:w-auto"
 				onclick={() => (showFilters = !showFilters)}
 			>
 				<FilterIcon class="mr-2 h-4 w-4" />
-				筛选
+				<span class="hidden xs:inline">筛选</span>
+				<span class="xs:hidden">筛选</span>
 			</Button>
 
 			<!-- 显示错误视频按钮 -->
 			<Button
 				variant={showFailedOnly ? 'destructive' : 'outline'}
 				size="sm"
+				class="w-full sm:w-auto"
 				onclick={() => {
 					showFailedOnly = !showFailedOnly;
 					setShowFailedOnly(showFailedOnly);
@@ -370,18 +377,21 @@
 					goto(`/videos?${ToQuery($appStateStore)}`);
 				}}
 			>
-				只显示错误视频
+				<span class="hidden sm:inline">只显示错误视频</span>
+				<span class="sm:hidden">错误视频</span>
 			</Button>
 
 			<!-- 批量重置按钮 -->
 			<Button
 				variant="outline"
 				size="sm"
+				class="col-span-2 sm:col-span-1 w-full sm:w-auto"
 				onclick={() => (resetAllDialogOpen = true)}
 				disabled={resettingAll || loading}
 			>
 				<RotateCcwIcon class="mr-2 h-4 w-4 {resettingAll ? 'animate-spin' : ''}" />
-				批量重置
+				<span class="hidden xs:inline">批量重置</span>
+				<span class="xs:hidden">重置</span>
 			</Button>
 		</div>
 	</div>
