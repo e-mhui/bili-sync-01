@@ -1,4 +1,5 @@
 use chrono::Datelike;
+use html_escape::decode_html_entities;
 use serde_json::json;
 
 use crate::config;
@@ -100,10 +101,13 @@ fn extract_version_info(video_title: &str) -> String {
 
 pub fn video_format_args(video_model: &bili_sync_entity::video::Model) -> serde_json::Value {
     let current_config = config::reload_config();
+    // 解码HTML实体，确保UP主名称正确显示
+    let decoded_upper_name = decode_html_entities(&video_model.upper_name).to_string();
+    
     json!({
         "bvid": &video_model.bvid,
         "title": &video_model.name,
-        "upper_name": &video_model.upper_name,
+        "upper_name": decoded_upper_name,
         "upper_mid": &video_model.upper_id,
         "pubtime": &video_model.pubtime.and_utc().format(&current_config.time_format).to_string(),
         "fav_time": &video_model.favtime.and_utc().format(&current_config.time_format).to_string(),
@@ -178,10 +182,13 @@ pub fn bangumi_page_format_args(
         "已完结" // 没有season_id可能表示已完结或单集
     };
 
+    // 解码HTML实体，确保UP主名称正确显示
+    let decoded_upper_name = decode_html_entities(&video_model.upper_name).to_string();
+    
     json!({
         "bvid": &video_model.bvid,
         "title": &video_model.name,
-        "upper_name": &video_model.upper_name,
+        "upper_name": &decoded_upper_name,
         "upper_mid": &video_model.upper_id,
         "ptitle": &page_model.name,
         "pid": episode_number,
@@ -189,7 +196,7 @@ pub fn bangumi_page_format_args(
         "season": season_number,
         "season_pad": format!("{:02}", season_number),
         "year": year,
-        "studio": &video_model.upper_name,
+        "studio": &decoded_upper_name,
         "actors": video_model.actors.as_deref().unwrap_or(""),
         "share_copy": video_model.share_copy.as_deref().unwrap_or(""),
         "category": video_model.category,
@@ -237,10 +244,13 @@ pub fn page_format_args(
             _ => "Unknown".to_string(),
         };
 
+        // 解码HTML实体，确保UP主名称正确显示
+        let decoded_upper_name = decode_html_entities(&video_model.upper_name).to_string();
+        
         json!({
             "bvid": &video_model.bvid,
             "title": &video_model.name,
-            "upper_name": &video_model.upper_name,
+            "upper_name": &decoded_upper_name,
             "upper_mid": &video_model.upper_id,
             "ptitle": &page_model.name,
             "pid": page_model.pid,
@@ -248,7 +258,7 @@ pub fn page_format_args(
             "season": season_number,
             "season_pad": format!("{:02}", season_number),
             "year": year,
-            "studio": &video_model.upper_name,
+            "studio": &decoded_upper_name,
             "actors": video_model.actors.as_deref().unwrap_or(""),
             "share_copy": video_model.share_copy.as_deref().unwrap_or(""),
             "category": video_model.category,
@@ -260,10 +270,13 @@ pub fn page_format_args(
         })
     } else {
         // 对于单P视频，使用原有的格式（不包含season_pad）
+        // 解码HTML实体，确保UP主名称正确显示
+        let decoded_upper_name = decode_html_entities(&video_model.upper_name).to_string();
+        
         json!({
             "bvid": &video_model.bvid,
             "title": &video_model.name,
-            "upper_name": &video_model.upper_name,
+            "upper_name": &decoded_upper_name,
             "upper_mid": &video_model.upper_id,
             "ptitle": &page_model.name,
             "pid": page_model.pid,

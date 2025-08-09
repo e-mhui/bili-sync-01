@@ -30,6 +30,7 @@ futures = { workspace = true }
 # glob = { workspace = true } # 已移除：未使用
 handlebars = { workspace = true }
 hex = { workspace = true }
+html-escape = { workspace = true }
 # indicatif = "0.17.11" # 已移除：未使用
 lazy_static = "1.5.0"
 leaky-bucket = { workspace = true }
