@@ -72,10 +72,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Setup Node.js
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: '20'
 
@@ -93,6 +93,19 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
       with:
         targets: ${{ matrix.target }}
+      env:
+        # 设置更长的超时时间
+        RUSTUP_IO_THREADS: "1"
+      # 添加重试机制
+      continue-on-error: true
+      
+    - name: Setup Rust (Retry)
+      if: failure()
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+      env:
+        RUSTUP_IO_THREADS: "1"
 
     - name: Cache Rust dependencies
       uses: Swatinem/rust-cache@v2
@@ -147,7 +160,7 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Download Linux x86_64 binary
       uses: actions/download-artifact@v4
@@ -167,18 +180,18 @@ jobs:
         ls -la *.tar.gz
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
+      uses: docker/setup-buildx-action@v3
 
     - name: Log in to Docker Hub
       if: github.event_name != 'pull_request'
-      uses: docker/login-action@v2
+      uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
 
     - name: Log in to CNB.Cool Registry
       if: github.event_name != 'pull_request'
-      uses: docker/login-action@v2
+      uses: docker/login-action@v3
       with:
         registry: docker.cnb.cool
         username: cnb
@@ -234,7 +247,7 @@ jobs:
 
     - name: Extract metadata
       id: meta
-      uses: docker/metadata-action@v4
+      uses: docker/metadata-action@v5
       with:
         images: |
           ${{ env.IMAGE_NAME }}
@@ -274,7 +287,7 @@ jobs:
 
     - name: Build and push to all registries
       if: github.event_name != 'pull_request'
-      uses: docker/build-push-action@v4
+      uses: docker/build-push-action@v5
       with:
         context: .
         platforms: ${{ github.event.inputs.platforms || 'linux/amd64,linux/arm64' }}
