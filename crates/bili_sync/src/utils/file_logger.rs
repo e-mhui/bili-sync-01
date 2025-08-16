@@ -1,5 +1,5 @@
 use crate::config::CONFIG_DIR;
-use chrono::{Local, TimeZone};
+use chrono::{Local, TimeZone, NaiveDate};
 use once_cell::sync::Lazy;
 use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
@@ -7,7 +7,7 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-// 全局启动时间，用于生成日志文件名
+// 向后兼容：全局启动时间，用于其他地方的引用
 pub static STARTUP_TIME: Lazy<String> = Lazy::new(|| Local::now().format("%Y-%m-%d-%H-%M-%S").to_string());
 
 // 日志条目结构
@@ -21,13 +21,17 @@ struct LogEntry {
 
 // 日志文件写入器
 pub struct FileLogWriter {
-    all_writer: Arc<Mutex<BufWriter<File>>>,
-    debug_writer: Arc<Mutex<BufWriter<File>>>,
-    info_writer: Arc<Mutex<BufWriter<File>>>,
-    warn_writer: Arc<Mutex<BufWriter<File>>>,
-    error_writer: Arc<Mutex<BufWriter<File>>>,
+    all_writer: Arc<Mutex<Option<BufWriter<File>>>>,
+    debug_writer: Arc<Mutex<Option<BufWriter<File>>>>,
+    info_writer: Arc<Mutex<Option<BufWriter<File>>>>,
+    warn_writer: Arc<Mutex<Option<BufWriter<File>>>>,
+    error_writer: Arc<Mutex<Option<BufWriter<File>>>>,
     // 日志缓冲区
     log_buffer: Arc<Mutex<VecDeque<LogEntry>>>,
+    // 当前日期，用于检测日期变化
+    current_date: Arc<Mutex<NaiveDate>>,
+    // 日志目录
+    log_dir: std::path::PathBuf,
 }
 
 impl FileLogWriter {
@@ -39,14 +43,35 @@ impl FileLogWriter {
         // 清理超过30天的旧日志
         Self::cleanup_old_logs(&log_dir)?;
 
-        // 创建各级别的日志文件
-        let startup_time = &*STARTUP_TIME;
+        // 获取当前日期
+        let current_date = Local::now().date_naive();
 
-        let all_path = log_dir.join(format!("logs-all-{}.csv", startup_time));
-        let debug_path = log_dir.join(format!("logs-debug-{}.csv", startup_time));
-        let info_path = log_dir.join(format!("logs-info-{}.csv", startup_time));
-        let warn_path = log_dir.join(format!("logs-warn-{}.csv", startup_time));
-        let error_path = log_dir.join(format!("logs-error-{}.csv", startup_time));
+        let instance = Self {
+            all_writer: Arc::new(Mutex::new(None)),
+            debug_writer: Arc::new(Mutex::new(None)),
+            info_writer: Arc::new(Mutex::new(None)),
+            warn_writer: Arc::new(Mutex::new(None)),
+            error_writer: Arc::new(Mutex::new(None)),
+            log_buffer: Arc::new(Mutex::new(VecDeque::new())),
+            current_date: Arc::new(Mutex::new(current_date)),
+            log_dir: log_dir.clone(),
+        };
+
+        // 创建当前日期的日志文件
+        instance.create_daily_log_files(current_date)?;
+
+        Ok(instance)
+    }
+
+    // 创建当日的日志文件
+    fn create_daily_log_files(&self, date: NaiveDate) -> anyhow::Result<()> {
+        let date_str = date.format("%Y-%m-%d").to_string();
+
+        let all_path = self.log_dir.join(format!("logs-all-{}.csv", date_str));
+        let debug_path = self.log_dir.join(format!("logs-debug-{}.csv", date_str));
+        let info_path = self.log_dir.join(format!("logs-info-{}.csv", date_str));
+        let warn_path = self.log_dir.join(format!("logs-warn-{}.csv", date_str));
+        let error_path = self.log_dir.join(format!("logs-error-{}.csv", date_str));
 
         // 创建文件并写入CSV头
         let all_writer = Self::create_log_file(&all_path)?;
@@ -55,14 +80,36 @@ impl FileLogWriter {
         let warn_writer = Self::create_log_file(&warn_path)?;
         let error_writer = Self::create_log_file(&error_path)?;
 
-        Ok(Self {
-            all_writer: Arc::new(Mutex::new(all_writer)),
-            debug_writer: Arc::new(Mutex::new(debug_writer)),
-            info_writer: Arc::new(Mutex::new(info_writer)),
-            warn_writer: Arc::new(Mutex::new(warn_writer)),
-            error_writer: Arc::new(Mutex::new(error_writer)),
-            log_buffer: Arc::new(Mutex::new(VecDeque::new())),
-        })
+        // 更新写入器
+        *self.all_writer.lock().unwrap() = Some(all_writer);
+        *self.debug_writer.lock().unwrap() = Some(debug_writer);
+        *self.info_writer.lock().unwrap() = Some(info_writer);
+        *self.warn_writer.lock().unwrap() = Some(warn_writer);
+        *self.error_writer.lock().unwrap() = Some(error_writer);
+
+        Ok(())
+    }
+
+    // 检查是否需要轮转日志文件
+    fn check_and_rotate_if_needed(&self) -> anyhow::Result<()> {
+        let current_date = Local::now().date_naive();
+        let stored_date = self.current_date.lock().unwrap();
+
+        if current_date != *stored_date {
+            // 日期已变化，需要轮转日志
+            drop(stored_date); // 释放锁
+            
+            // 刷新当前缓冲区到旧文件
+            self.flush_internal();
+            
+            // 创建新的日志文件
+            self.create_daily_log_files(current_date)?;
+            
+            // 更新当前日期
+            *self.current_date.lock().unwrap() = current_date;
+        }
+
+        Ok(())
     }
 
     fn create_log_file(path: &Path) -> anyhow::Result<BufWriter<File>> {
@@ -109,6 +156,9 @@ impl FileLogWriter {
     }
 
     pub fn write_log(&self, timestamp: &str, level: &str, message: &str, target: Option<&str>) {
+        // 检查是否需要轮转日志文件
+        let _ = self.check_and_rotate_if_needed();
+
         let target_str = target.unwrap_or("");
 
         // 创建日志条目
@@ -154,9 +204,11 @@ impl FileLogWriter {
 
             // 写入全部日志文件（不包含debug级别）
             if entry.level.to_lowercase() != "debug" {
-                if let Ok(mut writer) = self.all_writer.lock() {
-                    let _ = writer.write_all(log_line.as_bytes());
-                    let _ = writer.flush(); // 立即刷新
+                if let Ok(mut writer_opt) = self.all_writer.lock() {
+                    if let Some(ref mut writer) = writer_opt.as_mut() {
+                        let _ = writer.write_all(log_line.as_bytes());
+                        let _ = writer.flush(); // 立即刷新
+                    }
                 }
             }
 
@@ -169,37 +221,25 @@ impl FileLogWriter {
                 _ => continue,
             };
 
-            if let Ok(mut writer) = level_writer.lock() {
-                let _ = writer.write_all(log_line.as_bytes());
-                let _ = writer.flush(); // 立即刷新
+            if let Ok(mut writer_opt) = level_writer.lock() {
+                if let Some(ref mut writer) = writer_opt.as_mut() {
+                    let _ = writer.write_all(log_line.as_bytes());
+                    let _ = writer.flush(); // 立即刷新
+                }
             }
         }
     }
 
     // 手动刷新日志到文件
     pub fn flush(&self) {
-        Self::flush_logs(
-            &self.log_buffer,
-            &self.all_writer,
-            &self.debug_writer,
-            &self.info_writer,
-            &self.warn_writer,
-            &self.error_writer,
-        );
+        self.flush_internal();
     }
 
-    // 刷新日志到文件
-    fn flush_logs(
-        log_buffer: &Arc<Mutex<VecDeque<LogEntry>>>,
-        all_writer: &Arc<Mutex<BufWriter<File>>>,
-        debug_writer: &Arc<Mutex<BufWriter<File>>>,
-        info_writer: &Arc<Mutex<BufWriter<File>>>,
-        warn_writer: &Arc<Mutex<BufWriter<File>>>,
-        error_writer: &Arc<Mutex<BufWriter<File>>>,
-    ) {
+    // 内部刷新方法
+    fn flush_internal(&self) {
         // 获取待处理的日志
         let entries = {
-            if let Ok(mut buffer) = log_buffer.lock() {
+            if let Ok(mut buffer) = self.log_buffer.lock() {
                 let entries: Vec<LogEntry> = buffer.drain(..).collect();
                 entries
             } else {
@@ -207,58 +247,49 @@ impl FileLogWriter {
             }
         };
 
-        // 批量写入日志（如果有的话）
-        for entry in entries {
-            let escaped_message = Self::escape_csv(&entry.message);
-            let escaped_target = Self::escape_csv(&entry.target);
-            let log_line = format!(
-                "{},{},{},{}\n",
-                entry.timestamp, entry.level, escaped_message, escaped_target
-            );
+        // 写入日志条目
+        if !entries.is_empty() {
+            self.write_entries_to_files(entries);
+        }
 
-            // 写入全部日志文件（不包含debug级别）
-            if entry.level.to_lowercase() != "debug" {
-                if let Ok(mut writer) = all_writer.lock() {
-                    let _ = writer.write_all(log_line.as_bytes());
-                }
-            }
+        // 刷新所有写入器的缓冲区
+        self.flush_all_writers();
+    }
 
-            // 根据级别写入对应文件
-            let level_writer = match entry.level.to_lowercase().as_str() {
-                "debug" => debug_writer,
-                "info" => info_writer,
-                "warn" => warn_writer,
-                "error" => error_writer,
-                _ => continue,
-            };
-
-            if let Ok(mut writer) = level_writer.lock() {
-                let _ = writer.write_all(log_line.as_bytes());
+    // 刷新所有写入器
+    fn flush_all_writers(&self) {
+        if let Ok(mut writer_opt) = self.all_writer.lock() {
+            if let Some(ref mut writer) = writer_opt.as_mut() {
+                let _ = writer.flush();
+                let _ = writer.get_mut().sync_all();
             }
         }
-
-        // 刷新所有写入器的缓冲区并强制同步到磁盘
-        if let Ok(mut writer) = all_writer.lock() {
-            let _ = writer.flush();
-            let _ = writer.get_mut().sync_all(); // 强制同步到磁盘
+        if let Ok(mut writer_opt) = self.debug_writer.lock() {
+            if let Some(ref mut writer) = writer_opt.as_mut() {
+                let _ = writer.flush();
+                let _ = writer.get_mut().sync_all();
+            }
         }
-        if let Ok(mut writer) = debug_writer.lock() {
-            let _ = writer.flush();
-            let _ = writer.get_mut().sync_all();
+        if let Ok(mut writer_opt) = self.info_writer.lock() {
+            if let Some(ref mut writer) = writer_opt.as_mut() {
+                let _ = writer.flush();
+                let _ = writer.get_mut().sync_all();
+            }
         }
-        if let Ok(mut writer) = info_writer.lock() {
-            let _ = writer.flush();
-            let _ = writer.get_mut().sync_all();
+        if let Ok(mut writer_opt) = self.warn_writer.lock() {
+            if let Some(ref mut writer) = writer_opt.as_mut() {
+                let _ = writer.flush();
+                let _ = writer.get_mut().sync_all();
+            }
         }
-        if let Ok(mut writer) = warn_writer.lock() {
-            let _ = writer.flush();
-            let _ = writer.get_mut().sync_all();
-        }
-        if let Ok(mut writer) = error_writer.lock() {
-            let _ = writer.flush();
-            let _ = writer.get_mut().sync_all();
+        if let Ok(mut writer_opt) = self.error_writer.lock() {
+            if let Some(ref mut writer) = writer_opt.as_mut() {
+                let _ = writer.flush();
+                let _ = writer.get_mut().sync_all();
+            }
         }
     }
+
 
     // 优雅停止
     pub fn shutdown(&self) {
