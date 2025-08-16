@@ -59,21 +59,26 @@ impl VideoSource for submission::Model {
         let current_config = crate::config::reload_config();
         if current_config.submission_risk_control.enable_incremental_fetch {
             // 增量模式：只获取比上次扫描时间更新的视频
-            let should_take = release_datetime > latest_row_at;
+            // 将两个时间都转换为北京时间进行比较，避免时区混乱
+            let beijing_tz = crate::utils::time_format::beijing_timezone();
+            let release_beijing = release_datetime.with_timezone(&beijing_tz);
+            let latest_beijing = latest_row_at.with_timezone(&beijing_tz);
+            
+            let should_take = release_beijing > latest_beijing;
 
             if should_take {
                 debug!(
                     "UP主「{}」增量获取：视频发布时间 {} > 上次扫描时间 {}",
                     self.upper_name,
-                    release_datetime.format("%Y-%m-%d %H:%M:%S"),
-                    latest_row_at.format("%Y-%m-%d %H:%M:%S")
+                    release_beijing.format("%Y-%m-%d %H:%M:%S"),
+                    latest_beijing.format("%Y-%m-%d %H:%M:%S")
                 );
             } else {
                 debug!(
                     "UP主「{}」增量跳过：视频发布时间 {} <= 上次扫描时间 {}",
                     self.upper_name,
-                    release_datetime.format("%Y-%m-%d %H:%M:%S"),
-                    latest_row_at.format("%Y-%m-%d %H:%M:%S")
+                    release_beijing.format("%Y-%m-%d %H:%M:%S"),
+                    latest_beijing.format("%Y-%m-%d %H:%M:%S")
                 );
             }
 
