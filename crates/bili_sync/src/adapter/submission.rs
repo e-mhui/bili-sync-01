@@ -84,8 +84,8 @@ impl VideoSource for submission::Model {
 
             should_take
         } else {
-            // 全量模式：每次都获取所有视频（原有行为）
-            debug!("UP主「{}」全量获取：增量获取已禁用，获取所有视频", self.upper_name);
+            // 全量模式：获取所有视频，但会在 create_videos 中过滤已存在的视频
+            debug!("UP主「{}」全量获取：增量获取已禁用，获取所有视频（将在数据库层面去重）", self.upper_name);
             true
         }
     }
@@ -95,7 +95,7 @@ impl VideoSource for submission::Model {
         if current_config.submission_risk_control.enable_incremental_fetch {
             info!("开始增量扫描「{}」投稿（仅获取新视频）..", self.upper_name);
         } else {
-            info!("开始全量扫描「{}」投稿（获取所有视频）..", self.upper_name);
+            info!("开始全量扫描「{}」投稿（获取所有视频，已存在视频将自动跳过）..", self.upper_name);
         }
     }
 

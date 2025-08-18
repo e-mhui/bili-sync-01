@@ -4,10 +4,23 @@ use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::{OnConflict, SimpleExpr};
 use sea_orm::DatabaseTransaction;
 use tracing::{debug, info};
+use std::collections::HashSet;
 
 use crate::adapter::{VideoSource, VideoSourceEnum};
 use crate::bilibili::{PageInfo, VideoInfo};
 use crate::utils::status::STATUS_COMPLETED;
+
+/// 从 VideoInfo 中提取 BVID
+fn extract_bvid(video_info: &VideoInfo) -> String {
+    match video_info {
+        VideoInfo::Submission { bvid, .. } => bvid.clone(),
+        VideoInfo::Detail { bvid, .. } => bvid.clone(),
+        VideoInfo::Favorite { bvid, .. } => bvid.clone(),
+        VideoInfo::WatchLater { bvid, .. } => bvid.clone(),
+        VideoInfo::Collection { bvid, .. } => bvid.clone(),
+        VideoInfo::Bangumi { bvid, .. } => bvid.clone(),
+    }
+}
 
 /// 根据show_season_type和其他字段重新计算番剧的智能命名
 fn recalculate_bangumi_name(
@@ -183,12 +196,63 @@ pub async fn create_videos(
         connection
     };
 
+    // 新增：在全量模式下进行去重检查，防止重复处理已存在的视频
+    let current_config = crate::config::reload_config();
+    let is_full_mode = !current_config.submission_risk_control.enable_incremental_fetch;
+    
+    let final_videos_info = if is_full_mode && matches!(video_source, VideoSourceEnum::Submission(_)) {
+        // 全量模式下的 UP主投稿，检查哪些视频已存在
+        let all_bvids: Vec<String> = videos_info.iter().map(extract_bvid).collect();
+        
+        // 批量查询已存在的视频
+        let existing_videos = video::Entity::find()
+            .filter(video::Column::Bvid.is_in(all_bvids.clone()))
+            .filter(video_source.filter_expr())
+            .all(db_conn)
+            .await?;
+        
+        let existing_bvids: HashSet<String> = existing_videos
+            .into_iter()
+            .map(|v| v.bvid)
+            .collect();
+        
+        // 过滤出真正的新视频
+        let new_videos: Vec<VideoInfo> = videos_info
+            .into_iter()
+            .filter(|info| !existing_bvids.contains(&extract_bvid(info)))
+            .collect();
+        
+        let total_count = all_bvids.len();
+        let existing_count = existing_bvids.len();
+        let new_count = new_videos.len();
+        
+        if existing_count > 0 {
+            info!(
+                "全量模式去重检查完成：总视频 {} 个，已存在 {} 个，新视频 {} 个",
+                total_count, existing_count, new_count
+            );
+        } else {
+            debug!("全量模式：所有 {} 个视频都是新视频", new_count);
+        }
+        
+        new_videos
+    } else {
+        // 增量模式或其他类型的视频源，使用原有逻辑
+        videos_info
+    };
+
+    // 如果没有新视频需要处理，直接返回
+    if final_videos_info.is_empty() {
+        debug!("没有新视频需要创建，跳过处理");
+        return Ok(());
+    }
+
     // 检查是否启用了扫描已删除视频
     let scan_deleted = video_source.scan_deleted_videos();
 
     if scan_deleted {
         // 启用扫描已删除视频：需要特别处理已删除的视频
-        for video_info in videos_info {
+        for video_info in final_videos_info {
             // 选择性下载逻辑：针对 submission 类型视频源 - 需要在 into_simple_model() 之前获取信息
             let should_store_video = if let Some(selected_videos) = video_source.get_selected_videos() {
                 // 获取创建时间来判断是否为新投稿
@@ -201,28 +265,21 @@ pub async fn create_videos(
                 };
 
                 // 获取视频的 BVID（从 VideoInfo 获取）
-                let video_bvid = match &video_info {
-                    crate::bilibili::VideoInfo::Submission { bvid, .. } => bvid,
-                    crate::bilibili::VideoInfo::Detail { bvid, .. } => bvid,
-                    crate::bilibili::VideoInfo::Favorite { bvid, .. } => bvid,
-                    crate::bilibili::VideoInfo::WatchLater { bvid, .. } => bvid,
-                    crate::bilibili::VideoInfo::Collection { bvid, .. } => bvid,
-                    crate::bilibili::VideoInfo::Bangumi { bvid, .. } => bvid,
-                };
+                let video_bvid = extract_bvid(&video_info);
 
                 let should_store = if is_new_submission {
                     // 新投稿：存储到数据库并设置自动下载
                     true
                 } else {
                     // 历史投稿：只有在选择列表中的才存储到数据库
-                    selected_videos.contains(video_bvid)
+                    selected_videos.contains(&video_bvid)
                 };
 
                 debug!(
                     "选择性下载检查(已删除扫描): BVID={}, 是否新投稿={}, 是否在选择列表中={}, 是否存储={}",
                     video_bvid,
                     is_new_submission,
-                    selected_videos.contains(video_bvid),
+                    selected_videos.contains(&video_bvid),
                     should_store
                 );
 
@@ -423,7 +480,7 @@ pub async fn create_videos(
         }
     } else {
         // 未启用扫描已删除视频：使用原有逻辑，但增加 share_copy 更新检查
-        for video_info in videos_info {
+        for video_info in final_videos_info {
             // 选择性下载逻辑：针对 submission 类型视频源 - 需要在 into_simple_model() 之前获取信息
             let should_store_video = if let Some(selected_videos) = video_source.get_selected_videos() {
                 // 获取创建时间来判断是否为新投稿
@@ -436,28 +493,21 @@ pub async fn create_videos(
                 };
 
                 // 获取视频的 BVID（从 VideoInfo 获取）
-                let video_bvid = match &video_info {
-                    crate::bilibili::VideoInfo::Submission { bvid, .. } => bvid,
-                    crate::bilibili::VideoInfo::Detail { bvid, .. } => bvid,
-                    crate::bilibili::VideoInfo::Favorite { bvid, .. } => bvid,
-                    crate::bilibili::VideoInfo::WatchLater { bvid, .. } => bvid,
-                    crate::bilibili::VideoInfo::Collection { bvid, .. } => bvid,
-                    crate::bilibili::VideoInfo::Bangumi { bvid, .. } => bvid,
-                };
+                let video_bvid = extract_bvid(&video_info);
 
                 let should_store = if is_new_submission {
                     // 新投稿：存储到数据库并设置自动下载
                     true
                 } else {
                     // 历史投稿：只有在选择列表中的才存储到数据库
-                    selected_videos.contains(video_bvid)
+                    selected_videos.contains(&video_bvid)
                 };
 
                 debug!(
                     "选择性下载检查(常规模式): BVID={}, 是否新投稿={}, 是否在选择列表中={}, 是否存储={}",
                     video_bvid,
                     is_new_submission,
-                    selected_videos.contains(video_bvid),
+                    selected_videos.contains(&video_bvid),
                     should_store
                 );
 
