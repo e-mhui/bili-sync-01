@@ -195,23 +195,23 @@ impl GlobalMemoryOptimizer {
         Ok(())
     }
 
-    /// 完成扫描，将内存数据库的变更写回主数据库
-    /// 这通常在程序关闭或扫描完成时调用
+    /// 完成全局内存优化器
+    /// 在写穿透模式下，不需要将变更写回主数据库
     pub async fn finalize(&mut self) -> Result<()> {
         if !self.is_initialized {
             return Ok(());
         }
 
-        info!("开始完成全局内存优化器，同步数据变更");
+        info!("开始清理全局内存优化器");
 
         if let Some(mut optimizer) = self.optimizer.take() {
             if self.is_memory_mode_enabled {
                 match optimizer.stop_memory_mode().await {
                     Ok(_) => {
-                        info!("全局内存数据库变更已成功写回主数据库");
+                        info!("内存数据库模式已正常关闭");
                     }
                     Err(e) => {
-                        error!("写回全局内存数据库变更失败: {}", e);
+                        error!("关闭内存数据库模式失败: {}", e);
                         return Err(e);
                     }
                 }

@@ -485,40 +485,40 @@ impl MemoryDbOptimizer {
         });
     }
 
-    /// 停止内存数据库模式，将变更写回主数据库
+    /// 停止内存数据库模式
+    /// 在写穿透模式下，不需要将变更写回主数据库（因为写操作已经直接写入主DB）
     pub async fn stop_memory_mode(&mut self) -> Result<()> {
         if !self.is_memory_mode {
             return Ok(()); // 不在内存模式中
         }
 
-        info!("开始将内存数据库变更写回主数据库");
+        info!("停止内存数据库模式");
 
-        if let Some(memory_db) = &self.memory_db {
-            // 分析和写回变更
-            self.sync_changes_to_main_db(memory_db).await?;
-        }
+        // 在写穿透模式下，不需要同步数据（主DB已经是最新的）
+        debug!("写穿透模式：主数据库已包含所有变更，无需写回");
 
         // 清理内存数据库和守护连接（守护连接最后释放）
         self.memory_db = None;
         self.keeper_connection = None; // 守护连接最后释放，确保内存数据库正确清理
         self.is_memory_mode = false;
 
-        info!("内存数据库模式已停止，变更已写回主数据库，守护连接已释放");
+        info!("内存数据库模式已停止，守护连接已释放");
         Ok(())
     }
 
     /// 同步到主数据库但保持内存模式运行
+    /// 注意：在写穿透模式下，这个方法主要用于兼容性，实际写操作已经直接写入主DB
     pub async fn sync_to_main_db_keep_memory(&self) -> Result<()> {
         if !self.is_memory_mode {
             return Ok(()); // 不在内存模式中
         }
 
-        info!("开始同步内存数据库变更到主数据库（保持内存模式）");
-
-        if let Some(memory_db) = &self.memory_db {
-            self.sync_changes_to_main_db(memory_db).await?;
-            info!("数据同步完成，内存模式继续运行");
-        }
+        // 在写穿透模式下，主DB已经是最新的，不需要从内存DB同步到主DB
+        // 相反，应该从主DB同步到内存DB（但这已经通过queue_sync_to_memory处理了）
+        debug!("写穿透模式：跳过反向同步（主数据库已是最新）");
+        
+        // 只输出日志表示检查完成（实际上没有做任何同步）
+        debug!("内存模式运行正常，主数据库数据完整");
 
         Ok(())
     }
@@ -902,9 +902,11 @@ impl MemoryDbOptimizer {
             .get_table_record_ids(table_name, &unique_key_columns, memory_db)
             .await?;
 
-        // 找出需要删除的记录（在主数据库中但不在内存数据库中）
-        let to_delete: Vec<_> = main_unique_keys.difference(&memory_unique_keys).collect();
-        let delete_count = to_delete.len();
+        // 修复：在写穿透模式下，主数据库是真实数据源，内存数据库是缓存
+        // 不应该删除主数据库中的任何记录
+        // 只需要将内存数据库中的新记录同步到主数据库（但现在写操作已经直接写主DB了）
+        let to_delete: Vec<&Vec<String>> = Vec::new(); // 禁用删除功能
+        let delete_count = 0;
 
         // 删除不存在的记录
         if delete_count > 0 {

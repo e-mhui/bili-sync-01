@@ -148,10 +148,10 @@ impl DeleteTaskQueue {
 
     /// 添加删除任务到队列（同时保存到数据库）
     pub async fn enqueue_task(&self, task: DeleteVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            info!("使用内存数据库连接插入DeleteVideoSource任务");
+            debug!("使用主数据库连接插入DeleteVideoSource任务");
             conn.as_ref()
         } else {
             connection
@@ -197,10 +197,10 @@ impl DeleteTaskQueue {
         task: &DeleteVideoSourceTask,
         connection: &DatabaseConnection,
     ) -> Result<()> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            info!("使用内存数据库连接更新DeleteVideoSource任务完成状态");
+            debug!("使用主数据库连接更新DeleteVideoSource任务完成状态");
             conn.as_ref()
         } else {
             connection
@@ -227,10 +227,10 @@ impl DeleteTaskQueue {
 
     /// 标记任务为失败（更新数据库状态）
     pub async fn mark_task_failed(&self, task: &DeleteVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            info!("使用内存数据库连接更新DeleteVideoSource任务失败状态");
+            debug!("使用主数据库连接更新DeleteVideoSource任务失败状态");
             conn.as_ref()
         } else {
             connection
@@ -358,10 +358,10 @@ impl VideoDeleteTaskQueue {
 
     /// 检查视频是否已有待处理的删除任务
     pub async fn has_pending_delete_task(&self, video_id: i32, connection: &DatabaseConnection) -> Result<bool> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用内存数据库连接查询DeleteVideo待处理任务");
+            debug!("使用主数据库连接查询DeleteVideo待处理任务");
             conn.as_ref()
         } else {
             connection
@@ -403,10 +403,10 @@ impl VideoDeleteTaskQueue {
             return Ok(());
         }
 
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            info!("使用内存数据库连接插入DeleteVideo任务");
+            debug!("使用主数据库连接插入DeleteVideo任务");
             conn.as_ref()
         } else {
             connection
@@ -447,10 +447,10 @@ impl VideoDeleteTaskQueue {
 
     /// 标记任务为已完成（更新数据库状态）
     pub async fn mark_task_completed(&self, task: &DeleteVideoTask, connection: &DatabaseConnection) -> Result<()> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            info!("使用内存数据库连接更新DeleteVideo任务完成状态");
+            debug!("使用主数据库连接更新DeleteVideo任务完成状态");
             conn.as_ref()
         } else {
             connection
@@ -477,10 +477,10 @@ impl VideoDeleteTaskQueue {
 
     /// 标记任务为失败（更新数据库状态）
     pub async fn mark_task_failed(&self, task: &DeleteVideoTask, connection: &DatabaseConnection) -> Result<()> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            info!("使用内存数据库连接更新DeleteVideo任务失败状态");
+            debug!("使用主数据库连接更新DeleteVideo任务失败状态");
             conn.as_ref()
         } else {
             connection
@@ -600,10 +600,10 @@ async fn delete_video_internal(db: Arc<DatabaseConnection>, video_id: i32) -> Re
     use bili_sync_entity::{page, video};
     use sea_orm::*;
 
-    // 检查是否在内存模式，如果是则使用内存数据库连接
+    // 获取优化的数据库连接（写穿透模式下为主数据库）
     let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
     let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用内存数据库连接查询待删除视频");
+        debug!("使用主数据库连接查询待删除视频");
         conn.as_ref()
     } else {
         db.as_ref()
@@ -694,10 +694,10 @@ async fn delete_video_files_from_pages_task(
     use sea_orm::*;
     use tokio::fs;
 
-    // 检查是否在内存模式，如果是则使用内存数据库连接
+    // 获取优化的数据库连接（写穿透模式下为主数据库）
     let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
     let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用内存数据库连接查询待删除视频的页面信息");
+        debug!("使用主数据库连接查询待删除视频的页面信息");
         conn.as_ref()
     } else {
         db.as_ref()
@@ -940,10 +940,10 @@ impl AddTaskQueue {
 
     /// 添加添加任务到队列（同时保存到数据库）
     pub async fn enqueue_task(&self, task: AddVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            info!("使用内存数据库连接插入AddVideoSource任务");
+            debug!("使用主数据库连接插入AddVideoSource任务");
             conn.as_ref()
         } else {
             connection
@@ -985,10 +985,10 @@ impl AddTaskQueue {
 
     /// 标记任务为已完成（更新数据库状态）
     pub async fn mark_task_completed(&self, task: &AddVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            info!("使用内存数据库连接更新AddVideoSource任务完成状态");
+            debug!("使用主数据库连接更新AddVideoSource任务完成状态");
             conn.as_ref()
         } else {
             connection
@@ -1015,10 +1015,10 @@ impl AddTaskQueue {
 
     /// 标记任务为失败（更新数据库状态）
     pub async fn mark_task_failed(&self, task: &AddVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            info!("使用内存数据库连接更新AddVideoSource任务失败状态");
+            debug!("使用主数据库连接更新AddVideoSource任务失败状态");
             conn.as_ref()
         } else {
             connection
@@ -1154,10 +1154,10 @@ impl ConfigTaskQueue {
 
     /// 添加更新配置任务到队列（同时保存到数据库）
     pub async fn enqueue_update_task(&self, task: UpdateConfigTask, connection: &DatabaseConnection) -> Result<()> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            info!("使用内存数据库连接插入UpdateConfig任务");
+            debug!("使用主数据库连接插入UpdateConfig任务");
             conn.as_ref()
         } else {
             connection
@@ -1191,10 +1191,10 @@ impl ConfigTaskQueue {
 
     /// 添加重载配置任务到队列（同时保存到数据库）
     pub async fn enqueue_reload_task(&self, task: ReloadConfigTask, connection: &DatabaseConnection) -> Result<()> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            info!("使用内存数据库连接插入ReloadConfig任务");
+            debug!("使用主数据库连接插入ReloadConfig任务");
             conn.as_ref()
         } else {
             connection
@@ -1244,10 +1244,10 @@ impl ConfigTaskQueue {
         task: &UpdateConfigTask,
         connection: &DatabaseConnection,
     ) -> Result<()> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            info!("使用内存数据库连接更新UpdateConfig任务完成状态");
+            debug!("使用主数据库连接更新UpdateConfig任务完成状态");
             conn.as_ref()
         } else {
             connection
@@ -1278,10 +1278,10 @@ impl ConfigTaskQueue {
         task: &UpdateConfigTask,
         connection: &DatabaseConnection,
     ) -> Result<()> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            info!("使用内存数据库连接更新UpdateConfig任务失败状态");
+            debug!("使用主数据库连接更新UpdateConfig任务失败状态");
             conn.as_ref()
         } else {
             connection
@@ -1314,10 +1314,10 @@ impl ConfigTaskQueue {
         task: &ReloadConfigTask,
         connection: &DatabaseConnection,
     ) -> Result<()> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            info!("使用内存数据库连接更新ReloadConfig任务完成状态");
+            debug!("使用主数据库连接更新ReloadConfig任务完成状态");
             conn.as_ref()
         } else {
             connection
@@ -1348,10 +1348,10 @@ impl ConfigTaskQueue {
         task: &ReloadConfigTask,
         connection: &DatabaseConnection,
     ) -> Result<()> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            info!("使用内存数据库连接更新ReloadConfig任务失败状态");
+            debug!("使用主数据库连接更新ReloadConfig任务失败状态");
             conn.as_ref()
         } else {
             connection
@@ -1402,10 +1402,10 @@ impl ConfigTaskQueue {
 
     /// 查询数据库中待处理的更新配置任务数量
     pub async fn get_pending_update_tasks_count(&self, connection: &DatabaseConnection) -> Result<u64, anyhow::Error> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用内存数据库连接查询UpdateConfig待处理任务数量");
+            debug!("使用主数据库连接查询UpdateConfig待处理任务数量");
             conn.as_ref()
         } else {
             connection
@@ -1421,10 +1421,10 @@ impl ConfigTaskQueue {
 
     /// 查询数据库中待处理的重载配置任务数量
     pub async fn get_pending_reload_tasks_count(&self, connection: &DatabaseConnection) -> Result<u64, anyhow::Error> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用内存数据库连接查询ReloadConfig待处理任务数量");
+            debug!("使用主数据库连接查询ReloadConfig待处理任务数量");
             conn.as_ref()
         } else {
             connection
@@ -1440,10 +1440,10 @@ impl ConfigTaskQueue {
 
     /// 从数据库恢复配置任务到内存队列
     pub async fn recover_config_tasks_from_db(&self, connection: &DatabaseConnection) -> Result<u32, anyhow::Error> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
+        // 获取优化的数据库连接（写穿透模式下为主数据库）
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            info!("使用内存数据库连接恢复配置任务");
+            debug!("使用主数据库连接恢复配置任务");
             conn.as_ref()
         } else {
             connection
@@ -1935,10 +1935,10 @@ pub async fn process_video_delete_tasks(db: Arc<DatabaseConnection>) -> Result<u
 pub async fn recover_pending_tasks(connection: &DatabaseConnection) -> Result<(), anyhow::Error> {
     info!("开始恢复数据库中的待处理任务到内存队列");
 
-    // 检查是否在内存模式，如果是则使用内存数据库连接
+    // 获取优化的数据库连接（写穿透模式下为主数据库）
     let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
     let db_conn = if let Some(ref conn) = optimized_conn {
-        info!("使用内存数据库连接恢复待处理任务");
+        debug!("使用主数据库连接恢复待处理任务");
         conn.as_ref()
     } else {
         connection

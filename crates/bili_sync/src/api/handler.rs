@@ -1431,9 +1431,9 @@ pub async fn add_video_source_internal(
     db: Arc<DatabaseConnection>,
     params: AddVideoSourceRequest,
 ) -> Result<AddVideoSourceResponse, ApiError> {
-    // 检查是否在内存模式，如果是则使用内存数据库连接
+    // 获取优化的数据库连接（写穿透模式下为主数据库）
     let db = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
-        info!("使用内存数据库连接处理添加视频源任务");
+        debug!("使用主数据库连接处理添加视频源任务");
         optimized_conn
     } else {
         db
@@ -2048,9 +2048,9 @@ pub async fn update_video_source_enabled_internal(
     id: i32,
     enabled: bool,
 ) -> Result<crate::api::response::UpdateVideoSourceEnabledResponse, ApiError> {
-    // 检查是否在内存模式，如果是则使用内存数据库连接
+    // 获取优化的数据库连接（写穿透模式下为主数据库）
     let db = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
-        info!("使用内存数据库连接更新视频源启用状态");
+        debug!("使用主数据库连接更新视频源启用状态");
         optimized_conn
     } else {
         db
@@ -2563,9 +2563,9 @@ pub async fn delete_video_source_internal(
     id: i32,
     delete_local_files: bool,
 ) -> Result<crate::api::response::DeleteVideoSourceResponse, ApiError> {
-    // 检查是否在内存模式，如果是则使用内存数据库连接
+    // 获取优化的数据库连接（写穿透模式下为主数据库）
     let db = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
-        info!("使用内存数据库连接删除视频源");
+        debug!("使用主数据库连接删除视频源");
         optimized_conn
     } else {
         db
@@ -3238,9 +3238,9 @@ pub async fn update_video_source_scan_deleted_internal(
     id: i32,
     scan_deleted_videos: bool,
 ) -> Result<crate::api::response::UpdateVideoSourceScanDeletedResponse, ApiError> {
-    // 检查是否在内存模式，如果是则使用内存数据库连接
+    // 获取优化的数据库连接（写穿透模式下为主数据库）
     let db = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
-        info!("使用内存数据库连接更新视频源扫描已删除视频设置");
+        debug!("使用主数据库连接更新视频源扫描已删除视频设置");
         optimized_conn
     } else {
         db
@@ -3504,9 +3504,9 @@ pub async fn reset_video_source_path_internal(
     id: i32,
     request: ResetVideoSourcePathRequest,
 ) -> Result<ResetVideoSourcePathResponse, ApiError> {
-    // 检查是否在内存模式，如果是则使用内存数据库连接
+    // 获取优化的数据库连接（写穿透模式下为主数据库）
     let db = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
-        info!("使用内存数据库连接重设视频源路径");
+        debug!("使用主数据库连接重设视频源路径");
         optimized_conn
     } else {
         db
