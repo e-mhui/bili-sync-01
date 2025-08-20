@@ -48,10 +48,10 @@ pub async fn filter_unfilled_videos(
     additional_expr: SimpleExpr,
     conn: &DatabaseConnection,
 ) -> Result<Vec<video::Model>> {
-    // 检查是否在内存模式，如果是则使用内存数据库连接
-    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+    // 检查是否在内存模式，如果是则使用内存数据库连接进行读操作
+    let optimized_conn = crate::utils::global_memory_optimizer::get_read_optimized_connection().await;
     let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用内存数据库连接筛选未填充视频");
+        debug!("使用内存数据库连接筛选未填充视频（读操作）");
         conn.as_ref()
     } else {
         conn
@@ -78,10 +78,10 @@ pub async fn filter_unhandled_video_pages(
     additional_expr: SimpleExpr,
     connection: &DatabaseConnection,
 ) -> Result<Vec<(video::Model, Vec<page::Model>)>> {
-    // 检查是否在内存模式，如果是则使用内存数据库连接
-    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+    // 检查是否在内存模式，如果是则使用内存数据库连接进行读操作
+    let optimized_conn = crate::utils::global_memory_optimizer::get_read_optimized_connection().await;
     let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用内存数据库连接筛选未处理视频页");
+        debug!("使用内存数据库连接筛选未处理视频页（读操作）");
         conn.as_ref()
     } else {
         connection
@@ -111,10 +111,10 @@ pub async fn get_failed_videos_in_current_cycle(
 ) -> Result<Vec<(video::Model, Vec<page::Model>)>> {
     use crate::utils::status::STATUS_COMPLETED;
 
-    // 检查是否在内存模式，如果是则使用内存数据库连接
-    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
+    // 检查是否在内存模式，如果是则使用内存数据库连接进行读操作
+    let optimized_conn = crate::utils::global_memory_optimizer::get_read_optimized_connection().await;
     let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用内存数据库连接获取失败视频");
+        debug!("使用内存数据库连接获取失败视频（读操作）");
         conn.as_ref()
     } else {
         connection
@@ -187,10 +187,10 @@ pub async fn create_videos(
 ) -> Result<()> {
     use sea_orm::{Set, Unchanged};
 
-    // 检查是否在内存模式，如果是则使用内存数据库连接
+    // 写操作：使用主DB确保ID一致性（get_optimized_connection现在会返回主DB）
     let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
     let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用内存数据库连接批量创建视频");
+        debug!("使用主数据库连接批量创建视频（写操作）");
         conn.as_ref()
     } else {
         connection
@@ -690,6 +690,10 @@ pub async fn create_videos(
             }
         }
     }
+    
+    // 触发异步同步到内存DB
+    crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video", "page"]).await;
+    
     Ok(())
 }
 
@@ -719,10 +723,10 @@ pub async fn create_pages(
 
 /// 更新视频 model 的下载状态
 pub async fn update_videos_model(videos: Vec<video::ActiveModel>, connection: &DatabaseConnection) -> Result<()> {
-    // 检查是否在内存模式，如果是则使用内存数据库连接
+    // 写操作：使用主DB确保数据一致性
     let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
     let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用内存数据库连接更新视频下载状态");
+        debug!("使用主数据库连接更新视频下载状态（写操作）");
         conn.as_ref()
     } else {
         connection
@@ -736,15 +740,19 @@ pub async fn update_videos_model(videos: Vec<video::ActiveModel>, connection: &D
         )
         .exec(db_conn)
         .await?;
+    
+    // 触发异步同步到内存DB
+    crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video"]).await;
+    
     Ok(())
 }
 
 /// 更新视频页 model 的下载状态
 pub async fn update_pages_model(pages: Vec<page::ActiveModel>, connection: &DatabaseConnection) -> Result<()> {
-    // 检查是否在内存模式，如果是则使用内存数据库连接
+    // 写操作：使用主DB确保数据一致性
     let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
     let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用内存数据库连接更新视频页下载状态");
+        debug!("使用主数据库连接更新视频页下载状态（写操作）");
         conn.as_ref()
     } else {
         connection
@@ -756,5 +764,9 @@ pub async fn update_pages_model(pages: Vec<page::ActiveModel>, connection: &Data
             .to_owned(),
     );
     query.exec(db_conn).await?;
+    
+    // 触发异步同步到内存DB
+    crate::utils::global_memory_optimizer::queue_memory_sync(vec!["page"]).await;
+    
     Ok(())
 }

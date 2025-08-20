@@ -283,3 +283,21 @@ pub async fn sync_to_main_db() -> Result<()> {
     let mut optimizer = GLOBAL_MEMORY_OPTIMIZER.write().await;
     optimizer.sync_changes_without_stopping().await
 }
+
+/// 便捷函数：获取读操作优化连接（利用内存DB加速）
+pub async fn get_read_optimized_connection() -> Option<Arc<DatabaseConnection>> {
+    let optimizer = GLOBAL_MEMORY_OPTIMIZER.read().await;
+    if let Some(ref opt) = optimizer.optimizer {
+        Some(opt.get_read_connection())
+    } else {
+        None
+    }
+}
+
+/// 便捷函数：触发异步同步到内存DB
+pub async fn queue_memory_sync(table_names: Vec<&str>) {
+    let optimizer = GLOBAL_MEMORY_OPTIMIZER.read().await;
+    if let Some(ref opt) = optimizer.optimizer {
+        opt.queue_sync_to_memory(table_names);
+    }
+}

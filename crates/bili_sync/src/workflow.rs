@@ -328,6 +328,9 @@ async fn update_bangumi_cache(
     };
 
     active_model.update(connection).await?;
+    
+    // 触发异步同步到内存DB
+    crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video_source"]).await;
 
     info!(
         "番剧源 {} ({}) 缓存更新成功，共 {} 集",
@@ -505,6 +508,16 @@ pub async fn refresh_video_source<'a>(
             .update_latest_row_at(beijing_datetime_string)
             .save(connection)
             .await?;
+        
+        // 触发异步同步到内存DB
+        let table_name = match video_source {
+            VideoSourceEnum::Favorite(_) => "favorite",
+            VideoSourceEnum::Submission(_) => "submission",
+            VideoSourceEnum::Collection(_) => "collection",
+            VideoSourceEnum::BangumiSource(_) => "video_source",
+            VideoSourceEnum::WatchLater(_) => "watch_later",
+        };
+        crate::utils::global_memory_optimizer::queue_memory_sync(vec![table_name]).await;
     }
 
     // 番剧源：更新缓存
@@ -677,6 +690,9 @@ pub async fn fetch_video_details(
                 video_active_model.tags = Set(Some(serde_json::Value::Array(vec![])));
                 video_active_model.save(&txn).await?;
                 txn.commit().await?;
+                
+                // 触发异步同步到内存DB
+                crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video", "page"]).await;
             }
         }
     }
@@ -729,6 +745,9 @@ pub async fn fetch_video_details(
                                 let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.into();
                                 video_active_model.valid = Set(false);
                                 video_active_model.save(connection).await?;
+                                
+                                // 触发异步同步到内存DB
+                                crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video"]).await;
                             }
                         }
                         Ok((tags, mut view_info)) => {
@@ -945,6 +964,9 @@ pub async fn fetch_video_details(
 
                             video_active_model.save(&txn).await?;
                             txn.commit().await?;
+                            
+                            // 触发异步同步到内存DB
+                            crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video", "page"]).await;
                         }
                     };
                     Ok::<_, anyhow::Error>(())
@@ -1309,6 +1331,8 @@ pub async fn download_video_pages(
                         if let Err(e) = active_model.update(connection).await {
                             warn!("更新合作视频信息失败: {}", e);
                         } else {
+                            // 触发异步同步到内存DB
+                            crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video"]).await;
                             info!(
                                 "合作视频 {} 归类到订阅UP主「{}」(下载阶段处理)",
                                 updated_model.bvid, submission.upper_name
@@ -3999,6 +4023,9 @@ async fn process_bangumi_video(
     video_active_model.save(&txn).await?;
 
     txn.commit().await?;
+    
+    // 触发异步同步到内存DB
+    crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video", "page"]).await;
     Ok(())
 }
 
@@ -4117,6 +4144,16 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
     txn.commit().await?;
 
     if resetted_videos > 0 || resetted_pages > 0 {
+        // 触发异步同步到内存DB
+        let mut tables = vec![];
+        if resetted_videos > 0 {
+            tables.push("video");
+        }
+        if resetted_pages > 0 {
+            tables.push("page");
+        }
+        crate::utils::global_memory_optimizer::queue_memory_sync(tables).await;
+        
         info!(
             "风控自动重置完成：重置了 {} 个视频和 {} 个页面的未完成任务状态",
             resetted_videos, resetted_pages
@@ -4730,6 +4767,10 @@ pub async fn populate_missing_video_cids(
                             let mut video_active_model: video::ActiveModel = video_model.into();
                             video_active_model.cid = Set(Some(cid));
                             video_active_model.save(&connection).await?;
+                            
+                            // 触发异步同步到内存DB
+                            crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video"]).await;
+                            
                             debug!("成功更新视频 {} 的cid: {}", bvid, cid);
                         }
                     }
