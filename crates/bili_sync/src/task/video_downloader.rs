@@ -201,17 +201,28 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
     } else {
         debug!("启动时视频源初始化成功");
         
-        // 检查并填充缺失的视频cid（仅在启动时执行一次）
-        info!("检查是否需要填充视频cid...");
-        let token = tokio_util::sync::CancellationToken::new();
-        if let Err(e) = crate::workflow::populate_missing_video_cids(&bili_client, &startup_connection, token.clone()).await {
-            error!("填充视频cid失败: {}", e);
+        // 重新加载配置以获取最新的数据修复设置
+        let config = crate::config::reload_config();
+        
+        // 检查并填充缺失的视频cid（仅在启用时执行）
+        if config.enable_cid_population {
+            debug!("检查是否需要填充视频cid...");
+            let token = tokio_util::sync::CancellationToken::new();
+            if let Err(e) = crate::workflow::populate_missing_video_cids(&bili_client, &startup_connection, token.clone()).await {
+                error!("填充视频cid失败: {}", e);
+            }
+        } else {
+            debug!("视频CID填充功能已禁用，跳过检查");
         }
         
-        // 修复page表的video_id（仅在启动时执行一次）
-        info!("检查是否需要修复page表的video_id...");
-        if let Err(e) = crate::workflow::fix_page_video_ids(&startup_connection).await {
-            error!("修复page表video_id失败: {}", e);
+        // 修复page表的video_id（仅在启用时执行）
+        if config.enable_startup_data_fix {
+            debug!("检查是否需要修复page表的video_id...");
+            if let Err(e) = crate::workflow::fix_page_video_ids(&startup_connection).await {
+                error!("修复page表video_id失败: {}", e);
+            }
+        } else {
+            debug!("启动数据修复功能已禁用，跳过page表video_id修复");
         }
     }
 

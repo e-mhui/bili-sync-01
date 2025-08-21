@@ -4197,12 +4197,16 @@ async fn get_collection_video_episode_number(
 }
 
 /// 修复page表中错误的video_id
+/// 
+/// **注意**：在写穿透模式下，此功能理论上不应该需要，因为所有写操作都直接写入主数据库，
+/// 确保了ID的一致性。但为了兼容可能存在的历史数据问题，仍然保留此功能。
 /// 使用两阶段策略避免唯一约束冲突
 pub async fn fix_page_video_ids(
     connection: &DatabaseConnection,
 ) -> Result<()> {
     
-    info!("开始检查并修复page表的video_id和cid不匹配问题");
+    debug!("开始检查并修复page表的video_id和cid不匹配问题");
+    warn!("注意：在写穿透模式下，此数据修复功能理论上不应该需要。如果频繁出现需要修复的数据，请检查系统配置。");
     
     // 使用事务确保原子性
     let txn = connection.begin().await?;
@@ -4292,7 +4296,7 @@ pub async fn fix_page_video_ids(
         .unwrap_or(0);
     
     if wrong_pages_count == 0 {
-        info!("所有page记录的video_id都正确，无需修复");
+        debug!("所有page记录的video_id都正确，无需修复");
         txn.commit().await?;
         return Ok(());
     }
@@ -4713,7 +4717,7 @@ pub async fn populate_missing_video_cids(
 ) -> Result<()> {
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
     
-    info!("开始检查并填充缺失的视频cid");
+    debug!("开始检查并填充缺失的视频cid");
     
     // 查询所有cid为空的视频
     let videos_without_cid = video::Entity::find()
@@ -4724,7 +4728,7 @@ pub async fn populate_missing_video_cids(
         .await?;
     
     if videos_without_cid.is_empty() {
-        info!("所有视频都已有cid，无需填充");
+        debug!("所有视频都已有cid，无需填充");
         return Ok(());
     }
     
