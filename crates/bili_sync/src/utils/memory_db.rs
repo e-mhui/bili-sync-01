@@ -101,6 +101,28 @@ impl MemoryDbOptimizer {
 
         debug!("已创建内存数据库守护连接，确保数据库持久性");
 
+        // 在开始配置前，先清理可能存在的旧数据
+        let cleanup_sql = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
+        if let Ok(existing_tables) = memory_db
+            .query_all(Statement::from_string(DatabaseBackend::Sqlite, cleanup_sql))
+            .await
+        {
+            if !existing_tables.is_empty() {
+                debug!("发现 {} 个遗留表，开始清理", existing_tables.len());
+                for row in existing_tables {
+                    if let Ok(table_name) = row.try_get::<String>("", "name") {
+                        let drop_sql = format!("DROP TABLE IF EXISTS {}", table_name);
+                        let _ = memory_db
+                            .execute(Statement::from_string(DatabaseBackend::Sqlite, &drop_sql))
+                            .await;
+                        debug!("清理遗留表: {}", table_name);
+                    }
+                }
+            } else {
+                debug!("内存数据库是干净的，无需清理");
+            }
+        }
+
         // 配置内存数据库以获得最佳性能
         self.configure_memory_db(&memory_db).await?;
 
@@ -544,23 +566,65 @@ impl MemoryDbOptimizer {
         });
     }
 
-    /// 停止内存数据库模式
+    /// 停止内存数据库模式（写穿透架构）
     /// 
-    /// 在写穿透模式下，此方法仅清理内存连接资源。
-    /// 所有写操作已直接写入主数据库，无需数据同步。
+    /// 在写穿透模式下，彻底清理命名内存数据库中的所有数据和连接。
+    /// 确保下次启动时是全新的状态。
     pub async fn stop_memory_mode(&mut self) -> Result<()> {
         if !self.is_memory_mode {
             return Ok(()); // 不在内存模式中
         }
 
-        debug!("停止内存数据库模式（写穿透模式）");
+        debug!("停止内存数据库模式，清理所有数据");
 
-        // 清理内存数据库连接和守护连接
-        self.memory_db = None;
-        self.keeper_connection = None;
+        // 第一步：清理内存数据库中的所有表和索引
+        if let Some(ref memory_db) = self.memory_db {
+            // 删除所有用户表
+            let tables_sql = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
+            if let Ok(rows) = memory_db
+                .query_all(Statement::from_string(DatabaseBackend::Sqlite, tables_sql))
+                .await
+            {
+                for row in rows {
+                    if let Ok(table_name) = row.try_get::<String>("", "name") {
+                        let drop_sql = format!("DROP TABLE IF EXISTS {}", table_name);
+                        let _ = memory_db
+                            .execute(Statement::from_string(DatabaseBackend::Sqlite, &drop_sql))
+                            .await;
+                        debug!("已删除内存表: {}", table_name);
+                    }
+                }
+            }
+
+            // 删除所有用户索引
+            let indexes_sql = "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'";
+            if let Ok(rows) = memory_db
+                .query_all(Statement::from_string(DatabaseBackend::Sqlite, indexes_sql))
+                .await
+            {
+                for row in rows {
+                    if let Ok(index_name) = row.try_get::<String>("", "name") {
+                        let drop_sql = format!("DROP INDEX IF EXISTS {}", index_name);
+                        let _ = memory_db
+                            .execute(Statement::from_string(DatabaseBackend::Sqlite, &drop_sql))
+                            .await;
+                        debug!("已删除内存索引: {}", index_name);
+                    }
+                }
+            }
+
+            // 执行VACUUM清理空间
+            let _ = memory_db
+                .execute(Statement::from_string(DatabaseBackend::Sqlite, "VACUUM"))
+                .await;
+        }
+
+        // 第二步：关闭所有连接（顺序很重要）
+        self.memory_db = None;  // 先关闭主连接
+        self.keeper_connection = None;  // 再关闭守护连接
         self.is_memory_mode = false;
 
-        debug!("内存数据库模式已停止，所有连接已清理");
+        debug!("内存数据库已完全清理并关闭");
         Ok(())
     }
 

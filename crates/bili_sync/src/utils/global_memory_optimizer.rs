@@ -180,9 +180,9 @@ impl GlobalMemoryOptimizer {
 
         if let Some(mut current_optimizer) = self.optimizer.take() {
             if self.is_memory_mode_enabled {
-                // 将内存数据库的变更写回主数据库
+                // 在写穿透模式下，仅清理内存数据库连接
                 current_optimizer.stop_memory_mode().await?;
-                info!("内存数据库变更已写回主数据库");
+                debug!("内存数据库连接已关闭");
             }
 
             // 创建常规模式的优化器
