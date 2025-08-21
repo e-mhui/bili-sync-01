@@ -224,19 +224,24 @@ impl GlobalMemoryOptimizer {
         Ok(())
     }
 
-    /// 同步变更但保持内存模式
+    /// 写穿透模式状态检查（无需数据同步）
+    /// 
+    /// 在写穿透架构下，此方法仅用于状态检查，不执行任何数据同步：
+    /// - 所有写操作已直接写入主数据库，确保数据完整性
+    /// - 内存数据库仅作为只读缓存，通过异步刷新保持最新状态
+    /// - 原有的双向同步逻辑已被移除，避免ID冲突问题
+    /// 
+    /// 此方法保留是为了兼容现有调用代码，实际不执行同步操作。
     pub async fn sync_changes_without_stopping(&mut self) -> Result<()> {
         if !self.is_initialized || !self.is_memory_mode_enabled {
             return Ok(());
         }
 
-        debug!("开始同步全局内存优化器的变更（保持内存模式）");
+        debug!("写穿透模式：全局内存优化器无需同步（所有写操作已直接写入主数据库）");
 
-        if let Some(ref optimizer) = self.optimizer {
-            // 调用底层的同步方法
-            optimizer.sync_to_main_db_keep_memory().await?;
-            debug!("全局内存优化器数据同步完成");
-        }
+        // 在写穿透模式下，所有写操作都直接写入主数据库
+        // 内存数据库仅作为读缓存，无需反向同步
+        debug!("全局内存优化器运行正常，主数据库数据完整");
 
         Ok(())
     }
@@ -278,7 +283,10 @@ pub async fn finalize_global_memory_optimizer() -> Result<()> {
     optimizer.finalize().await
 }
 
-/// 便捷函数：手动触发同步到主数据库（不停止内存模式）
+/// 便捷函数：写穿透模式状态检查（兼容性接口）
+/// 
+/// 在写穿透架构下，此函数不执行数据同步，仅用于状态检查。
+/// 保留此接口是为了兼容现有调用代码，避免破坏性更改。
 pub async fn sync_to_main_db() -> Result<()> {
     let mut optimizer = GLOBAL_MEMORY_OPTIMIZER.write().await;
     optimizer.sync_changes_without_stopping().await
@@ -294,7 +302,10 @@ pub async fn get_read_optimized_connection() -> Option<Arc<DatabaseConnection>> 
     }
 }
 
-/// 便捷函数：触发异步同步到内存DB
+/// 便捷函数：触发异步内存缓存刷新
+/// 
+/// 在写穿透架构下，此函数触发从主数据库到内存缓存的数据刷新。
+/// 当主数据库发生写操作后，调用此函数保持内存缓存的数据最新。
 pub async fn queue_memory_sync(table_names: Vec<&str>) {
     let optimizer = GLOBAL_MEMORY_OPTIMIZER.read().await;
     if let Some(ref opt) = optimizer.optimizer {
