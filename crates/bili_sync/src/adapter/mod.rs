@@ -161,7 +161,6 @@ impl _ActiveModel {
         // 检查是否在内存模式，如果是则使用内存数据库连接
         let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
         let db_conn = if let Some(ref conn) = optimized_conn {
-            info!("使用内存数据库连接保存ActiveModel");
             conn.as_ref()
         } else {
             connection

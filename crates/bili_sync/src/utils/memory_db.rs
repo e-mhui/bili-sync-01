@@ -74,7 +74,7 @@ impl MemoryDbOptimizer {
             return Ok(()); // 已经在内存模式中
         }
 
-        info!("启动内存数据库模式以优化扫描性能");
+        debug!("启动内存数据库模式以优化扫描性能");
 
         // 创建共享内存数据库连接
         // 使用命名的共享内存数据库确保连接稳定性
@@ -99,7 +99,7 @@ impl MemoryDbOptimizer {
             .await
             .context("创建守护连接失败")?;
 
-        info!("已创建内存数据库守护连接，确保数据库持久性");
+        debug!("已创建内存数据库守护连接，确保数据库持久性");
 
         // 配置内存数据库以获得最佳性能
         self.configure_memory_db(&memory_db).await?;
@@ -127,7 +127,7 @@ impl MemoryDbOptimizer {
 
     /// 启动守护连接心跳机制
     async fn start_keeper_heartbeat(&self, keeper_conn: Arc<DatabaseConnection>) {
-        info!("启动内存数据库守护连接心跳机制");
+        debug!("启动内存数据库守护连接心跳机制");
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
@@ -183,7 +183,7 @@ impl MemoryDbOptimizer {
             .query_all(Statement::from_string(DatabaseBackend::Sqlite, get_tables_sql))
             .await?;
 
-        info!("开始复制 {} 个表的结构到内存数据库", rows.len());
+        debug!("开始复制 {} 个表的结构到内存数据库", rows.len());
 
         for row in rows {
             let table_name: String = row.try_get("", "name")?;
@@ -312,7 +312,7 @@ impl MemoryDbOptimizer {
             }
         }
         
-        info!("自增序列同步完成");
+        debug!("自增序列同步完成");
         Ok(())
     }
 
@@ -553,14 +553,14 @@ impl MemoryDbOptimizer {
             return Ok(()); // 不在内存模式中
         }
 
-        info!("停止内存数据库模式（写穿透模式）");
+        debug!("停止内存数据库模式（写穿透模式）");
 
         // 清理内存数据库连接和守护连接
         self.memory_db = None;
         self.keeper_connection = None;
         self.is_memory_mode = false;
 
-        info!("内存数据库模式已停止，所有连接已清理");
+        debug!("内存数据库模式已停止，所有连接已清理");
         Ok(())
     }
 

@@ -47,7 +47,7 @@ impl GlobalMemoryOptimizer {
 
         // 检查是否应该使用内存模式
         if optimizer.should_use_memory_mode().await? {
-            info!("检测到需要内存优化，在程序启动阶段启用内存数据库优化");
+            debug!("检测到需要内存优化，在程序启动阶段启用内存数据库优化");
 
             // 启动内存模式
             match optimizer.start_memory_mode().await {
@@ -202,13 +202,13 @@ impl GlobalMemoryOptimizer {
             return Ok(());
         }
 
-        info!("开始清理全局内存优化器");
+        debug!("开始清理全局内存优化器");
 
         if let Some(mut optimizer) = self.optimizer.take() {
             if self.is_memory_mode_enabled {
                 match optimizer.stop_memory_mode().await {
                     Ok(_) => {
-                        info!("内存数据库模式已正常关闭");
+                        debug!("内存数据库模式已正常关闭");
                     }
                     Err(e) => {
                         error!("关闭内存数据库模式失败: {}", e);
@@ -220,7 +220,7 @@ impl GlobalMemoryOptimizer {
 
         self.is_memory_mode_enabled = false;
         self.is_initialized = false;
-        info!("全局内存优化器已完成并清理");
+        debug!("全局内存优化器已完成并清理");
         Ok(())
     }
 
