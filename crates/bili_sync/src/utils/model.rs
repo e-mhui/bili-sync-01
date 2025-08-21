@@ -718,6 +718,10 @@ pub async fn create_pages(
             .exec(connection)
             .await?;
     }
+    
+    // 触发异步同步到内存DB
+    crate::utils::global_memory_optimizer::queue_memory_sync(vec!["page"]).await;
+    
     Ok(())
 }
 

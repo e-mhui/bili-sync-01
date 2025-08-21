@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement};
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, TransactionTrait};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -532,31 +532,16 @@ impl MemoryDbOptimizer {
         
         // 异步执行缓存刷新，不阻塞主流程
         tokio::spawn(async move {
-            // 延迟100ms，批量处理多个缓存刷新操作
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            // 延迟500ms，批量处理多个缓存刷新操作，避免频繁同步
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             
             for table in tables {
-                // 从主数据库重新读取最新数据（写穿透模式的缓存刷新）
-                let select_sql = format!("SELECT * FROM {}", table);
-                match main_db.query_all(Statement::from_string(
-                    DatabaseBackend::Sqlite,
-                    &select_sql
-                )).await {
-                    Ok(rows) => {
-                        if rows.is_empty() {
-                            continue;
+                // 直接删除内存表中的所有数据，然后从主数据库复制
+                match Self::sync_table_data(&main_db, &memory_db, &table).await {
+                    Ok(count) => {
+                        if count > 0 {
+                            debug!("异步刷新表 {} 的内存缓存完成，同步了 {} 条记录", table, count);
                         }
-                        
-                        // 清空内存缓存表
-                        let delete_sql = format!("DELETE FROM {}", table);
-                        let _ = memory_db.execute(Statement::from_string(
-                            DatabaseBackend::Sqlite,
-                            &delete_sql
-                        )).await;
-                        
-                        // 重新加载主数据库的最新数据到缓存
-                        // 注意：这里简化处理，实际应该使用更完整的数据复制逻辑
-                        debug!("异步刷新表 {} 的内存缓存", table);
                     }
                     Err(e) => {
                         debug!("异步刷新表 {} 缓存失败: {}", table, e);
@@ -564,6 +549,120 @@ impl MemoryDbOptimizer {
                 }
             }
         });
+    }
+
+    /// 同步单个表的数据从主数据库到内存数据库
+    async fn sync_table_data(
+        main_db: &DatabaseConnection,
+        memory_db: &DatabaseConnection,
+        table_name: &str,
+    ) -> Result<usize> {
+        // 先从主数据库读取所有数据（不占用内存DB连接）
+        let select_sql = format!("SELECT * FROM {}", table_name);
+        let rows = main_db
+            .query_all(Statement::from_string(DatabaseBackend::Sqlite, &select_sql))
+            .await?;
+        
+        let row_count = rows.len();
+        
+        // 如果没有数据，只需要清空内存表
+        if row_count == 0 {
+            let delete_sql = format!("DELETE FROM {}", table_name);
+            memory_db.execute(Statement::from_string(DatabaseBackend::Sqlite, &delete_sql))
+                .await?;
+            return Ok(0);
+        }
+        
+        // 获取列信息（从主数据库）
+        let pragma_sql = format!("PRAGMA table_info({})", table_name);
+        let column_info = main_db
+            .query_all(Statement::from_string(DatabaseBackend::Sqlite, &pragma_sql))
+            .await?;
+        
+        let mut columns = Vec::new();
+        for col_row in column_info {
+            if let Ok(col_name) = col_row.try_get::<String>("", "name") {
+                columns.push(col_name);
+            }
+        }
+        
+        if columns.is_empty() {
+            return Ok(0);
+        }
+        
+        // 准备批量插入的数据
+        let column_names = columns.join(", ");
+        let placeholders: Vec<String> = columns.iter().map(|_| "?".to_string()).collect();
+        let placeholders_str = placeholders.join(", ");
+        
+        // 使用批量事务，但分批处理以避免长时间占用连接
+        const BATCH_SIZE: usize = 100;
+        
+        // 使用事务确保原子性：先清空，再插入
+        // 先清空内存表（在第一批的事务中处理）
+        let mut first_batch = true;
+        
+        // 分批插入数据
+        for chunk in rows.chunks(BATCH_SIZE) {
+            // 每批使用独立事务
+            let txn = memory_db.begin().await?;
+            
+            // 在第一批处理时清空表
+            if first_batch {
+                let delete_sql = format!("DELETE FROM {}", table_name);
+                txn.execute(Statement::from_string(DatabaseBackend::Sqlite, &delete_sql))
+                    .await?;
+                first_batch = false;
+            }
+            
+            let insert_sql = format!(
+                "INSERT OR REPLACE INTO {} ({}) VALUES ({})",
+                table_name, column_names, placeholders_str
+            );
+            
+            for row in chunk {
+                let mut values = Vec::new();
+                for column in &columns {
+                    let value = Self::extract_column_value(&row, column)?;
+                    values.push(value);
+                }
+                
+                txn.execute(Statement::from_sql_and_values(
+                    DatabaseBackend::Sqlite,
+                    &insert_sql,
+                    values,
+                ))
+                .await?;
+            }
+            
+            // 提交本批次
+            txn.commit().await?;
+        }
+        
+        Ok(row_count)
+    }
+    
+    /// 从查询结果中提取列值
+    fn extract_column_value(row: &sea_orm::QueryResult, column: &str) -> Result<sea_orm::Value> {
+        // 尝试不同的数据类型
+        if let Ok(val) = row.try_get::<Option<i64>>("", column) {
+            return Ok(val.into());
+        }
+        if let Ok(val) = row.try_get::<Option<i32>>("", column) {
+            return Ok(val.into());
+        }
+        if let Ok(val) = row.try_get::<Option<String>>("", column) {
+            return Ok(val.into());
+        }
+        if let Ok(val) = row.try_get::<Option<bool>>("", column) {
+            return Ok(val.into());
+        }
+        if let Ok(val) = row.try_get::<Option<f64>>("", column) {
+            return Ok(val.into());
+        }
+        
+        // 如果都失败了，返回 NULL
+        Ok(sea_orm::Value::from(None::<String>))
     }
 
     /// 停止内存数据库模式（写穿透架构）
