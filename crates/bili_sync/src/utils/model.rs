@@ -660,10 +660,21 @@ pub async fn create_videos(
 
 /// 尝试创建 Page Model，如果发生冲突则忽略
 pub async fn create_pages(
-    pages_info: Vec<PageInfo>,
+    mut pages_info: Vec<PageInfo>,
     video_model: &bili_sync_entity::video::Model,
     connection: &DatabaseTransaction,
 ) -> Result<()> {
+    // 对于单P视频，统一使用视频标题作为页面名称
+    if pages_info.len() == 1 && pages_info[0].page == 1 {
+        if pages_info[0].name != video_model.name {
+            info!(
+                "单P视频页面名称标准化: 视频 {} ({}), 原名称='{}' -> 使用视频标题='{}'",
+                video_model.bvid, video_model.id, pages_info[0].name, video_model.name
+            );
+            pages_info[0].name = video_model.name.clone();
+        }
+    }
+    
     let page_models = pages_info
         .into_iter()
         .map(|p| p.into_active_model(video_model))
