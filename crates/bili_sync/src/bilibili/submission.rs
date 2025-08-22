@@ -14,11 +14,28 @@ use crate::config::SubmissionRiskControlConfig;
 pub struct Submission<'a> {
     client: &'a BiliClient,
     upper_id: String,
+    upper_name: Option<String>,
 }
 
 impl<'a> Submission<'a> {
     pub fn new(client: &'a BiliClient, upper_id: String) -> Self {
-        Self { client, upper_id }
+        Self { 
+            client, 
+            upper_id, 
+            upper_name: None,
+        }
+    }
+
+    pub fn with_name(client: &'a BiliClient, upper_id: String, upper_name: String) -> Self {
+        Self { 
+            client, 
+            upper_id, 
+            upper_name: Some(upper_name),
+        }
+    }
+
+    fn display_name(&self) -> &str {
+        self.upper_name.as_deref().unwrap_or(&self.upper_id)
     }
 
     pub async fn get_info(&self) -> Result<Upper<String>> {
@@ -82,7 +99,7 @@ impl<'a> Submission<'a> {
                     if delay.as_millis() > 0 {
                         debug!(
                             "UP主 {} 第 {} 次请求前延迟 {}ms（大量视频UP主: {}）",
-                            self.upper_id,
+                            self.display_name(),
                             request_count + 1,
                             delay.as_millis(),
                             is_large_submission
@@ -95,7 +112,7 @@ impl<'a> Submission<'a> {
                         let batch_delay = Duration::from_secs(config.batch_delay_seconds);
                         info!(
                             "UP主 {} 分批处理：完成第 {} 批（{}页），延迟 {}秒",
-                            self.upper_id,
+                            self.display_name(),
                             (page - 1) / config.batch_size,
                             config.batch_size,
                             config.batch_delay_seconds
@@ -113,13 +130,13 @@ impl<'a> Submission<'a> {
                         if classified_error.error_type == crate::error::ErrorType::RiskControl {
                             warn!(
                                 "UP主 {} 第 {} 页获取触发风控: {}",
-                                self.upper_id, page, classified_error.message
+                                self.display_name(), page, classified_error.message
                             );
                             return crate::error::DownloadAbortError().into();
                         }
 
                         // 其他错误继续抛出
-                        e.context(format!("failed to get videos of upper {} page {}", self.upper_id, page))
+                        e.context(format!("failed to get videos of upper {} page {}", self.display_name(), page))
                     })?;
 
                 request_count += 1;
@@ -134,18 +151,18 @@ impl<'a> Submission<'a> {
                             if config.enable_batch_processing {
                                 info!(
                                     "检测到大量视频UP主 {} ({}个视频)，启用分批处理策略（批次大小：{}页，间隔：{}秒）",
-                                    self.upper_id, count, config.batch_size, config.batch_delay_seconds
+                                    self.display_name(), count, config.batch_size, config.batch_delay_seconds
                                 );
                             } else {
                                 info!(
                                     "检测到大量视频UP主 {} ({}个视频)，启用保守请求策略",
-                                    self.upper_id, count
+                                    self.display_name(), count
                                 );
                             }
                         } else {
                             debug!(
                                 "UP主 {} 有 {} 个视频，使用标准请求策略",
-                                self.upper_id, count
+                                self.display_name(), count
                             );
                         }
                     }
@@ -154,7 +171,7 @@ impl<'a> Submission<'a> {
                 let vlist = &mut videos["data"]["list"]["vlist"];
                 if vlist.as_array().is_none_or(|v| v.is_empty()) {
                     if page == 1 {
-                        Err(anyhow!("no medias found in upper {} page {}", self.upper_id, page))?;
+                        Err(anyhow!("no medias found in upper {} page {}", self.display_name(), page))?;
                     } else {
                         // 非第一页没有视频表示已经到达末尾
                         break;
@@ -162,7 +179,7 @@ impl<'a> Submission<'a> {
                 }
 
                 let videos_info: Vec<VideoInfo> = serde_json::from_value(vlist.take())
-                    .with_context(|| format!("failed to parse videos of upper {} page {}", self.upper_id, page))?;
+                    .with_context(|| format!("failed to parse videos of upper {} page {}", self.display_name(), page))?;
 
                 for video_info in videos_info {
                     yield video_info;
@@ -186,12 +203,12 @@ impl<'a> Submission<'a> {
                     let total_batches = (page - 1).div_ceil(config.batch_size);
                     info!(
                         "UP主 {} 分批扫描完成：共 {} 个视频，分 {} 批处理（每批{}页），发起 {} 次API请求",
-                        self.upper_id, total_count, total_batches, config.batch_size, request_count
+                        self.display_name(), total_count, total_batches, config.batch_size, request_count
                     );
                 } else {
                     info!(
                         "UP主 {} 扫描完成：共 {} 个视频，发起 {} 次API请求",
-                        self.upper_id, total_count, request_count
+                        self.display_name(), total_count, request_count
                     );
                 }
             }

@@ -667,7 +667,7 @@ pub async fn create_pages(
     // 对于单P视频，统一使用视频标题作为页面名称
     if pages_info.len() == 1 && pages_info[0].page == 1 {
         if pages_info[0].name != video_model.name {
-            info!(
+            debug!(
                 "单P视频页面名称标准化: 视频 {} ({}), 原名称='{}' -> 使用视频标题='{}'",
                 video_model.bvid, video_model.id, pages_info[0].name, video_model.name
             );

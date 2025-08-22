@@ -266,6 +266,8 @@ pub(super) async fn submission_from<'a>(
 
     let submission = Submission::new(bili_client, upper_id.to_owned());
     let upper = submission.get_info().await?;
+    // 重新创建带有UP主名称的Submission实例，用于后续的视频流处理和日志显示
+    let submission_with_name = Submission::with_name(bili_client, upper_id.to_owned(), upper.name.clone());
     submission::Entity::insert(submission::ActiveModel {
         upper_id: Set(upper.mid.parse()?),
         upper_name: Set(upper.name),
@@ -290,6 +292,6 @@ pub(super) async fn submission_from<'a>(
             .await?
             .context("submission not found")?
             .into(),
-        Box::pin(submission.into_video_stream()),
+        Box::pin(submission_with_name.into_video_stream()),
     ))
 }
