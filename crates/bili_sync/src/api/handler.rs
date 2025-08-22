@@ -1472,6 +1472,7 @@ pub async fn add_video_source_internal(
                 _ => 2,        // 默认使用season类型
             };
 
+            let collection_name = params.name.clone();
             let collection = collection::ActiveModel {
                 id: sea_orm::ActiveValue::NotSet,
                 s_id: sea_orm::Set(s_id),
@@ -1486,6 +1487,8 @@ pub async fn add_video_source_internal(
             };
 
             let insert_result = collection::Entity::insert(collection).exec(&txn).await?;
+
+            info!("合集添加成功: {} (ID: {}, UP主: {})", collection_name, s_id, up_id);
 
             AddVideoSourceResponse {
                 success: true,
@@ -1513,6 +1516,7 @@ pub async fn add_video_source_internal(
             }
 
             // 添加收藏夹
+            let favorite_name = params.name.clone();
             let favorite = favorite::ActiveModel {
                 id: sea_orm::ActiveValue::NotSet,
                 f_id: sea_orm::Set(f_id),
@@ -1525,6 +1529,8 @@ pub async fn add_video_source_internal(
             };
 
             let insert_result = favorite::Entity::insert(favorite).exec(&txn).await?;
+
+            info!("收藏夹添加成功: {} (ID: {})", favorite_name, f_id);
 
             AddVideoSourceResponse {
                 success: true,
@@ -1552,6 +1558,7 @@ pub async fn add_video_source_internal(
             }
 
             // 添加UP主投稿
+            let upper_name = params.name.clone();
             let submission = submission::ActiveModel {
                 id: sea_orm::ActiveValue::NotSet,
                 upper_id: sea_orm::Set(upper_id),
@@ -1569,6 +1576,8 @@ pub async fn add_video_source_internal(
             };
 
             let insert_result = submission::Entity::insert(submission).exec(&txn).await?;
+
+            info!("UP主投稿添加成功: {} (ID: {})", upper_name, upper_id);
 
             AddVideoSourceResponse {
                 success: true,
@@ -1898,6 +1907,8 @@ pub async fn add_video_source_internal(
             };
 
             let insert_result = watch_later::Entity::insert(watch_later).exec(&txn).await?;
+
+            info!("稍后观看添加成功，保存路径: {}", params.path);
 
             AddVideoSourceResponse {
                 success: true,
