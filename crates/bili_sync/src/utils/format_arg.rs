@@ -346,6 +346,7 @@ mod tests {
             valid: true,
             tags: None,
             single_page: Some(true),
+            cid: None,
             created_at: "2024-01-01 00:00:00".to_string(),
             season_id: Some("12345".to_string()),
             ep_id: None,

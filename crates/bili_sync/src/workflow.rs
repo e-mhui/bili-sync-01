@@ -1474,7 +1474,9 @@ pub async fn download_video_pages(
             match config.collection_folder_mode.as_ref() {
                 "unified" => {
                     // 统一模式：所有视频放在以合集名称命名的同一个文件夹下
-                    video_source_base_path.join(&collection_source.name)
+                    let safe_collection_name = crate::utils::filenamify::filenamify(&collection_source.name);
+                    debug!("合集统一模式 - 原名称: '{}', 安全化后: '{}'", collection_source.name, safe_collection_name);
+                    video_source_base_path.join(&safe_collection_name)
                 }
                 _ => {
                     // 分离模式（默认）：每个视频有自己的文件夹
@@ -1595,7 +1597,10 @@ pub async fn download_video_pages(
         if config.collection_use_season_structure {
             // 合集启用Season结构时，使用合集名称作为文件名前缀
             if let VideoSourceEnum::Collection(collection_source) = video_source {
-                collection_source.name.clone()
+                // 对合集名称进行安全化处理，避免poster/fanart文件名包含斜杠导致创建子文件夹
+                let safe_collection_name = crate::utils::filenamify::filenamify(&collection_source.name);
+                debug!("合集poster/fanart文件名安全化 - 原名称: '{}', 安全化后: '{}'", collection_source.name, safe_collection_name);
+                safe_collection_name
             } else {
                 String::new()
             }
