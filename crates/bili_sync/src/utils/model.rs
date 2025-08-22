@@ -48,15 +48,6 @@ pub async fn filter_unfilled_videos(
     additional_expr: SimpleExpr,
     conn: &DatabaseConnection,
 ) -> Result<Vec<video::Model>> {
-    // 检查是否在内存模式，如果是则使用内存数据库连接进行读操作
-    let optimized_conn = crate::utils::global_memory_optimizer::get_read_optimized_connection().await;
-    let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用内存数据库连接筛选未填充视频（读操作）");
-        conn.as_ref()
-    } else {
-        conn
-    };
-
     video::Entity::find()
         .filter(
             video::Column::Valid
@@ -68,7 +59,7 @@ pub async fn filter_unfilled_videos(
                 .and(video::Column::AutoDownload.eq(true))  // 只处理设置为自动下载的视频
                 .and(additional_expr),
         )
-        .all(db_conn)
+        .all(conn)
         .await
         .context("filter unfilled videos failed")
 }
@@ -78,15 +69,6 @@ pub async fn filter_unhandled_video_pages(
     additional_expr: SimpleExpr,
     connection: &DatabaseConnection,
 ) -> Result<Vec<(video::Model, Vec<page::Model>)>> {
-    // 检查是否在内存模式，如果是则使用内存数据库连接进行读操作
-    let optimized_conn = crate::utils::global_memory_optimizer::get_read_optimized_connection().await;
-    let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用内存数据库连接筛选未处理视频页（读操作）");
-        conn.as_ref()
-    } else {
-        connection
-    };
-
     video::Entity::find()
         .filter(
             video::Column::Valid
@@ -99,7 +81,7 @@ pub async fn filter_unhandled_video_pages(
                 .and(additional_expr),
         )
         .find_with_related(page::Entity)
-        .all(db_conn)
+        .all(connection)
         .await
         .context("filter unhandled video pages failed")
 }
@@ -110,15 +92,6 @@ pub async fn get_failed_videos_in_current_cycle(
     connection: &DatabaseConnection,
 ) -> Result<Vec<(video::Model, Vec<page::Model>)>> {
     use crate::utils::status::STATUS_COMPLETED;
-
-    // 检查是否在内存模式，如果是则使用内存数据库连接进行读操作
-    let optimized_conn = crate::utils::global_memory_optimizer::get_read_optimized_connection().await;
-    let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用内存数据库连接获取失败视频（读操作）");
-        conn.as_ref()
-    } else {
-        connection
-    };
 
     let all_videos = video::Entity::find()
         .filter(
@@ -133,7 +106,7 @@ pub async fn get_failed_videos_in_current_cycle(
                 .and(additional_expr),
         )
         .find_with_related(page::Entity)
-        .all(db_conn)
+        .all(connection)
         .await?;
 
     // 获取所有待处理的删除任务中的视频ID
@@ -143,7 +116,7 @@ pub async fn get_failed_videos_in_current_cycle(
     let pending_delete_tasks = task_queue::Entity::find()
         .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
         .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-        .all(db_conn)
+        .all(connection)
         .await?;
 
     let mut videos_in_delete_queue = std::collections::HashSet::new();
@@ -187,15 +160,6 @@ pub async fn create_videos(
 ) -> Result<()> {
     use sea_orm::{Set, Unchanged};
 
-    // 写操作：使用主DB确保ID一致性（get_optimized_connection现在会返回主DB）
-    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-    let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用主数据库连接批量创建视频（写操作）");
-        conn.as_ref()
-    } else {
-        connection
-    };
-
     // 新增：在全量模式下进行去重检查，防止重复处理已存在的视频
     let current_config = crate::config::reload_config();
     let is_full_mode = !current_config.submission_risk_control.enable_incremental_fetch;
@@ -208,7 +172,7 @@ pub async fn create_videos(
         let existing_videos = video::Entity::find()
             .filter(video::Column::Bvid.is_in(all_bvids.clone()))
             .filter(video_source.filter_expr())
-            .all(db_conn)
+            .all(connection)
             .await?;
         
         let existing_bvids: HashSet<String> = existing_videos
@@ -304,7 +268,7 @@ pub async fn create_videos(
             let existing_video = video::Entity::find()
                 .filter(video::Column::Bvid.eq(model.bvid.as_ref()))
                 .filter(video_source.filter_expr())
-                .one(db_conn)
+                .one(connection)
                 .await?;
 
             if let Some(existing) = existing_video {
@@ -323,13 +287,13 @@ pub async fn create_videos(
                         tags: model.tags.clone(),
                         ..Default::default()
                     };
-                    update_model.save(db_conn).await?;
+                    update_model.save(connection).await?;
 
                     // 删除该视频的所有旧page记录（如果存在的话）
                     // 因为视频信息可能已经变化，旧的page记录可能不准确
                     page::Entity::delete_many()
                         .filter(page::Column::VideoId.eq(existing.id))
-                        .exec(db_conn)
+                        .exec(connection)
                         .await?;
 
                     info!("恢复已删除的视频，将重新获取详细信息: {}", existing.name);
@@ -456,7 +420,7 @@ pub async fn create_videos(
                             existing.name, update_model.actors, update_model.share_copy, update_model.show_season_type
                         );
 
-                        update_model.save(db_conn).await?;
+                        update_model.save(connection).await?;
                         info!("更新视频 {} 的字段完成", existing.name);
                     } else {
                         tracing::debug!(
@@ -474,7 +438,7 @@ pub async fn create_videos(
                 video::Entity::insert(model)
                     .on_conflict(OnConflict::new().do_nothing().to_owned())
                     .do_nothing()
-                    .exec(db_conn)
+                    .exec(connection)
                     .await?;
             }
         }
@@ -532,7 +496,7 @@ pub async fn create_videos(
             let insert_result = video::Entity::insert(model.clone())
                 .on_conflict(OnConflict::new().do_nothing().to_owned())
                 .do_nothing()
-                .exec(db_conn)
+                .exec(connection)
                 .await;
 
             // 如果插入没有影响任何行（即记录已存在），检查是否需要更新 share_copy
@@ -548,7 +512,7 @@ pub async fn create_videos(
                     let existing_video = video::Entity::find()
                         .filter(video::Column::Bvid.eq(model.bvid.as_ref()))
                         .filter(video_source.filter_expr())
-                        .one(db_conn)
+                        .one(connection)
                         .await?;
 
                     if let Some(existing) = existing_video {
@@ -674,7 +638,7 @@ pub async fn create_videos(
                                 existing.name, update_model.actors, update_model.share_copy, update_model.show_season_type
                             );
 
-                            update_model.save(db_conn).await?;
+                            update_model.save(connection).await?;
                             info!("更新视频 {} 的字段完成(未启用扫描删除)", existing.name);
                         } else {
                             tracing::debug!(
@@ -690,9 +654,6 @@ pub async fn create_videos(
             }
         }
     }
-    
-    // 触发异步同步到内存DB
-    crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video", "page"]).await;
     
     Ok(())
 }
@@ -719,58 +680,31 @@ pub async fn create_pages(
             .await?;
     }
     
-    // 触发异步同步到内存DB
-    crate::utils::global_memory_optimizer::queue_memory_sync(vec!["page"]).await;
-    
     Ok(())
 }
 
 /// 更新视频 model 的下载状态
 pub async fn update_videos_model(videos: Vec<video::ActiveModel>, connection: &DatabaseConnection) -> Result<()> {
-    // 写操作：使用主DB确保数据一致性
-    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-    let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用主数据库连接更新视频下载状态（写操作）");
-        conn.as_ref()
-    } else {
-        connection
-    };
-
     video::Entity::insert_many(videos)
         .on_conflict(
             OnConflict::column(video::Column::Id)
                 .update_columns([video::Column::DownloadStatus, video::Column::Path])
                 .to_owned(),
         )
-        .exec(db_conn)
+        .exec(connection)
         .await?;
-    
-    // 触发异步同步到内存DB
-    crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video"]).await;
     
     Ok(())
 }
 
 /// 更新视频页 model 的下载状态
 pub async fn update_pages_model(pages: Vec<page::ActiveModel>, connection: &DatabaseConnection) -> Result<()> {
-    // 写操作：使用主DB确保数据一致性
-    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-    let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用主数据库连接更新视频页下载状态（写操作）");
-        conn.as_ref()
-    } else {
-        connection
-    };
-
     let query = page::Entity::insert_many(pages).on_conflict(
         OnConflict::column(page::Column::Id)
             .update_columns([page::Column::DownloadStatus, page::Column::Path])
             .to_owned(),
     );
-    query.exec(db_conn).await?;
-    
-    // 触发异步同步到内存DB
-    crate::utils::global_memory_optimizer::queue_memory_sync(vec!["page"]).await;
+    query.exec(connection).await?;
     
     Ok(())
 }

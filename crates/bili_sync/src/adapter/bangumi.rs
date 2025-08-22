@@ -237,18 +237,10 @@ impl BangumiSource {
         use crate::utils::bangumi_cache::is_cache_expired;
         use bili_sync_entity::video_source;
 
-        // 检查是否在内存模式，如果是则使用内存数据库连接
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用内存数据库连接查询番剧信息");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         // 获取当前番剧源的缓存信息
         let source_model = video_source::Entity::find_by_id(self.id)
-            .one(db_conn)
+            .one(connection)
             .await?
             .ok_or_else(|| anyhow::anyhow!("番剧源不存在"))?;
 
@@ -256,7 +248,7 @@ impl BangumiSource {
         let video_count = bili_sync_entity::video::Entity::find()
             .filter(bili_sync_entity::video::Column::SourceId.eq(self.id))
             .filter(bili_sync_entity::video::Column::SourceType.eq(1)) // 番剧类型
-            .count(db_conn)
+            .count(connection)
             .await?;
 
         let latest_row_at = if video_count == 0 {

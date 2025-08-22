@@ -4,8 +4,6 @@ pub mod convert;
 pub mod file_logger;
 pub mod filenamify;
 pub mod format_arg;
-pub mod global_memory_optimizer;
-pub mod memory_db;
 pub mod model;
 pub mod nfo;
 pub mod notification;

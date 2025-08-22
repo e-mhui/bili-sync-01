@@ -158,29 +158,22 @@ pub enum _ActiveModel {
 
 impl _ActiveModel {
     pub async fn save(self, connection: &DatabaseConnection) -> Result<()> {
-        // 检查是否在内存模式，如果是则使用内存数据库连接
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         match self {
             _ActiveModel::Favorite(model) => {
-                model.save(db_conn).await?;
+                model.save(connection).await?;
             }
             _ActiveModel::Collection(model) => {
-                model.save(db_conn).await?;
+                model.save(connection).await?;
             }
             _ActiveModel::Submission(model) => {
-                model.save(db_conn).await?;
+                model.save(connection).await?;
             }
             _ActiveModel::WatchLater(model) => {
-                model.save(db_conn).await?;
+                model.save(connection).await?;
             }
             _ActiveModel::Bangumi(model) => {
-                model.save(db_conn).await?;
+                model.save(connection).await?;
             }
         }
         Ok(())
@@ -198,14 +191,6 @@ pub async fn bangumi_from<'a>(
     VideoSourceEnum,
     Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
 )> {
-    // 检查是否在内存模式，如果是则使用内存数据库连接
-    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-    let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用内存数据库连接查询番剧源");
-        conn.as_ref()
-    } else {
-        connection
-    };
 
     // 使用可用的ID构建查询条件
     let mut query =
@@ -225,7 +210,7 @@ pub async fn bangumi_from<'a>(
     }
 
     // 从数据库中获取现有的番剧源
-    let bangumi_model = query.one(db_conn).await?;
+    let bangumi_model = query.one(connection).await?;
 
     // 如果数据库中存在，则使用数据库中的ID；否则使用默认ID
     let bangumi_source = if let Some(model) = bangumi_model {

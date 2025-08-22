@@ -263,14 +263,6 @@ pub(super) async fn submission_from<'a>(
     VideoSourceEnum,
     Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
 )> {
-    // 检查是否在内存模式，如果是则使用内存数据库连接
-    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-    let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用内存数据库连接初始化UP主投稿源");
-        conn.as_ref()
-    } else {
-        connection
-    };
 
     let submission = Submission::new(bili_client, upper_id.to_owned());
     let upper = submission.get_info().await?;
@@ -289,12 +281,12 @@ pub(super) async fn submission_from<'a>(
             .update_columns([submission::Column::UpperName, submission::Column::Path])
             .to_owned(),
     )
-    .exec(db_conn)
+    .exec(connection)
     .await?;
     Ok((
         submission::Entity::find()
             .filter(submission::Column::UpperId.eq(upper.mid))
-            .one(db_conn)
+            .one(connection)
             .await?
             .context("submission not found")?
             .into(),

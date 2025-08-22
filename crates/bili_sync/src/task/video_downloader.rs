@@ -12,7 +12,6 @@ use crate::initialization;
 use crate::task::TASK_CONTROLLER;
 use crate::unified_downloader::UnifiedDownloader;
 use crate::utils::file_logger;
-use crate::utils::global_memory_optimizer::initialize_global_memory_optimizer;
 use crate::utils::scan_collector::ScanCollector;
 use crate::utils::scan_id_tracker::{
     get_last_scanned_ids, group_sources_by_new_old, update_last_scanned_ids, LastScannedIds, MaxIdRecorder, SourceType,
@@ -178,25 +177,12 @@ async fn init_all_sources(
 pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
     let bili_client = BiliClient::new(String::new());
 
-    // 在程序启动阶段就初始化全局内存优化器
-    // 这确保了所有后续的数据库操作都能享受到内存优化
-    debug!("开始初始化全局内存数据库优化器");
-    if let Err(e) = initialize_global_memory_optimizer(connection.clone()).await {
-        warn!("初始化全局内存优化器失败，将使用常规模式: {}", e);
-    } else {
-        debug!("全局内存数据库优化器初始化完成");
-    }
+    // SQLite配置已经在database::setup_database中设置了mmap，不再需要额外的初始化
 
     // 在启动时初始化所有视频源 - 使用动态配置而非静态CONFIG
     let config = crate::config::reload_config();
 
-    // 获取启动时的优化连接
-    let startup_connection = match crate::utils::global_memory_optimizer::get_optimized_connection().await {
-        Some(conn) => conn,
-        None => connection.clone(),
-    };
-
-    if let Err(e) = init_all_sources(&config, &startup_connection).await {
+    if let Err(e) = init_all_sources(&config, &connection).await {
         error!("启动时初始化视频源失败: {}", e);
     } else {
         debug!("启动时视频源初始化成功");
@@ -208,7 +194,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
         if config.enable_cid_population {
             debug!("检查是否需要填充视频cid...");
             let token = tokio_util::sync::CancellationToken::new();
-            if let Err(e) = crate::workflow::populate_missing_video_cids(&bili_client, &startup_connection, token.clone()).await {
+            if let Err(e) = crate::workflow::populate_missing_video_cids(&bili_client, &connection, token.clone()).await {
                 error!("填充视频cid失败: {}", e);
             }
         } else {
@@ -218,7 +204,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
         // 修复page表的video_id（仅在启用时执行）
         if config.enable_startup_data_fix {
             debug!("检查是否需要修复page表的video_id...");
-            if let Err(e) = crate::workflow::fix_page_video_ids(&startup_connection).await {
+            if let Err(e) = crate::workflow::fix_page_video_ids(&connection).await {
                 error!("修复page表video_id失败: {}", e);
             }
         } else {
@@ -240,21 +226,8 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
         // 重新加载配置
         let config = crate::config::reload_config();
 
-        // 获取优化连接，确保所有数据库操作使用同一连接
-        let optimized_connection = match crate::utils::global_memory_optimizer::get_optimized_connection().await {
-            Some(conn) => {
-                let is_memory_optimized = crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await;
-                debug!(
-                    "使用全局内存优化器，性能模式: {}",
-                    if is_memory_optimized { "内存优化" } else { "常规" }
-                );
-                conn
-            }
-            None => {
-                warn!("无法从全局内存优化器获取连接，使用原始连接");
-                connection.clone()
-            }
-        };
+        // 使用直接连接
+        let optimized_connection = connection.clone();
 
         // 重新初始化所有视频源（确保源初始化是幂等的）
         if let Err(e) = init_all_sources(&config, &optimized_connection).await {
@@ -398,10 +371,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             let mut is_interrupted = false; // 标记是否因风控等原因中断
 
             // 定期同步相关变量
-            let mut videos_since_last_sync = 0; // 自上次同步以来处理的视频数
-            let sync_interval_videos = 10; // 每处理10个视频同步一次
-            let mut last_sync_time = std::time::Instant::now(); // 上次同步时间
-            let sync_interval_minutes = 5; // 每5分钟同步一次
+            let mut _videos_since_last_sync = 0; // 自上次同步以来处理的视频数（保留以备将来使用）
 
             for source in &ordered_sources {
                 let args = &source.args;
@@ -547,48 +517,10 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
                         // 更新处理的视频计数
                         if new_video_count > 0 {
-                            videos_since_last_sync += new_video_count as u32;
+                            _videos_since_last_sync += new_video_count as u32;
                         }
 
-                        // 检查是否需要定期同步
-                        let should_sync =
-                            if crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
-                                // 检查是否达到视频数量阈值
-                                let video_threshold_reached = videos_since_last_sync >= sync_interval_videos;
-
-                                // 检查是否达到时间阈值
-                                let time_threshold_reached =
-                                    last_sync_time.elapsed().as_secs() >= (sync_interval_minutes * 60);
-
-                                if video_threshold_reached || time_threshold_reached {
-                                    if video_threshold_reached {
-                                        info!("已处理 {} 个视频，触发定期同步", videos_since_last_sync);
-                                    } else {
-                                        info!(
-                                            "距上次同步已过 {} 分钟，触发定期同步",
-                                            last_sync_time.elapsed().as_secs() / 60
-                                        );
-                                    }
-                                    true
-                                } else {
-                                    false
-                                }
-                            } else {
-                                false
-                            };
-
-                        if should_sync {
-                            match crate::utils::global_memory_optimizer::sync_to_main_db().await {
-                                Ok(_) => {
-                                    info!("定期同步完成，数据已保存到主数据库");
-                                    videos_since_last_sync = 0;
-                                    last_sync_time = std::time::Instant::now();
-                                }
-                                Err(e) => {
-                                    error!("定期同步失败: {}，继续处理但数据可能丢失", e);
-                                }
-                            }
-                        }
+                        // mmap自动处理数据持久化，不需要手动同步
                     }
                     Err(e) => {
                         // 检查是否为风控错误，如果是则停止所有后续扫描
@@ -657,26 +589,9 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
             debug!("扫描完成，所有进度已保存");
 
-            // 如果使用了内存优化模式，在扫描完成后立即同步数据到主数据库
-            let is_memory_optimized = crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await;
-            if is_memory_optimized {
-                debug!("开始将本轮扫描的数据同步到主数据库...");
-                match crate::utils::global_memory_optimizer::sync_to_main_db().await {
-                    Ok(_) => debug!("数据同步完成，所有变更已保存到主数据库"),
-                    Err(e) => error!("数据同步失败: {}，可能导致数据丢失", e),
-                }
-            }
-
-            let mode = if is_memory_optimized {
-                "内存优化模式"
-            } else {
-                "常规模式"
-            };
-            info!("本轮扫描完成 - 模式: {}, 视频源数量: {}", mode, ordered_sources.len());
-
-            if is_memory_optimized {
-                debug!("内存优化模式有效减少了数据库I/O开销，提升了扫描性能");
-            }
+            // mmap自动处理数据持久化，不需要手动同步
+            
+            info!("本轮扫描完成 - 视频源数量: {}", ordered_sources.len());
 
             // 生成扫描摘要并发送推送通知
             let scan_summary = scan_collector.generate_summary();
@@ -744,15 +659,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                 error!("处理配置任务队列失败: {:#}", e);
             }
 
-            // 处理完所有任务队列后，同步内存数据库到主数据库
-            if crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
-                debug!("任务队列处理完成，同步内存数据库到主数据库");
-                if let Err(e) = crate::utils::global_memory_optimizer::sync_to_main_db().await {
-                    error!("任务队列处理后同步失败: {}", e);
-                } else {
-                    debug!("任务队列状态已同步到主数据库");
-                }
-            }
+            // mmap自动处理数据持久化，不需要手动同步
         } else {
             debug!("任务已暂停，跳过后处理阶段");
         }

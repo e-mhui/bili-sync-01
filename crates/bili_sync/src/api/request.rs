@@ -175,8 +175,6 @@ pub struct UpdateConfigRequest {
     pub bangumi_use_season_structure: Option<bool>,
     // UP主头像保存路径
     pub upper_path: Option<String>,
-    // 内存数据库优化开关
-    pub enable_memory_optimization: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

@@ -119,8 +119,6 @@ pub struct UpdateConfigTask {
     pub bangumi_use_season_structure: Option<bool>,
     // UP主头像保存路径
     pub upper_path: Option<String>,
-    // 内存数据库优化开关
-    pub enable_memory_optimization: Option<bool>,
     pub task_id: String, // 唯一任务ID，用于追踪
 }
 
@@ -148,14 +146,6 @@ impl DeleteTaskQueue {
 
     /// 添加删除任务到队列（同时保存到数据库）
     pub async fn enqueue_task(&self, task: DeleteVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接插入DeleteVideoSource任务");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         // 保存到数据库
         let task_data = serde_json::to_string(&task)?;
@@ -169,7 +159,7 @@ impl DeleteTaskQueue {
             ..Default::default()
         };
 
-        let result = active_model.insert(db_conn).await?;
+        let result = active_model.insert(connection).await?;
 
         // 添加到内存队列
         let mut queue = self.queue.lock().await;
@@ -197,14 +187,6 @@ impl DeleteTaskQueue {
         task: &DeleteVideoSourceTask,
         connection: &DatabaseConnection,
     ) -> Result<()> {
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接更新DeleteVideoSource任务完成状态");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         let task_data = serde_json::to_string(task)?;
 
@@ -213,13 +195,13 @@ impl DeleteTaskQueue {
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideoSource))
             .filter(task_queue::Column::TaskData.eq(&task_data))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .one(db_conn)
+            .one(connection)
             .await?
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Completed);
             active_model.updated_at = Set(now_standard_string());
-            active_model.update(db_conn).await?;
+            active_model.update(connection).await?;
         }
 
         Ok(())
@@ -228,13 +210,6 @@ impl DeleteTaskQueue {
     /// 标记任务为失败（更新数据库状态）
     pub async fn mark_task_failed(&self, task: &DeleteVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
         // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接更新DeleteVideoSource任务失败状态");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         let task_data = serde_json::to_string(task)?;
 
@@ -243,7 +218,7 @@ impl DeleteTaskQueue {
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideoSource))
             .filter(task_queue::Column::TaskData.eq(&task_data))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .one(db_conn)
+            .one(connection)
             .await?
         {
             let retry_count = db_task.retry_count;
@@ -251,7 +226,7 @@ impl DeleteTaskQueue {
             active_model.status = Set(TaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
             active_model.updated_at = Set(now_standard_string());
-            active_model.update(db_conn).await?;
+            active_model.update(connection).await?;
         }
 
         Ok(())
@@ -358,19 +333,11 @@ impl VideoDeleteTaskQueue {
 
     /// 检查视频是否已有待处理的删除任务
     pub async fn has_pending_delete_task(&self, video_id: i32, connection: &DatabaseConnection) -> Result<bool> {
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接查询DeleteVideo待处理任务");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         let count = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .count(db_conn)
+            .count(connection)
             .await?;
 
         if count == 0 {
@@ -381,7 +348,7 @@ impl VideoDeleteTaskQueue {
         let pending_tasks = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .all(db_conn)
+            .all(connection)
             .await?;
 
         for task_record in pending_tasks {
@@ -403,14 +370,6 @@ impl VideoDeleteTaskQueue {
             return Ok(());
         }
 
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接插入DeleteVideo任务");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         // 保存到数据库
         let task_data = serde_json::to_string(&task)?;
@@ -424,7 +383,7 @@ impl VideoDeleteTaskQueue {
             ..Default::default()
         };
 
-        let result = active_model.insert(db_conn).await?;
+        let result = active_model.insert(connection).await?;
 
         // 添加到内存队列
         let mut queue = self.queue.lock().await;
@@ -447,14 +406,6 @@ impl VideoDeleteTaskQueue {
 
     /// 标记任务为已完成（更新数据库状态）
     pub async fn mark_task_completed(&self, task: &DeleteVideoTask, connection: &DatabaseConnection) -> Result<()> {
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接更新DeleteVideo任务完成状态");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         let task_data = serde_json::to_string(task)?;
 
@@ -463,13 +414,13 @@ impl VideoDeleteTaskQueue {
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
             .filter(task_queue::Column::TaskData.eq(&task_data))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .one(db_conn)
+            .one(connection)
             .await?
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Completed);
             active_model.updated_at = Set(now_standard_string());
-            active_model.update(db_conn).await?;
+            active_model.update(connection).await?;
         }
 
         Ok(())
@@ -477,14 +428,6 @@ impl VideoDeleteTaskQueue {
 
     /// 标记任务为失败（更新数据库状态）
     pub async fn mark_task_failed(&self, task: &DeleteVideoTask, connection: &DatabaseConnection) -> Result<()> {
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接更新DeleteVideo任务失败状态");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         let task_data = serde_json::to_string(task)?;
 
@@ -493,7 +436,7 @@ impl VideoDeleteTaskQueue {
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
             .filter(task_queue::Column::TaskData.eq(&task_data))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .one(db_conn)
+            .one(connection)
             .await?
         {
             let retry_count = db_task.retry_count;
@@ -501,7 +444,7 @@ impl VideoDeleteTaskQueue {
             active_model.status = Set(TaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
             active_model.updated_at = Set(now_standard_string());
-            active_model.update(db_conn).await?;
+            active_model.update(connection).await?;
         }
 
         Ok(())
@@ -600,18 +543,10 @@ async fn delete_video_internal(db: Arc<DatabaseConnection>, video_id: i32) -> Re
     use bili_sync_entity::{page, video};
     use sea_orm::*;
 
-    // 获取优化的数据库连接（写穿透模式下为主数据库）
-    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-    let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用主数据库连接查询待删除视频");
-        conn.as_ref()
-    } else {
-        db.as_ref()
-    };
 
     // 检查视频是否存在
     let video = video::Entity::find_by_id(video_id)
-        .one(db_conn)
+        .one(db.as_ref())
         .await
         .map_err(|e| anyhow::anyhow!("查询视频失败: {}", e))?;
 
@@ -660,7 +595,7 @@ async fn delete_video_internal(db: Arc<DatabaseConnection>, video_id: i32) -> Re
     // 在软删除video之前，先删除page表记录
     page::Entity::delete_many()
         .filter(page::Column::VideoId.eq(video_id))
-        .exec(db_conn)
+        .exec(db.as_ref())
         .await
         .map_err(|e| anyhow::anyhow!("删除page记录失败: {}", e))?;
 
@@ -670,7 +605,7 @@ async fn delete_video_internal(db: Arc<DatabaseConnection>, video_id: i32) -> Re
     video::Entity::update_many()
         .col_expr(video::Column::Deleted, sea_orm::prelude::Expr::value(1))
         .filter(video::Column::Id.eq(video_id))
-        .exec(db_conn)
+        .exec(db.as_ref())
         .await
         .map_err(|e| anyhow::anyhow!("更新视频删除状态失败: {}", e))?;
 
@@ -694,19 +629,11 @@ async fn delete_video_files_from_pages_task(
     use sea_orm::*;
     use tokio::fs;
 
-    // 获取优化的数据库连接（写穿透模式下为主数据库）
-    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-    let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用主数据库连接查询待删除视频的页面信息");
-        conn.as_ref()
-    } else {
-        db.as_ref()
-    };
 
     // 获取该视频的所有页面（分P）
     let pages = page::Entity::find()
         .filter(page::Column::VideoId.eq(video_id))
-        .all(db_conn)
+        .all(db.as_ref())
         .await
         .map_err(|e| anyhow::anyhow!("查询页面信息失败: {}", e))?;
 
@@ -759,7 +686,7 @@ async fn delete_video_files_from_pages_task(
 
     // 还要删除视频的NFO文件和其他可能的相关文件
     let video = video::Entity::find_by_id(video_id)
-        .one(db_conn)
+        .one(db.as_ref())
         .await
         .map_err(|e| anyhow::anyhow!("查询视频信息失败: {}", e))?;
 
@@ -767,7 +694,7 @@ async fn delete_video_files_from_pages_task(
         // 重新获取页面信息来删除基于视频文件名的相关文件
         let pages_for_cleanup = page::Entity::find()
             .filter(page::Column::VideoId.eq(video_id))
-            .all(db_conn)
+            .all(db.as_ref())
             .await
             .map_err(|e| anyhow::anyhow!("查询页面信息失败: {}", e))?;
 
@@ -872,7 +799,7 @@ async fn delete_video_files_from_pages_task(
                             let video_base_name = if is_collection && config.collection_use_season_structure {
                                 // 合集：使用合集名称
                                 match bili_sync_entity::collection::Entity::find_by_id(video.collection_id.unwrap_or(0))
-                                    .one(db_conn)
+                                    .one(db.as_ref())
                                     .await
                                 {
                                     Ok(Some(coll)) => coll.name,
@@ -940,14 +867,6 @@ impl AddTaskQueue {
 
     /// 添加添加任务到队列（同时保存到数据库）
     pub async fn enqueue_task(&self, task: AddVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接插入AddVideoSource任务");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         // 保存到数据库
         let task_data = serde_json::to_string(&task)?;
@@ -961,7 +880,7 @@ impl AddTaskQueue {
             ..Default::default()
         };
 
-        let result = active_model.insert(db_conn).await?;
+        let result = active_model.insert(connection).await?;
 
         // 添加到内存队列
         let mut queue = self.queue.lock().await;
@@ -985,14 +904,6 @@ impl AddTaskQueue {
 
     /// 标记任务为已完成（更新数据库状态）
     pub async fn mark_task_completed(&self, task: &AddVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接更新AddVideoSource任务完成状态");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         let task_data = serde_json::to_string(task)?;
 
@@ -1001,13 +912,13 @@ impl AddTaskQueue {
             .filter(task_queue::Column::TaskType.eq(TaskType::AddVideoSource))
             .filter(task_queue::Column::TaskData.eq(&task_data))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .one(db_conn)
+            .one(connection)
             .await?
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Completed);
             active_model.updated_at = Set(now_standard_string());
-            active_model.update(db_conn).await?;
+            active_model.update(connection).await?;
         }
 
         Ok(())
@@ -1015,14 +926,6 @@ impl AddTaskQueue {
 
     /// 标记任务为失败（更新数据库状态）
     pub async fn mark_task_failed(&self, task: &AddVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接更新AddVideoSource任务失败状态");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         let task_data = serde_json::to_string(task)?;
 
@@ -1031,7 +934,7 @@ impl AddTaskQueue {
             .filter(task_queue::Column::TaskType.eq(TaskType::AddVideoSource))
             .filter(task_queue::Column::TaskData.eq(&task_data))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .one(db_conn)
+            .one(connection)
             .await?
         {
             let retry_count = db_task.retry_count;
@@ -1039,7 +942,7 @@ impl AddTaskQueue {
             active_model.status = Set(TaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
             active_model.updated_at = Set(now_standard_string());
-            active_model.update(db_conn).await?;
+            active_model.update(connection).await?;
         }
 
         Ok(())
@@ -1154,14 +1057,6 @@ impl ConfigTaskQueue {
 
     /// 添加更新配置任务到队列（同时保存到数据库）
     pub async fn enqueue_update_task(&self, task: UpdateConfigTask, connection: &DatabaseConnection) -> Result<()> {
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接插入UpdateConfig任务");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         // 保存到数据库
         let task_data = serde_json::to_string(&task)?;
@@ -1175,7 +1070,7 @@ impl ConfigTaskQueue {
             ..Default::default()
         };
 
-        let result = active_model.insert(db_conn).await?;
+        let result = active_model.insert(connection).await?;
 
         // 添加到内存队列
         let mut queue = self.update_queue.lock().await;
@@ -1191,14 +1086,6 @@ impl ConfigTaskQueue {
 
     /// 添加重载配置任务到队列（同时保存到数据库）
     pub async fn enqueue_reload_task(&self, task: ReloadConfigTask, connection: &DatabaseConnection) -> Result<()> {
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接插入ReloadConfig任务");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         // 保存到数据库
         let task_data = serde_json::to_string(&task)?;
@@ -1212,7 +1099,7 @@ impl ConfigTaskQueue {
             ..Default::default()
         };
 
-        let result = active_model.insert(db_conn).await?;
+        let result = active_model.insert(connection).await?;
 
         // 添加到内存队列
         let mut queue = self.reload_queue.lock().await;
@@ -1244,14 +1131,6 @@ impl ConfigTaskQueue {
         task: &UpdateConfigTask,
         connection: &DatabaseConnection,
     ) -> Result<()> {
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接更新UpdateConfig任务完成状态");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         let task_data = serde_json::to_string(task)?;
 
@@ -1260,13 +1139,13 @@ impl ConfigTaskQueue {
             .filter(task_queue::Column::TaskType.eq(TaskType::UpdateConfig))
             .filter(task_queue::Column::TaskData.eq(&task_data))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .one(db_conn)
+            .one(connection)
             .await?
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Completed);
             active_model.updated_at = Set(now_standard_string());
-            active_model.update(db_conn).await?;
+            active_model.update(connection).await?;
         }
 
         Ok(())
@@ -1278,14 +1157,6 @@ impl ConfigTaskQueue {
         task: &UpdateConfigTask,
         connection: &DatabaseConnection,
     ) -> Result<()> {
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接更新UpdateConfig任务失败状态");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         let task_data = serde_json::to_string(task)?;
 
@@ -1294,7 +1165,7 @@ impl ConfigTaskQueue {
             .filter(task_queue::Column::TaskType.eq(TaskType::UpdateConfig))
             .filter(task_queue::Column::TaskData.eq(&task_data))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .one(db_conn)
+            .one(connection)
             .await?
         {
             let retry_count = db_task.retry_count;
@@ -1302,7 +1173,7 @@ impl ConfigTaskQueue {
             active_model.status = Set(TaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
             active_model.updated_at = Set(now_standard_string());
-            active_model.update(db_conn).await?;
+            active_model.update(connection).await?;
         }
 
         Ok(())
@@ -1314,14 +1185,6 @@ impl ConfigTaskQueue {
         task: &ReloadConfigTask,
         connection: &DatabaseConnection,
     ) -> Result<()> {
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接更新ReloadConfig任务完成状态");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         let task_data = serde_json::to_string(task)?;
 
@@ -1330,13 +1193,13 @@ impl ConfigTaskQueue {
             .filter(task_queue::Column::TaskType.eq(TaskType::ReloadConfig))
             .filter(task_queue::Column::TaskData.eq(&task_data))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .one(db_conn)
+            .one(connection)
             .await?
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Completed);
             active_model.updated_at = Set(now_standard_string());
-            active_model.update(db_conn).await?;
+            active_model.update(connection).await?;
         }
 
         Ok(())
@@ -1348,14 +1211,6 @@ impl ConfigTaskQueue {
         task: &ReloadConfigTask,
         connection: &DatabaseConnection,
     ) -> Result<()> {
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接更新ReloadConfig任务失败状态");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         let task_data = serde_json::to_string(task)?;
 
@@ -1364,7 +1219,7 @@ impl ConfigTaskQueue {
             .filter(task_queue::Column::TaskType.eq(TaskType::ReloadConfig))
             .filter(task_queue::Column::TaskData.eq(&task_data))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .one(db_conn)
+            .one(connection)
             .await?
         {
             let retry_count = db_task.retry_count;
@@ -1372,7 +1227,7 @@ impl ConfigTaskQueue {
             active_model.status = Set(TaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
             active_model.updated_at = Set(now_standard_string());
-            active_model.update(db_conn).await?;
+            active_model.update(connection).await?;
         }
 
         Ok(())
@@ -1402,59 +1257,35 @@ impl ConfigTaskQueue {
 
     /// 查询数据库中待处理的更新配置任务数量
     pub async fn get_pending_update_tasks_count(&self, connection: &DatabaseConnection) -> Result<u64, anyhow::Error> {
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接查询UpdateConfig待处理任务数量");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         let count = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::UpdateConfig))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .count(db_conn)
+            .count(connection)
             .await?;
         Ok(count)
     }
 
     /// 查询数据库中待处理的重载配置任务数量
     pub async fn get_pending_reload_tasks_count(&self, connection: &DatabaseConnection) -> Result<u64, anyhow::Error> {
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接查询ReloadConfig待处理任务数量");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         let count = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::ReloadConfig))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .count(db_conn)
+            .count(connection)
             .await?;
         Ok(count)
     }
 
     /// 从数据库恢复配置任务到内存队列
     pub async fn recover_config_tasks_from_db(&self, connection: &DatabaseConnection) -> Result<u32, anyhow::Error> {
-        // 获取优化的数据库连接（写穿透模式下为主数据库）
-        let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-        let db_conn = if let Some(ref conn) = optimized_conn {
-            debug!("使用主数据库连接恢复配置任务");
-            conn.as_ref()
-        } else {
-            connection
-        };
 
         // 查询所有待处理的配置任务
         let pending_tasks = TaskQueueEntity::find()
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
             .filter(task_queue::Column::TaskType.is_in([TaskType::UpdateConfig, TaskType::ReloadConfig]))
             .order_by_asc(task_queue::Column::CreatedAt)
-            .all(db_conn)
+            .all(connection)
             .await?;
 
         let mut recovered_count = 0u32;
@@ -1633,8 +1464,6 @@ impl ConfigTaskQueue {
                 bangumi_use_season_structure: task.bangumi_use_season_structure,
                 // UP主头像保存路径
                 upper_path: task.upper_path.clone(),
-                // 内存数据库优化开关
-                enable_memory_optimization: task.enable_memory_optimization,
             };
 
             match update_config_internal(db.clone(), request).await {
@@ -1670,19 +1499,7 @@ impl ConfigTaskQueue {
                 Ok(_) => {
                     info!("重载配置任务执行成功");
 
-                    // 重载配置成功后，检查并重配置内存优化器
-                    match crate::utils::global_memory_optimizer::reconfigure_global_memory_optimizer(db.clone()).await {
-                        Ok(changed) => {
-                            if changed {
-                                info!("内存优化配置已根据配置变化进行了重配置");
-                            } else {
-                                debug!("内存优化配置无需变更");
-                            }
-                        }
-                        Err(e) => {
-                            warn!("重配置内存优化器失败: {}, 继续使用当前模式", e);
-                        }
-                    }
+                    // mmap配置在启动时设置，不需要动态重配置
 
                     processed_count += 1;
 
@@ -1935,20 +1752,12 @@ pub async fn process_video_delete_tasks(db: Arc<DatabaseConnection>) -> Result<u
 pub async fn recover_pending_tasks(connection: &DatabaseConnection) -> Result<(), anyhow::Error> {
     info!("开始恢复数据库中的待处理任务到内存队列");
 
-    // 获取优化的数据库连接（写穿透模式下为主数据库）
-    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-    let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用主数据库连接恢复待处理任务");
-        conn.as_ref()
-    } else {
-        connection
-    };
 
     // 查询所有待处理状态的任务
     let pending_tasks = TaskQueueEntity::find()
         .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
         .order_by_asc(task_queue::Column::CreatedAt) // 按创建时间排序
-        .all(db_conn)
+        .all(connection)
         .await?;
 
     let mut recovered_count = 0;

@@ -1431,13 +1431,7 @@ pub async fn add_video_source_internal(
     db: Arc<DatabaseConnection>,
     params: AddVideoSourceRequest,
 ) -> Result<AddVideoSourceResponse, ApiError> {
-    // 获取优化的数据库连接（写穿透模式下为主数据库）
-    let db = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
-        debug!("使用主数据库连接处理添加视频源任务");
-        optimized_conn
-    } else {
-        db
-    };
+    // 使用主数据库连接
 
     let txn = db.begin().await?;
 
@@ -1920,20 +1914,6 @@ pub async fn add_video_source_internal(
 
     txn.commit().await?;
 
-    // 在内存模式下，确保数据同步到主数据库
-    if let Some(_optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
-        // 检查是否在内存模式
-        if crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
-            info!("内存模式下同步{}数据到主数据库", result.source_type);
-
-            // 强制同步内存数据库到主数据库
-            if let Err(e) = crate::utils::global_memory_optimizer::sync_to_main_db().await {
-                warn!("强制同步内存数据库失败: {}", e);
-            } else {
-                info!("{}数据同步完成", result.source_type);
-            }
-        }
-    }
 
     Ok(result)
 }
@@ -2048,13 +2028,7 @@ pub async fn update_video_source_enabled_internal(
     id: i32,
     enabled: bool,
 ) -> Result<crate::api::response::UpdateVideoSourceEnabledResponse, ApiError> {
-    // 获取优化的数据库连接（写穿透模式下为主数据库）
-    let db = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
-        debug!("使用主数据库连接更新视频源启用状态");
-        optimized_conn
-    } else {
-        db
-    };
+    // 使用主数据库连接
     let txn = db.begin().await?;
 
     let result = match source_type.as_str() {
@@ -2563,13 +2537,7 @@ pub async fn delete_video_source_internal(
     id: i32,
     delete_local_files: bool,
 ) -> Result<crate::api::response::DeleteVideoSourceResponse, ApiError> {
-    // 获取优化的数据库连接（写穿透模式下为主数据库）
-    let db = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
-        debug!("使用主数据库连接删除视频源");
-        optimized_conn
-    } else {
-        db
-    };
+    // 使用主数据库连接
     let txn = db.begin().await?;
 
     // 根据不同类型的视频源执行不同的删除操作
@@ -3190,21 +3158,6 @@ pub async fn delete_video_source_internal(
 
     txn.commit().await?;
 
-    // 在内存模式下，确保删除操作同步到主数据库
-    if let Some(_optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
-        // 检查是否在内存模式
-        if crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
-            info!("内存模式下同步{}删除操作到主数据库", result.source_type);
-
-            // 强制同步内存数据库到主数据库
-            if let Err(e) = crate::utils::global_memory_optimizer::sync_to_main_db().await {
-                warn!("强制同步内存数据库失败: {}", e);
-            } else {
-                info!("{}删除操作同步完成", result.source_type);
-            }
-        }
-    }
-
     Ok(result)
 }
 
@@ -3238,13 +3191,7 @@ pub async fn update_video_source_scan_deleted_internal(
     id: i32,
     scan_deleted_videos: bool,
 ) -> Result<crate::api::response::UpdateVideoSourceScanDeletedResponse, ApiError> {
-    // 获取优化的数据库连接（写穿透模式下为主数据库）
-    let db = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
-        debug!("使用主数据库连接更新视频源扫描已删除视频设置");
-        optimized_conn
-    } else {
-        db
-    };
+    // 使用主数据库连接
 
     let txn = db.begin().await?;
 
@@ -3504,13 +3451,7 @@ pub async fn reset_video_source_path_internal(
     id: i32,
     request: ResetVideoSourcePathRequest,
 ) -> Result<ResetVideoSourcePathResponse, ApiError> {
-    // 获取优化的数据库连接（写穿透模式下为主数据库）
-    let db = if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
-        debug!("使用主数据库连接重设视频源路径");
-        optimized_conn
-    } else {
-        db
-    };
+    // 使用主数据库连接
 
     // 在开始操作前进行安全验证
     let txn = db.begin().await?;
@@ -4196,8 +4137,6 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
             notification_timeout: config.notification.notification_timeout,
             notification_retry_count: config.notification.notification_retry_count,
         },
-        // 内存数据库优化开关
-        enable_memory_optimization: config.enable_memory_optimization,
     }))
 }
 
@@ -4287,8 +4226,6 @@ pub async fn update_config(
             bangumi_use_season_structure: params.bangumi_use_season_structure,
             // UP主头像保存路径
             upper_path: params.upper_path.clone(),
-            // 内存数据库优化开关
-            enable_memory_optimization: params.enable_memory_optimization,
             task_id: task_id.clone(),
         };
 
@@ -4846,13 +4783,6 @@ pub async fn update_config_internal(
         }
     }
 
-    // 内存数据库优化开关
-    if let Some(enable_memory_optimization) = params.enable_memory_optimization {
-        if enable_memory_optimization != config.enable_memory_optimization {
-            config.enable_memory_optimization = enable_memory_optimization;
-            updated_fields.push("enable_memory_optimization");
-        }
-    }
 
     if updated_fields.is_empty() {
         return Ok(crate::api::response::UpdateConfigResponse {
@@ -4969,24 +4899,7 @@ pub async fn update_config_internal(
         }
     }
 
-    // 检查是否更新了内存优化配置
-    if updated_fields.contains(&"enable_memory_optimization") {
-        info!("检测到内存优化配置更新，准备重配置内存优化器");
-
-        // 检查并重配置内存优化器
-        match crate::utils::global_memory_optimizer::reconfigure_global_memory_optimizer(db.clone()).await {
-            Ok(changed) => {
-                if changed {
-                    info!("内存优化配置已根据配置变化进行了重配置");
-                } else {
-                    debug!("内存优化配置无需变更");
-                }
-            }
-            Err(e) => {
-                warn!("重配置内存优化器失败: {}, 继续使用当前模式", e);
-            }
-        }
-    }
+    // 内存优化已经通过mmap实现，不再需要动态配置
 
     Ok(crate::api::response::UpdateConfigResponse {
         success: true,

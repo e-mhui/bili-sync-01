@@ -101,12 +101,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    // 在启动HTTP服务器之前初始化全局内存优化器
-    // 这确保HTTP API能使用正确的优化连接
-    if let Err(e) = crate::utils::global_memory_optimizer::initialize_global_memory_optimizer(connection.clone()).await
-    {
-        warn!("初始化全局内存优化器失败: {}", e);
-    }
+    // SQLite配置已经在database::setup_database中设置了mmap，不再需要额外的初始化
 
     let token = CancellationToken::new();
     let tracker = TaskTracker::new();
@@ -175,10 +170,7 @@ async fn handle_shutdown(tracker: TaskTracker, token: CancellationToken) {
 
 /// 完成全局系统清理
 async fn finalize_global_systems() {
-    // 完成全局内存优化器，将内存中的变更写回主数据库
-    if let Err(e) = crate::utils::global_memory_optimizer::finalize_global_memory_optimizer().await {
-        warn!("完成全局内存优化器时出错: {}", e);
-    }
+    // SQLite会自动处理mmap的清理，不需要额外的finalize操作
 
     // 关闭文件日志系统
     file_logger::shutdown_file_logger();

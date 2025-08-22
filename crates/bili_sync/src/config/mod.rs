@@ -186,9 +186,6 @@ pub struct Config {
     // 推送通知配置
     #[serde(default)]
     pub notification: NotificationConfig,
-    // 内存数据库优化开关（适用于NAS等网络存储环境）
-    #[serde(default)]
-    pub enable_memory_optimization: bool,
     // 启动时数据修复功能开关（默认关闭以减少不必要的日志）
     #[serde(default)]
     pub enable_startup_data_fix: bool,
@@ -335,7 +332,6 @@ impl Clone for Config {
             collection_use_season_structure: self.collection_use_season_structure,
             bangumi_use_season_structure: self.bangumi_use_season_structure,
             notification: self.notification.clone(),
-            enable_memory_optimization: self.enable_memory_optimization,
             enable_startup_data_fix: self.enable_startup_data_fix,
             enable_cid_population: self.enable_cid_population,
         }
@@ -375,7 +371,6 @@ impl Default for Config {
             collection_use_season_structure: default_collection_use_season_structure(),
             bangumi_use_season_structure: default_bangumi_use_season_structure(),
             notification: NotificationConfig::default(),
-            enable_memory_optimization: false, // 默认关闭
             enable_startup_data_fix: false, // 默认关闭，减少不必要的日志
             enable_cid_population: false, // 默认关闭，减少不必要的日志
         }

@@ -29,16 +29,23 @@ async fn database_connection() -> Result<DatabaseConnection> {
     use sea_orm::ConnectionTrait;
     connection.execute_unprepared("PRAGMA journal_mode = WAL;").await?;
     connection.execute_unprepared("PRAGMA synchronous = NORMAL;").await?;
-    connection.execute_unprepared("PRAGMA cache_size = 10000;").await?; // 增加缓存大小
-    connection.execute_unprepared("PRAGMA temp_store = memory;").await?;
-    connection.execute_unprepared("PRAGMA mmap_size = 268435456;").await?; // 256MB
-    connection
-        .execute_unprepared("PRAGMA wal_autocheckpoint = 1000;")
-        .await?;
+    
+    // 增强内存映射配置以替代内存数据库
+    connection.execute_unprepared("PRAGMA cache_size = -65536;").await?; // 64MB缓存（负值表示KB）
+    connection.execute_unprepared("PRAGMA temp_store = MEMORY;").await?;
+    connection.execute_unprepared("PRAGMA mmap_size = 1073741824;").await?; // 1GB内存映射
+    connection.execute_unprepared("PRAGMA page_size = 4096;").await?; // 4KB页面大小
+    
+    // WAL和并发优化
+    connection.execute_unprepared("PRAGMA wal_autocheckpoint = 1000;").await?;
+    connection.execute_unprepared("PRAGMA wal_checkpoint(TRUNCATE);").await?; // 初始化时清理WAL
     connection.execute_unprepared("PRAGMA busy_timeout = 30000;").await?; // 30秒忙等超时
+    
+    // 查询优化
     connection.execute_unprepared("PRAGMA optimize;").await?; // 启用查询优化器
-
-    debug!("SQLite WAL 模式已启用，性能优化参数已应用");
+    connection.execute_unprepared("PRAGMA analysis_limit = 1000;").await?; // 分析限制
+    
+    debug!("SQLite WAL 模式已启用，内存映射优化参数已应用（1GB mmap，64MB缓存）");
 
     Ok(connection)
 }
@@ -60,6 +67,33 @@ async fn migrate_database() -> Result<()> {
     Ok(Migrator::up(&connection, None).await?)
 }
 
+/// 预热数据库，将关键数据加载到内存映射中
+async fn preheat_database(connection: &DatabaseConnection) -> Result<()> {
+    use sea_orm::ConnectionTrait;
+    use tracing::info;
+    
+    // 预热关键表，触发内存映射加载
+    let tables = vec!["video", "page", "collection", "favorite", "submission", "watch_later", "video_source"];
+    
+    for table in tables {
+        match connection.execute_unprepared(&format!("SELECT COUNT(*) FROM {}", table)).await {
+            Ok(result) => {
+                debug!("预热表 {} 完成，行数: {:?}", table, result.rows_affected());
+            }
+            Err(e) => {
+                debug!("预热表 {} 失败（可能不存在）: {}", table, e);
+            }
+        }
+    }
+    
+    // 触发索引加载
+    let _ = connection.execute_unprepared("SELECT * FROM video WHERE id > 0 LIMIT 1").await;
+    let _ = connection.execute_unprepared("SELECT * FROM page WHERE id > 0 LIMIT 1").await;
+    
+    info!("数据库预热完成，关键数据已加载到内存映射");
+    Ok(())
+}
+
 /// 进行数据库迁移并获取数据库连接，供外部使用
 pub async fn setup_database() -> DatabaseConnection {
     migrate_database().await.expect("数据库迁移失败");
@@ -68,6 +102,11 @@ pub async fn setup_database() -> DatabaseConnection {
     // 执行番剧缓存相关的数据库迁移
     if let Err(e) = crate::utils::bangumi_cache::ensure_cache_columns(&connection).await {
         tracing::warn!("番剧缓存数据库迁移失败: {}", e);
+    }
+    
+    // 预热数据库，加载热数据到内存映射
+    if let Err(e) = preheat_database(&connection).await {
+        tracing::warn!("数据库预热失败: {}", e);
     }
 
     connection

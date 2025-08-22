@@ -330,7 +330,6 @@ async fn update_bangumi_cache(
     active_model.update(connection).await?;
     
     // 触发异步同步到内存DB
-    crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video_source"]).await;
 
     info!(
         "番剧源 {} ({}) 缓存更新成功，共 {} 集",
@@ -508,16 +507,6 @@ pub async fn refresh_video_source<'a>(
             .update_latest_row_at(beijing_datetime_string)
             .save(connection)
             .await?;
-        
-        // 触发异步同步到内存DB
-        let table_name = match video_source {
-            VideoSourceEnum::Favorite(_) => "favorite",
-            VideoSourceEnum::Submission(_) => "submission",
-            VideoSourceEnum::Collection(_) => "collection",
-            VideoSourceEnum::BangumiSource(_) => "video_source",
-            VideoSourceEnum::WatchLater(_) => "watch_later",
-        };
-        crate::utils::global_memory_optimizer::queue_memory_sync(vec![table_name]).await;
     }
 
     // 番剧源：更新缓存
@@ -649,16 +638,7 @@ pub async fn fetch_video_details(
                 videos_without_season.len()
             );
             for video_model in videos_without_season {
-                // 检查是否在内存模式，如果是则使用内存数据库连接
-                let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-                let db_conn = if let Some(ref conn) = optimized_conn {
-                    debug!("使用内存数据库连接处理番剧视频");
-                    conn.as_ref()
-                } else {
-                    connection
-                };
-
-                let txn = db_conn.begin().await?;
+                let txn = connection.begin().await?;
 
                 let (actual_cid, duration) = if let Some(ep_id) = &video_model.ep_id {
                     match get_bangumi_info_from_api(bili_client, ep_id, token.clone()).await {
@@ -691,8 +671,6 @@ pub async fn fetch_video_details(
                 video_active_model.save(&txn).await?;
                 txn.commit().await?;
                 
-                // 触发异步同步到内存DB
-                crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video", "page"]).await;
             }
         }
     }
@@ -747,7 +725,6 @@ pub async fn fetch_video_details(
                                 video_active_model.save(connection).await?;
                                 
                                 // 触发异步同步到内存DB
-                                crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video"]).await;
                             }
                         }
                         Ok((tags, mut view_info)) => {
@@ -928,17 +905,7 @@ pub async fn fetch_video_details(
                                 debug!("视频 {} 没有staff信息", video_model.bvid);
                             }
 
-                            // 检查是否在内存模式，如果是则使用内存数据库连接
-                            let optimized_conn =
-                                crate::utils::global_memory_optimizer::get_optimized_connection().await;
-                            let db_conn = if let Some(ref conn) = optimized_conn {
-                                debug!("使用内存数据库连接处理普通视频");
-                                conn.as_ref()
-                            } else {
-                                connection
-                            };
-
-                            let txn = db_conn.begin().await?;
+                            let txn = connection.begin().await?;
                             // 将分页信息写入数据库
                             create_pages(pages, &video_model_mut, &txn).await?;
                             let mut video_active_model = view_info.into_detail_model(video_model_mut.clone());
@@ -965,8 +932,6 @@ pub async fn fetch_video_details(
                             video_active_model.save(&txn).await?;
                             txn.commit().await?;
                             
-                            // 触发异步同步到内存DB
-                            crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video", "page"]).await;
                         }
                     };
                     Ok::<_, anyhow::Error>(())
@@ -1332,7 +1297,6 @@ pub async fn download_video_pages(
                             warn!("更新合作视频信息失败: {}", e);
                         } else {
                             // 触发异步同步到内存DB
-                            crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video"]).await;
                             info!(
                                 "合作视频 {} 归类到订阅UP主「{}」(下载阶段处理)",
                                 updated_model.bvid, submission.upper_name
@@ -3976,16 +3940,7 @@ async fn process_bangumi_video(
     connection: &DatabaseConnection,
     video_source: &VideoSourceEnum,
 ) -> Result<()> {
-    // 检查是否在内存模式，如果是则使用内存数据库连接
-    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-    let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用内存数据库连接处理番剧视频");
-        conn.as_ref()
-    } else {
-        connection
-    };
-
-    let txn = db_conn.begin().await?;
+    let txn = connection.begin().await?;
 
     let (actual_cid, duration) = if let Some(ep_id) = &video_model.ep_id {
         match episodes_map.get(ep_id) {
@@ -4024,8 +3979,6 @@ async fn process_bangumi_video(
 
     txn.commit().await?;
     
-    // 触发异步同步到内存DB
-    crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video", "page"]).await;
     Ok(())
 }
 
@@ -4064,16 +4017,7 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
     let mut resetted_videos = 0;
     let mut resetted_pages = 0;
 
-    // 检查是否在内存模式，如果是则使用内存数据库连接
-    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-    let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用内存数据库连接重置风控失败任务");
-        conn.as_ref()
-    } else {
-        connection
-    };
-
-    let txn = db_conn.begin().await?;
+    let txn = connection.begin().await?;
 
     // 重置视频失败、进行中和未完成状态
     for (id, name, download_status) in all_videos {
@@ -4144,16 +4088,6 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
     txn.commit().await?;
 
     if resetted_videos > 0 || resetted_pages > 0 {
-        // 触发异步同步到内存DB
-        let mut tables = vec![];
-        if resetted_videos > 0 {
-            tables.push("video");
-        }
-        if resetted_pages > 0 {
-            tables.push("page");
-        }
-        crate::utils::global_memory_optimizer::queue_memory_sync(tables).await;
-        
         info!(
             "风控自动重置完成：重置了 {} 个视频和 {} 个页面的未完成任务状态",
             resetted_videos, resetted_pages
@@ -4773,7 +4707,6 @@ pub async fn populate_missing_video_cids(
                             video_active_model.save(&connection).await?;
                             
                             // 触发异步同步到内存DB
-                            crate::utils::global_memory_optimizer::queue_memory_sync(vec!["video"]).await;
                             
                             debug!("成功更新视频 {} 的cid: {}", bvid, cid);
                         }

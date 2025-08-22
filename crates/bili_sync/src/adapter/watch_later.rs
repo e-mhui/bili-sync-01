@@ -94,19 +94,11 @@ pub(super) async fn watch_later_from<'a>(
     VideoSourceEnum,
     Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
 )> {
-    // 检查是否在内存模式，如果是则使用内存数据库连接
-    let optimized_conn = crate::utils::global_memory_optimizer::get_optimized_connection().await;
-    let db_conn = if let Some(ref conn) = optimized_conn {
-        debug!("使用内存数据库连接初始化稍后观看源");
-        conn.as_ref()
-    } else {
-        connection
-    };
 
     let watch_later = WatchLater::new(bili_client);
 
     // 检查是否已存在，如果存在直接返回
-    if let Some(existing) = watch_later::Entity::find().one(db_conn).await? {
+    if let Some(existing) = watch_later::Entity::find().one(connection).await? {
         return Ok((existing.into(), Box::pin(watch_later.into_video_stream())));
     }
 
@@ -119,12 +111,12 @@ pub(super) async fn watch_later_from<'a>(
         scan_deleted_videos: Set(false),
         ..Default::default()
     })
-    .exec(db_conn)
+    .exec(connection)
     .await?;
 
     Ok((
         watch_later::Entity::find_by_id(result.last_insert_id)
-            .one(db_conn)
+            .one(connection)
             .await?
             .context("watch_later not found")?
             .into(),

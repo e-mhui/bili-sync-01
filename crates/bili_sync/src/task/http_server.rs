@@ -120,40 +120,19 @@ async fn test_db_connection(db: &DatabaseConnection) -> bool {
 }
 
 pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Result<()> {
-    // 获取优化的数据库连接（内存模式或常规模式）
-    let optimized_connection =
-        if let Some(optimized_conn) = crate::utils::global_memory_optimizer::get_optimized_connection().await {
-            debug!("发现全局内存优化器连接，进行连接有效性测试");
-
-            // 验证内存优化器连接是否有效
-            if test_db_connection(&optimized_conn).await {
-                debug!("内存优化器数据库连接验证成功，使用内存优化连接");
-                optimized_conn
-            } else {
-                warn!("内存优化器连接验证失败，这可能导致API错误");
-                warn!("回退使用主数据库连接");
-
-                // 也测试主数据库连接
-                if test_db_connection(&_database_connection).await {
-                    debug!("主数据库连接验证成功");
-                    _database_connection
-                } else {
-                    error!("主数据库连接也无效，HTTP服务器可能无法正常工作");
-                    _database_connection
-                }
-            }
+    // 使用主数据库连接
+    let optimized_connection = {
+        debug!("使用主数据库连接");
+        
+        // 验证主数据库连接
+        if test_db_connection(&_database_connection).await {
+            debug!("主数据库连接验证成功");
         } else {
-            debug!("未发现全局内存优化器连接，使用主数据库连接");
-
-            // 验证主数据库连接
-            if test_db_connection(&_database_connection).await {
-                debug!("主数据库连接验证成功");
-            } else {
-                warn!("主数据库连接验证失败，HTTP服务器可能无法正常工作");
-            }
-
-            _database_connection
-        };
+            warn!("主数据库连接验证失败，HTTP服务器可能无法正常工作");
+        }
+        
+        _database_connection
+    };
     let app = Router::new()
         .route("/api/video-sources", get(get_video_sources))
         .route("/api/video-sources", post(add_video_source))
@@ -275,38 +254,8 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
             if !test_db_connection(&health_check_connection).await {
                 error!("数据库连接健康检查失败！HTTP API可能无法正常工作");
 
-                // 检查是否是内存数据库表丢失的问题
-                if crate::utils::global_memory_optimizer::is_memory_optimization_enabled().await {
-                    warn!("检测到内存优化模式下的连接问题，尝试重建内存数据库");
-
-                    // 尝试通过重新配置全局内存优化器来恢复
-                    let main_db = crate::database::setup_database().await;
-                    let main_db_arc = std::sync::Arc::new(main_db);
-                    match crate::utils::global_memory_optimizer::reconfigure_global_memory_optimizer(main_db_arc).await
-                    {
-                        Ok(reconfigured) => {
-                            if reconfigured {
-                                debug!("内存数据库已重新配置，尝试获取新连接");
-                                if let Some(new_conn) =
-                                    crate::utils::global_memory_optimizer::get_optimized_connection().await
-                                {
-                                    if test_db_connection(&new_conn).await {
-                                        debug!("内存数据库重建成功，连接恢复正常");
-                                    } else {
-                                        error!("内存数据库重建后连接仍然无效");
-                                    }
-                                }
-                            } else {
-                                warn!("内存优化器未发生重新配置");
-                            }
-                        }
-                        Err(e) => {
-                            error!("重新配置全局内存优化器失败: {}", e);
-                        }
-                    }
-                } else {
-                    error!("非内存优化模式下的连接问题，建议检查主数据库状态或重启服务");
-                }
+                // mmap模式下不会有表丢失问题，直接报告错误
+                error!("数据库连接问题，建议检查数据库状态或重启服务");
             } else {
                 debug!("数据库连接健康检查通过");
             }
