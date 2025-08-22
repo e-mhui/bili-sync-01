@@ -166,7 +166,6 @@
 	let cdnSorting = false;
 	let scanDeletedVideos = false;
 	let upperPath = ''; // UP主头像保存路径
-	let enableMemoryOptimization = false; // 内存数据库优化开关
 
 	// B站凭证设置
 	let sessdata = '';
@@ -463,7 +462,6 @@
 			cdnSorting = config.cdn_sorting || false;
 			scanDeletedVideos = config.scan_deleted_videos || false;
 			upperPath = config.upper_path || '';
-			enableMemoryOptimization = config.enable_memory_optimization || false;
 
 			// B站凭证设置
 			sessdata = config.credential?.sessdata || '';
@@ -646,7 +644,6 @@
 				cdn_sorting: cdnSorting,
 				scan_deleted_videos: scanDeletedVideos,
 				upper_path: upperPath,
-				enable_memory_optimization: enableMemoryOptimization,
 				// UP主投稿风控配置
 				large_submission_threshold: largeSubmissionThreshold,
 				base_request_delay: baseRequestDelay,
@@ -3036,16 +3033,6 @@
 								<p class="text-muted-foreground text-sm">UP主头像和person.nfo文件的保存目录路径</p>
 							</div>
 
-							<div class="flex items-center space-x-2">
-								<input
-									type="checkbox"
-									id="enable-memory-optimization"
-									bind:checked={enableMemoryOptimization}
-									class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
-								/>
-								<Label for="enable-memory-optimization" class="text-sm">启用内存数据库优化</Label>
-								<p class="text-muted-foreground ml-2 text-sm">适用于NAS等网络存储环境，可显著提升扫描性能，但会占用更多内存，突然断电可能会丢失5分钟内的数据</p>
-							</div>
 
 							<div
 								class="rounded-lg border border-orange-200 bg-orange-50 p-3 dark:border-orange-800 dark:bg-orange-950/20"
@@ -3053,7 +3040,7 @@
 								<h5 class="mb-2 font-medium text-orange-800 dark:text-orange-200">其他设置说明</h5>
 								<div class="space-y-1 text-sm text-orange-700 dark:text-orange-300">
 									<p><strong>扫描间隔：</strong>每次扫描下载的时间间隔（秒）</p>
-									<p><strong>内存数据库优化：</strong>启用后，将使用内存数据库优化扫描性能，适用于NAS等网络存储环境，可显著提升扫描性能，但会占用更多内存，突然断电可能会丢失5分钟内的数据</p>
+									<p><strong>内存映射优化：</strong>已自动启用，使用SQLite内存映射技术优化数据库性能，无需手动配置</p>
 									<p><strong>CDN排序：</strong>启用后优先使用质量更高的CDN，可能提升下载速度</p>
 									<p>
 										<strong>显示已删除视频：</strong
