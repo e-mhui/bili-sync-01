@@ -892,6 +892,28 @@ impl BiliClient {
         page: i32,
         page_size: i32,
     ) -> Result<(Vec<crate::api::response::SubmissionVideoInfo>, i64), anyhow::Error> {
+        self.get_user_submission_videos_with_keyword(up_id, page, page_size, None).await
+    }
+
+    /// 搜索UP主投稿视频 - 支持关键词搜索
+    pub async fn search_user_submission_videos(
+        &self,
+        up_id: i64,
+        keyword: &str,
+        page: i32,
+        page_size: i32,
+    ) -> Result<(Vec<crate::api::response::SubmissionVideoInfo>, i64), anyhow::Error> {
+        self.get_user_submission_videos_with_keyword(up_id, page, page_size, Some(keyword)).await
+    }
+
+    /// 获取UP主投稿视频列表的内部实现 - 支持可选关键词搜索
+    async fn get_user_submission_videos_with_keyword(
+        &self,
+        up_id: i64,
+        page: i32,
+        page_size: i32,
+        keyword: Option<&str>,
+    ) -> Result<(Vec<crate::api::response::SubmissionVideoInfo>, i64), anyhow::Error> {
         use crate::bilibili::Validate;
 
         let url = "https://api.bilibili.com/x/space/wbi/arc/search";
@@ -904,6 +926,11 @@ impl BiliClient {
         params.insert("ps".to_string(), page_size.to_string());
         params.insert("order".to_string(), "pubdate".to_string()); // 按发布时间排序
         params.insert("order_avoided".to_string(), "true".to_string());
+        
+        // 如果提供了关键词，添加到搜索参数中
+        if let Some(keyword) = keyword {
+            params.insert("keyword".to_string(), keyword.to_string());
+        }
 
         // 对参数进行wbi签名
         let signed_params = wbi_img.sign_params(params).await?;

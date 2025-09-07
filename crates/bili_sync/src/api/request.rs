@@ -22,6 +22,7 @@ pub struct VideosRequest {
 pub struct SubmissionVideosRequest {
     pub page: Option<i32>,
     pub page_size: Option<i32>,
+    pub keyword: Option<String>, // 搜索关键词
 }
 
 // 添加新视频源的请求结构体

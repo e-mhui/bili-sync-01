@@ -121,7 +121,20 @@
 	let submissionSearchQuery = '';
 	let filteredSubmissionVideos: SubmissionVideoInfo[] = [];
 
+	// 分页加载相关状态
+	let currentLoadedPage = 0;        // 当前加载到的页码
+	let isLoadingMore = false;        // 正在加载更多
+	let hasMoreVideos = true;         // 是否还有更多视频
+	let loadingProgress = '';         // 加载进度提示
+	let showLoadMoreButton = false;   // 是否显示加载更多按钮
+
 	const SUBMISSION_PAGE_SIZE = 20;
+	const INITIAL_LOAD_SIZE = 100;    // 初始加载100个视频
+	const LOAD_MORE_SIZE = 200;       // 每次加载更多200个视频
+	const PAGE_DELAY = 500;           // 页面间延迟500ms
+
+	// 滚动容器引用
+	let submissionScrollContainer: HTMLElement;
 
 	onMount(() => {
 		setBreadcrumb([
@@ -949,70 +962,162 @@
 		filteredSubmissionVideos = [];
 	}
 
-	// 搜索过滤投稿
+	// 搜索相关状态
+	let searchTimeout: NodeJS.Timeout;
+	let isSearching = false;
+	
+	// 搜索过滤投稿 - 使用后端API搜索
 	$: {
 		if (submissionSearchQuery.trim()) {
-			filteredSubmissionVideos = submissionVideos.filter((video) =>
-				video.title.toLowerCase().includes(submissionSearchQuery.toLowerCase().trim())
-			);
+			// 清除之前的搜索定时器
+			if (searchTimeout) {
+				clearTimeout(searchTimeout);
+			}
+			
+			// 设置新的搜索定时器（防抖）
+			searchTimeout = setTimeout(() => {
+				performSearch();
+			}, 500); // 500ms防抖
 		} else {
 			filteredSubmissionVideos = submissionVideos;
 		}
 	}
+	
+	// 执行搜索
+	async function performSearch() {
+		if (!sourceId || !submissionSearchQuery.trim()) {
+			filteredSubmissionVideos = submissionVideos;
+			return;
+		}
+		
+		isSearching = true;
+		
+		try {
+			const response = await api.getSubmissionVideos({
+				up_id: sourceId,
+				page: 1,
+				page_size: 30, // 获取更多结果
+				keyword: submissionSearchQuery.trim()
+			});
+			
+			if (response.data && response.data.videos) {
+				filteredSubmissionVideos = response.data.videos;
+			} else {
+				filteredSubmissionVideos = [];
+			}
+		} catch (error) {
+			console.error('搜索视频失败:', error);
+			toast.error('搜索失败', {
+				description: '请稍后重试'
+			});
+			// 搜索失败时回退到本地过滤
+			filteredSubmissionVideos = submissionVideos.filter((video) =>
+				video.title.toLowerCase().includes(submissionSearchQuery.toLowerCase().trim())
+			);
+		} finally {
+			isSearching = false;
+		}
+	}
 
-	// 加载UP主投稿列表（一次性获取全部）
+	// 加载UP主投稿列表（分页加载，初始100个）
 	async function loadSubmissionVideos() {
 		if (!sourceId) return;
 
 		submissionLoading = true;
 		submissionError = null;
 		submissionVideos = [];
+		currentLoadedPage = 0;
+		hasMoreVideos = true;
+		showLoadMoreButton = false;
 
 		try {
-			// 先获取第一页以知道总数
-			const firstResponse = await api.getSubmissionVideos({
-				up_id: sourceId,
-				page: 1,
-				page_size: SUBMISSION_PAGE_SIZE
-			});
-
-			if (!firstResponse.data || !firstResponse.data.videos) {
-				submissionError = '获取投稿列表失败';
-				return;
-			}
-
-			submissionTotalCount = firstResponse.data.total;
-			let allVideos = [...firstResponse.data.videos];
-
-			// 如果总数超过一页，获取剩余所有页面
-			if (submissionTotalCount > SUBMISSION_PAGE_SIZE) {
-				const totalPages = Math.ceil(submissionTotalCount / SUBMISSION_PAGE_SIZE);
-				const remainingPages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
-
-				// 并行获取剩余页面
-				const remainingResponses = await Promise.allSettled(
-					remainingPages.map((page) =>
-						api.getSubmissionVideos({
-							up_id: sourceId,
-							page: page,
-							page_size: SUBMISSION_PAGE_SIZE
-						})
-					)
-				);
-
-				// 合并所有成功的响应
-				remainingResponses.forEach((result) => {
-					if (result.status === 'fulfilled' && result.value.data?.videos) {
-						allVideos.push(...result.value.data.videos);
-					}
-				});
-			}
-
-			submissionVideos = allVideos;
+			await loadVideosInBatch(INITIAL_LOAD_SIZE);
 		} catch (err) {
 			submissionError = err instanceof Error ? err.message : '网络请求失败';
 		} finally {
 			submissionLoading = false;
+		}
+	}
+
+	// 批量加载视频（串行请求，带延迟）
+	async function loadVideosInBatch(loadCount: number) {
+		const startPage = currentLoadedPage + 1;
+		const targetVideos = Math.min(submissionVideos.length + loadCount, submissionTotalCount || Infinity);
+		const neededPages = Math.ceil(targetVideos / SUBMISSION_PAGE_SIZE);
+		
+		for (let page = startPage; page <= neededPages; page++) {
+			// 更新进度
+			loadingProgress = `正在加载第 ${page} 页...`;
+			
+			// 延迟（除了第一页）
+			if (page > startPage) {
+				await new Promise(resolve => setTimeout(resolve, PAGE_DELAY));
+			}
+
+			const response = await api.getSubmissionVideos({
+				up_id: sourceId,
+				page: page,
+				page_size: SUBMISSION_PAGE_SIZE
+			});
+
+			if (!response.data) {
+				throw new Error('获取投稿列表失败');
+			}
+
+			// 第一次请求时获取总数
+			if (page === 1 && submissionTotalCount === 0) {
+				submissionTotalCount = response.data.total;
+			}
+
+			// 添加新视频（去重）
+			const newVideos = response.data.videos || [];
+			const existingBvids = new Set(submissionVideos.map(v => v.bvid));
+			const uniqueNewVideos = newVideos.filter(video => !existingBvids.has(video.bvid));
+			
+			submissionVideos = [...submissionVideos, ...uniqueNewVideos];
+			currentLoadedPage = page;
+
+			// 检查是否达到目标数量或已加载全部
+			if (submissionVideos.length >= targetVideos || submissionVideos.length >= submissionTotalCount) {
+				break;
+			}
+		}
+
+		// 更新状态
+		hasMoreVideos = submissionVideos.length < submissionTotalCount;
+		// 不自动显示按钮，等待用户滚动到底部时才显示
+		loadingProgress = '';
+	}
+
+	// 加载更多投稿视频
+	async function loadMoreSubmissionVideos() {
+		if (!hasMoreVideos || isLoadingMore) return;
+		
+		isLoadingMore = true;
+		showLoadMoreButton = false; // 隐藏按钮
+		try {
+			await loadVideosInBatch(LOAD_MORE_SIZE);
+		} catch (err) {
+			console.error('加载更多视频失败:', err);
+			toast.error('加载更多视频失败', {
+				description: err instanceof Error ? err.message : '网络请求失败'
+			});
+		} finally {
+			isLoadingMore = false;
+		}
+	}
+
+	// 处理滚动事件，检测是否需要显示加载更多按钮
+	function handleSubmissionScroll(event: Event) {
+		const container = event.target as HTMLElement;
+		if (!container || !hasMoreVideos) return;
+
+		const { scrollTop, scrollHeight, clientHeight } = container;
+		const threshold = 100; // 距离底部100px时显示按钮
+		
+		// 当滚动接近底部时显示加载更多按钮
+		if (scrollHeight - scrollTop - clientHeight < threshold) {
+			showLoadMoreButton = true;
 		}
 	}
 
@@ -2272,13 +2377,45 @@
 									<!-- 搜索和操作栏 -->
 									<div class="flex-shrink-0 space-y-3 p-3">
 										<div class="flex gap-2">
-											<input
-												type="text"
-												bind:value={submissionSearchQuery}
-												placeholder="搜索视频标题..."
-												class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-											/>
+											<div class="flex-1 relative">
+												<input
+													type="text"
+													bind:value={submissionSearchQuery}
+													placeholder="搜索视频标题（支持关键词搜索UP主所有视频）..."
+													class="w-full rounded-md border border-gray-300 px-3 py-2 pr-8 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+													disabled={isSearching}
+												/>
+												{#if isSearching}
+													<div class="absolute inset-y-0 right-0 flex items-center pr-3">
+														<svg
+															class="h-4 w-4 animate-spin text-blue-600"
+															fill="none"
+															viewBox="0 0 24 24"
+														>
+															<circle
+																class="opacity-25"
+																cx="12"
+																cy="12"
+																r="10"
+																stroke="currentColor"
+																stroke-width="4"
+															></circle>
+															<path
+																class="opacity-75"
+																fill="currentColor"
+																d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+															></path>
+														</svg>
+													</div>
+												{/if}
+											</div>
 										</div>
+										
+										{#if submissionSearchQuery.trim()}
+											<div class="text-xs text-blue-600 px-1">
+												{isSearching ? '搜索中...' : `搜索模式：在UP主所有视频中搜索 "${submissionSearchQuery}"`}
+											</div>
+										{/if}
 
 										<div class="flex items-center justify-between">
 											<div class="flex gap-2">
@@ -2315,7 +2452,11 @@
 									</div>
 
 									<!-- 视频列表 -->
-									<div class="min-h-0 flex-1 overflow-y-auto p-3 pt-0">
+									<div 
+										class="min-h-0 flex-1 overflow-y-auto p-3 pt-0"
+										bind:this={submissionScrollContainer}
+										onscroll={handleSubmissionScroll}
+									>
 										{#if submissionLoading && submissionVideos.length === 0}
 											<div class="flex items-center justify-center py-8">
 												<svg
@@ -2416,10 +2557,30 @@
 												{/each}
 											</div>
 
-											{#if submissionVideos.length > 0 && submissionTotalCount > 0}
-												<div class="text-muted-foreground py-4 text-center text-sm">
-													已加载全部 {submissionTotalCount} 个视频
-												</div>
+											{#if submissionVideos.length > 0}
+												{#if showLoadMoreButton && hasMoreVideos}
+													<div class="py-4 text-center">
+														<button
+															type="button"
+															class="rounded-md border border-transparent bg-blue-600 px-6 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+															onclick={loadMoreSubmissionVideos}
+															disabled={isLoadingMore}
+														>
+															{#if isLoadingMore}
+																<div class="flex items-center gap-2">
+																	<div class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+																	<span>加载中...</span>
+																</div>
+															{:else}
+																加载更多 ({submissionVideos.length}/{submissionTotalCount})
+															{/if}
+														</button>
+													</div>
+												{:else if submissionTotalCount > 0}
+													<div class="text-muted-foreground py-4 text-center text-sm">
+														已加载全部 {submissionTotalCount} 个视频
+													</div>
+												{/if}
 											{/if}
 										{/if}
 									</div>

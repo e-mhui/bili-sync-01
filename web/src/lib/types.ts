@@ -679,6 +679,7 @@ export interface SubmissionVideosRequest {
 	up_id: string;
 	page?: number;
 	page_size?: number;
+	keyword?: string; // 搜索关键词
 }
 
 // 获取UP主投稿列表响应类型

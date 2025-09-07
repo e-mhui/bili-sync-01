@@ -527,10 +527,17 @@ class ApiClient {
 	async getSubmissionVideos(
 		params: SubmissionVideosRequest
 	): Promise<ApiResponse<SubmissionVideosResponse>> {
-		return this.get<SubmissionVideosResponse>(`/submission/${params.up_id}/videos`, {
+		const queryParams: Record<string, any> = {
 			page: params.page,
 			page_size: params.page_size
-		});
+		};
+		
+		// 如果有关键词，添加到查询参数
+		if (params.keyword) {
+			queryParams.keyword = params.keyword;
+		}
+		
+		return this.get<SubmissionVideosResponse>(`/submission/${params.up_id}/videos`, queryParams);
 	}
 
 	/**
