@@ -6252,7 +6252,7 @@ pub async fn get_submission_videos(
     // 获取UP主投稿列表（支持搜索关键词）
     let result = if let Some(keyword) = params.keyword.as_deref() {
         // 如果提供了关键词，使用搜索功能
-        tracing::info!("搜索UP主 {} 的视频，关键词: '{}'", up_id, keyword);
+        tracing::debug!("搜索UP主 {} 的视频，关键词: '{}'", up_id, keyword);
         bili_client.search_user_submission_videos(up_id_i64, keyword, page, page_size).await
     } else {
         // 否则使用普通的获取功能
