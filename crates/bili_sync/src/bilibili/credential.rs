@@ -26,6 +26,8 @@ pub struct Credential {
     pub buvid3: String,
     pub dedeuserid: String,
     pub ac_time_value: String,
+    pub buvid4: String,
+    pub dedeuserid_ckmd5: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -161,6 +163,8 @@ JNrRuoEUXpabUzGB8QIDAQAB
         let set_cookies = headers.get_all(header::SET_COOKIE);
         let mut credential = Self {
             buvid3: self.buvid3.clone(),
+            buvid4: self.buvid4.clone(),
+            dedeuserid_ckmd5: self.dedeuserid_ckmd5.clone(),
             ..Self::default()
         };
         let required_cookies = HashSet::from(["SESSDATA", "bili_jct", "DedeUserID"]);

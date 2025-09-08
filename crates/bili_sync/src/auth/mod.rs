@@ -218,9 +218,11 @@ impl QRLoginService {
                 let credential = Credential {
                     sessdata: cookies.get("SESSDATA").unwrap().clone(),
                     bili_jct: cookies.get("bili_jct").unwrap().clone(),
-                    buvid3,
+                    buvid3: buvid3.clone(),
                     dedeuserid: cookies.get("DedeUserID").unwrap().clone(),
                     ac_time_value: data["data"]["refresh_token"].as_str().unwrap_or("").to_string(),
+                    buvid4: buvid3, // 暂时使用buvid3作为buvid4
+                    dedeuserid_ckmd5: cookies.get("DedeUserID__ckMd5").cloned(),
                 };
 
                 let login_result = LoginResult { credential, user_info };

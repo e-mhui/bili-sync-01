@@ -7187,6 +7187,8 @@ pub async fn update_credential(
         buvid3: params.buvid3.trim().to_string(),
         dedeuserid: params.dedeuserid.trim().to_string(),
         ac_time_value: params.ac_time_value.unwrap_or_default().trim().to_string(),
+        buvid4: params.buvid3.trim().to_string(), // 暂时使用buvid3作为buvid4
+        dedeuserid_ckmd5: None,
     };
 
     // 更新配置中的凭证
@@ -7449,6 +7451,8 @@ pub async fn clear_credential() -> Result<ApiResponse<UpdateCredentialResponse>,
         buvid3: String::new(),
         dedeuserid: String::new(),
         ac_time_value: String::new(),
+        buvid4: String::new(),
+        dedeuserid_ckmd5: None,
     };
 
     // 获取配置管理器并保存空凭证

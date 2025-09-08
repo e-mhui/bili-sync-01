@@ -105,12 +105,21 @@ impl Client {
         let mut req = self.0.request(method, url);
         // 如果有 credential，会将其转换成 cookie 添加到请求的 header 中
         if let Some(credential) = credential {
-            req = req
-                .header(header::COOKIE, format!("SESSDATA={}", credential.sessdata))
-                .header(header::COOKIE, format!("bili_jct={}", credential.bili_jct))
-                .header(header::COOKIE, format!("buvid3={}", credential.buvid3))
-                .header(header::COOKIE, format!("DedeUserID={}", credential.dedeuserid))
-                .header(header::COOKIE, format!("ac_time_value={}", credential.ac_time_value));
+            let mut cookie_parts = vec![
+                format!("SESSDATA={}", credential.sessdata),
+                format!("bili_jct={}", credential.bili_jct),
+                format!("buvid3={}", credential.buvid3),
+                format!("buvid4={}", credential.buvid4),
+                format!("DedeUserID={}", credential.dedeuserid),
+                format!("ac_time_value={}", credential.ac_time_value),
+            ];
+            
+            if let Some(ckmd5) = &credential.dedeuserid_ckmd5 {
+                cookie_parts.push(format!("DedeUserID__ckMd5={}", ckmd5));
+            }
+            
+            let cookie_str = cookie_parts.join("; ");
+            req = req.header(header::COOKIE, cookie_str);
         }
         req
     }
