@@ -119,6 +119,12 @@ impl Client {
             }
             
             let cookie_str = cookie_parts.join("; ");
+            
+            // 调试日志：记录Cookie发送信息
+            tracing::debug!("发送Cookie字段数量: {}", cookie_parts.len());
+            tracing::debug!("是否包含DedeUserID__ckMd5: {}", credential.dedeuserid_ckmd5.is_some());
+            tracing::debug!("Cookie完整内容: {}", cookie_str);
+            
             req = req.header(header::COOKIE, cookie_str);
         }
         req
