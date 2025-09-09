@@ -291,6 +291,8 @@ pub struct ConfigResponse {
     pub credential: Option<CredentialInfo>,
     // 推送通知配置
     pub notification: NotificationConfigResponse,
+    // 风控验证配置
+    pub risk_control: RiskControlConfigResponse,
 }
 
 // B站凭证信息结构体
@@ -685,6 +687,12 @@ pub struct NotificationStatusResponse {
     pub configured: bool,
     pub enabled: bool,
     pub last_notification_time: Option<String>,
-    pub total_notifications_sent: u64,
-    pub last_error: Option<String>,
+}
+
+// 风控验证配置响应
+#[derive(Serialize, ToSchema)]
+pub struct RiskControlConfigResponse {
+    pub enabled: bool,
+    pub mode: String,
+    pub timeout: u64,
 }

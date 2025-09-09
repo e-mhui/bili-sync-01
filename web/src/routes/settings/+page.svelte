@@ -92,6 +92,12 @@
 			icon: ShieldIcon
 		},
 		{
+			id: 'captcha',
+			title: '验证码风控',
+			description: 'v_voucher验证码风控配置',
+			icon: ShieldIcon
+		},
+		{
 			id: 'aria2',
 			title: 'Aria2监控',
 			description: '下载器健康检查和自动重启配置',
@@ -180,6 +186,12 @@
 	let largeSubmissionThreshold = 100;
 	let baseRequestDelay = 200;
 	let largeSubmissionDelayMultiplier = 2;
+	
+	// 风控验证配置
+	let riskControlEnabled = false;
+	let riskControlMode = 'manual';
+	let riskControlTimeout = 300;
+	let isSaving = false;
 	let enableProgressiveDelay = true;
 	let maxDelayMultiplier = 4;
 	let enableIncrementalFetch = true;
@@ -487,6 +499,12 @@
 			sourceDelaySeconds = config.source_delay_seconds ?? 2;
 			submissionSourceDelaySeconds = config.submission_source_delay_seconds ?? 5;
 
+			// 风控验证配置
+			riskControlEnabled = config.risk_control?.enabled ?? false;
+			riskControlMode = config.risk_control?.mode || 'manual';
+			riskControlWebPort = config.risk_control?.web_port || 8899;
+			riskControlTimeout = config.risk_control?.timeout || 300;
+
 			// aria2监控配置
 			enableAria2HealthCheck = config.enable_aria2_health_check ?? false;
 			enableAria2AutoRestart = config.enable_aria2_auto_restart ?? false;
@@ -669,7 +687,12 @@
 				// 合集目录结构配置
 				collection_use_season_structure: collectionUseSeasonStructure,
 				// 番剧目录结构配置
-				bangumi_use_season_structure: bangumiUseSeasonStructure
+				bangumi_use_season_structure: bangumiUseSeasonStructure,
+				// 风控验证配置
+				risk_control_enabled: riskControlEnabled,
+				risk_control_mode: riskControlMode,
+				risk_control_web_port: riskControlWebPort,
+				risk_control_timeout: riskControlTimeout
 			};
 
 			const response = await api.updateConfig(params);
@@ -802,6 +825,32 @@
 			toast.error('保存失败', { description: error instanceof Error ? error.message : '未知错误' });
 		} finally {
 			notificationSaving = false;
+		}
+	}
+
+	async function saveRiskControlConfig() {
+		isSaving = true;
+		try {
+			const config: UpdateConfigRequest = {
+				risk_control_enabled: riskControlEnabled,
+				risk_control_mode: riskControlMode,
+				risk_control_timeout: riskControlTimeout
+			};
+
+			const response = await api.updateConfig(config);
+			if (response.status_code === 200) {
+				toast.success('验证码风控配置保存成功');
+				// 重新加载配置以确保同步
+				await loadConfig();
+				openSheet = null; // 关闭抽屉
+			} else {
+				toast.error('保存失败', { description: response.data || '未知错误' });
+			}
+		} catch (error: unknown) {
+			console.error('保存验证码风控配置失败:', error);
+			toast.error('保存失败', { description: error instanceof Error ? error.message : '未知错误' });
+		} finally {
+			isSaving = false;
 		}
 	}
 
@@ -3276,6 +3325,149 @@
 						</Button>
 					</SheetFooter>
 				</form>
+			</div>
+		</div>
+	</SheetContent>
+</Sheet>
+
+<!-- 验证码风控设置抽屉 -->
+<Sheet
+	open={openSheet === 'captcha'}
+	onOpenChange={(open) => {
+		if (!open) openSheet = null;
+	}}
+>
+	<SheetContent
+		side={isMobile ? 'bottom' : 'right'}
+		class="{isMobile
+			? 'h-[90vh] max-h-[90vh] w-full max-w-none overflow-hidden'
+			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
+	>
+		{#if !isMobile && randomCovers.length > 0}
+			<!-- 电脑端背景图 -->
+			<div class="absolute inset-0 z-0 overflow-hidden">
+				<img
+					src={randomCovers[(currentBackgroundIndex + 8) % randomCovers.length]}
+					alt="背景"
+					class="h-full w-full object-cover"
+					style="opacity: 0.6; filter: contrast(1.1) brightness(0.9);"
+					loading="lazy"
+				/>
+				<div
+					class="absolute inset-0"
+					style="background: linear-gradient(to bottom right, {$isDark
+						? 'rgba(0,0,0,0.85), rgba(0,0,0,0.5)'
+						: 'rgba(255,255,255,0.85), rgba(255,255,255,0.5)'});"
+				></div>
+			</div>
+		{/if}
+		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
+			<div
+				class="{isMobile
+					? 'bg-background h-full w-full max-w-none'
+					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
+			>
+				<SheetHeader class="{isMobile ? 'border-b p-4' : 'border-b p-6'} relative">
+					<SheetTitle>验证码风控设置</SheetTitle>
+					<SheetDescription>v_voucher验证码风控配置，用于处理B站的风控验证</SheetDescription>
+					<!-- 自定义关闭按钮 -->
+					<button
+						onclick={() => (openSheet = null)}
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none dark:hover:bg-gray-800"
+						type="button"
+					>
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M6 18L18 6M6 6l12 12"
+							></path>
+						</svg>
+					</button>
+				</SheetHeader>
+				<div class="flex-1 overflow-y-auto {isMobile ? 'p-4' : 'p-6'}">
+					<div class="space-y-6">
+						<div class="space-y-4">
+							<div class="space-y-2">
+								<Label for="risk-control-enabled">启用风控验证</Label>
+								<input
+									id="risk-control-enabled"
+									type="checkbox"
+									bind:checked={riskControlEnabled}
+									class="h-4 w-4"
+								/>
+								<p class="text-muted-foreground text-xs">启用后，遇到v_voucher风控时将进行验证码验证</p>
+							</div>
+
+							<div class="space-y-2">
+								<Label for="risk-control-mode">验证模式</Label>
+								<select
+									id="risk-control-mode"
+									bind:value={riskControlMode}
+									class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+								>
+									<option value="manual">manual - 手动验证</option>
+									<option value="skip">skip - 跳过验证</option>
+								</select>
+								<p class="text-muted-foreground text-xs">manual: 弹出验证页面进行手动验证；skip: 直接跳过风控验证</p>
+							</div>
+
+							<div class="space-y-2">
+								<Label for="risk-control-timeout">验证超时时间（秒）</Label>
+								<Input
+									id="risk-control-timeout"
+									type="number"
+									bind:value={riskControlTimeout}
+									min="60"
+									max="3600"
+									placeholder="300"
+								/>
+								<p class="text-muted-foreground text-xs">用户完成验证码验证的最大等待时间，超时后将重新开始验证流程</p>
+							</div>
+
+							<div class="rounded-lg bg-blue-100 p-3 dark:bg-blue-900/20">
+								<p class="text-sm text-blue-700 dark:text-blue-300">
+									<strong>验证流程说明：</strong>
+								</p>
+								<div class="space-y-1 text-sm text-blue-700 dark:text-blue-300">
+									<p>1. 当遇到v_voucher风控时，程序会自动暂停下载</p>
+									<p>2. 在管理页面的 /captcha 路径提供验证界面</p>
+									<p>3. 完成验证后，程序会自动继续下载流程</p>
+									<p>4. 验证结果会缓存1小时，避免重复验证</p>
+								</div>
+							</div>
+
+							<div class="rounded-lg bg-orange-100 p-3 dark:bg-orange-900/20">
+								<p class="text-sm text-orange-700 dark:text-orange-300">
+									<strong>注意事项：</strong>
+								</p>
+								<div class="space-y-1 text-sm text-orange-700 dark:text-orange-300">
+									<p>• 验证码验证需要在浏览器中手动完成</p>
+									<p>• 建议将验证超时时间设置为3-5分钟</p>
+									<p>• 跳过验证可能导致部分视频无法下载</p>
+									<p>• 验证页面已集成到管理界面，无需额外端口</p>
+								</div>
+							</div>
+						</div>
+
+						<!-- 保存按钮 -->
+						<div class="flex justify-end space-x-2 pt-4 border-t">
+							<Button 
+								variant="outline" 
+								onclick={() => (openSheet = null)}
+							>
+								取消
+							</Button>
+							<Button 
+								onclick={() => saveRiskControlConfig()}
+								disabled={isSaving}
+							>
+								{isSaving ? '保存中...' : '保存设置'}
+							</Button>
+						</div>
+					</div>
+				</div>
 			</div>
 		</div>
 	</SheetContent>

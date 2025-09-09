@@ -288,9 +288,6 @@ pub struct RiskControlConfig {
     /// 验证模式: "manual" (Web界面人工验证), "skip" (跳过)
     #[serde(default = "default_risk_control_mode")]
     pub mode: String,
-    /// Web验证服务端口
-    #[serde(default = "default_risk_control_web_port")]
-    pub web_port: u16,
     /// 验证等待超时时间（秒）
     #[serde(default = "default_risk_control_timeout")]
     pub timeout: u64,
@@ -298,10 +295,6 @@ pub struct RiskControlConfig {
 
 fn default_risk_control_mode() -> String {
     "skip".to_string() // 默认跳过验证
-}
-
-fn default_risk_control_web_port() -> u16 {
-    8899 // 默认端口
 }
 
 fn default_risk_control_timeout() -> u64 {
@@ -313,7 +306,6 @@ impl Default for RiskControlConfig {
         Self {
             enabled: false,
             mode: default_risk_control_mode(),
-            web_port: default_risk_control_web_port(),
             timeout: default_risk_control_timeout(),
         }
     }
@@ -324,10 +316,6 @@ impl RiskControlConfig {
     pub fn validate(&self) -> Result<(), String> {
         if !matches!(self.mode.as_str(), "manual" | "skip") {
             return Err("风控验证模式必须是 'manual' 或 'skip'".to_string());
-        }
-
-        if self.web_port < 1024 || self.web_port > 65535 {
-            return Err("Web服务端口必须在1024-65535之间".to_string());
         }
 
         if self.timeout < 60 || self.timeout > 600 {

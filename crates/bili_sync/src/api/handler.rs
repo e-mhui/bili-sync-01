@@ -4147,6 +4147,12 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
             notification_timeout: config.notification.notification_timeout,
             notification_retry_count: config.notification.notification_retry_count,
         },
+        // 风控验证配置
+        risk_control: crate::api::response::RiskControlConfigResponse {
+            enabled: config.risk_control.enabled,
+            mode: config.risk_control.mode.clone(),
+            timeout: config.risk_control.timeout,
+        },
     }))
 }
 
@@ -4790,6 +4796,36 @@ pub async fn update_config_internal(
                 config.upper_path = new_path;
                 updated_fields.push("upper_path");
             }
+        }
+    }
+
+    // 风控验证配置
+    if let Some(enabled) = params.risk_control_enabled {
+        if enabled != config.risk_control.enabled {
+            config.risk_control.enabled = enabled;
+            updated_fields.push("risk_control.enabled");
+        }
+    }
+
+    if let Some(mode) = params.risk_control_mode {
+        if !mode.trim().is_empty() && mode != config.risk_control.mode {
+            // 验证模式的有效性
+            match mode.as_str() {
+                "manual" | "skip" => {
+                    config.risk_control.mode = mode;
+                    updated_fields.push("risk_control.mode");
+                }
+                _ => {
+                    return Err(anyhow!("无效的风控模式，只支持 'manual'（手动验证）或 'skip'（跳过验证）").into());
+                }
+            }
+        }
+    }
+
+    if let Some(timeout) = params.risk_control_timeout {
+        if timeout > 0 && timeout != config.risk_control.timeout {
+            config.risk_control.timeout = timeout;
+            updated_fields.push("risk_control.timeout");
         }
     }
 
@@ -9785,8 +9821,6 @@ pub async fn get_notification_status() -> Result<ApiResponse<crate::api::respons
         configured: config.serverchan_key.is_some(),
         enabled: config.enable_scan_notifications,
         last_notification_time: None, // TODO: 从存储中获取
-        total_notifications_sent: 0,  // TODO: 从存储中获取
-        last_error: None,             // TODO: 从存储中获取
     };
 
     Ok(ApiResponse::ok(status))

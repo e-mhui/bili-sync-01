@@ -265,6 +265,12 @@ export interface ConfigResponse {
 	};
 	// UP主头像保存路径
 	upper_path?: string;
+	// 风控验证配置
+	risk_control?: {
+		enabled: boolean;
+		mode: string;
+		timeout: number;
+	};
 }
 
 // 更新配置请求类型
@@ -339,6 +345,10 @@ export interface UpdateConfigRequest {
 	bangumi_use_season_structure?: boolean;
 	// UP主头像保存路径
 	upper_path?: string;
+	// 风控验证配置
+	risk_control_enabled?: boolean;
+	risk_control_mode?: string;
+	risk_control_timeout?: number;
 }
 
 // 更新配置响应类型

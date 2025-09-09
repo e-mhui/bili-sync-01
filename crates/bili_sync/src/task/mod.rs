@@ -1444,6 +1444,10 @@ impl ConfigTaskQueue {
                 bangumi_use_season_structure: task.bangumi_use_season_structure,
                 // UP主头像保存路径
                 upper_path: task.upper_path.clone(),
+                // 风控验证配置，任务队列中不使用
+                risk_control_enabled: None,
+                risk_control_mode: None,
+                risk_control_timeout: None,
             };
 
             match update_config_internal(db.clone(), request).await {

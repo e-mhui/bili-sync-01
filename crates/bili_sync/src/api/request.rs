@@ -176,6 +176,10 @@ pub struct UpdateConfigRequest {
     pub bangumi_use_season_structure: Option<bool>,
     // UP主头像保存路径
     pub upper_path: Option<String>,
+    // 风控验证配置
+    pub risk_control_enabled: Option<bool>,
+    pub risk_control_mode: Option<String>,
+    pub risk_control_timeout: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
