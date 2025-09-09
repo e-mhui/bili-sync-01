@@ -384,8 +384,8 @@ impl<'a> Video<'a> {
                 }
                 Err(e) => {
                     // 检查是否为风控验证错误
-                    if let Some(bili_err) = e.downcast_ref::<crate::bilibili::BiliError>() {
-                        if let crate::bilibili::BiliError::RiskControlVerificationRequired(v_voucher) = bili_err {
+                    if let Some(crate::bilibili::BiliError::RiskControlVerificationRequired(v_voucher)) = 
+                        e.downcast_ref::<crate::bilibili::BiliError>() {
                             tracing::warn!("检测到风控，开始验证流程: v_voucher={}", v_voucher);
                             
                             // 尝试进行验证流程
@@ -417,7 +417,6 @@ impl<'a> Video<'a> {
                                     return Err(verify_err);
                                 }
                             }
-                        }
                     }
                     
                     // 检查是否为充电专享视频错误（包括试看视频），如果是则不输出详细的质量级别失败日志
@@ -1253,7 +1252,7 @@ impl<'a> Video<'a> {
             }
             "manual" => {
                 // 创建风控处理器
-                let risk_control = RiskControl::new(&self.client, v_voucher.clone());
+                let risk_control = RiskControl::new(self.client, v_voucher.clone());
 
                 // 第一步：申请验证码
                 let captcha_info = risk_control.register().await?;

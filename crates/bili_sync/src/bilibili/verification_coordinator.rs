@@ -197,4 +197,4 @@ impl VerificationCoordinator {
 
 /// 全局验证协调器实例
 pub static VERIFICATION_COORDINATOR: Lazy<VerificationCoordinator> = 
-    Lazy::new(|| VerificationCoordinator::new());
+    Lazy::new(VerificationCoordinator::new);

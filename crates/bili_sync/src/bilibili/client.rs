@@ -1042,11 +1042,6 @@ impl BiliClient {
         self.gaia_vtoken.load().as_ref().map(|token| (**token).clone())
     }
 
-    /// 清除gaia_vtoken缓存
-    pub fn clear_gaia_vtoken(&self) {
-        self.gaia_vtoken.store(None);
-        tracing::info!("已清除gaia_vtoken缓存");
-    }
 
     /// 获取csrf token (bili_jct)
     pub fn get_csrf_token(&self) -> Option<String> {
