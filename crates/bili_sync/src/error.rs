@@ -301,6 +301,13 @@ impl ErrorClassifier {
                 ClassifiedError::new(ErrorType::RiskControl, "触发B站风控，请稍后重试".to_string())
                     .with_retry_policy(false, false) // 风控不重试，不忽略
             }
+            crate::bilibili::BiliError::RiskControlVerificationRequired(v_voucher) => {
+                ClassifiedError::new(
+                    ErrorType::RiskControl, 
+                    format!("需要风控验证 (v_voucher: {})", v_voucher)
+                )
+                .with_retry_policy(false, true) // 不重试，可忽略（跳过该视频）
+            }
             crate::bilibili::BiliError::NetworkTimeout => {
                 ClassifiedError::new(ErrorType::Timeout, "网络超时或DNS解析失败".to_string())
                     .with_retry_policy(true, false) // 网络超时可重试

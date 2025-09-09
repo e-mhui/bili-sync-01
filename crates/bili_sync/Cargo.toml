@@ -59,12 +59,14 @@ tokio-util = { workspace = true }
 tokio-tungstenite = { workspace = true }
 # toml = { workspace = true } # 已移除：配置已迁移到数据库
 # toml_edit = { workspace = true } # 已移除：配置已迁移到数据库
-# tower = { workspace = true } # 已移除：未使用
+tower = { workspace = true }
+tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 utoipa = { workspace = true }
 utoipa-swagger-ui = { workspace = true }
 uuid = { workspace = true }
+webbrowser = { workspace = true }
 
 [dev-dependencies]
 arc-swap.workspace = true

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>风控验证 - bili-sync</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+        }
+
+        .header {
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+
+        .captcha-container {
+            margin: 30px 0;
+            min-height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed #e0e0e0;
+            border-radius: 8px;
+            position: relative;
+        }
+
+        .loading {
+            color: #666;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .status.info {
+            background: #e3f2fd;
+            color: #1565c0;
+            border: 1px solid #bbdefb;
+        }
+
+        .status.success {
+            background: #e8f5e8;
+            color: #2e7d32;
+            border: 1px solid #c8e6c9;
+        }
+
+        .status.error {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ffcdd2;
+        }
+
+        .instructions {
+            margin-top: 20px;
+            text-align: left;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .instructions h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+            color: #666;
+        }
+
+        .instructions li {
+            margin: 8px 0;
+            line-height: 1.5;
+        }
+
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+            color: #999;
+            font-size: 14px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛡️ 风控验证</h1>
+            <p>检测到风控限制，需要完成验证以继续下载</p>
+        </div>
+
+        <div class="captcha-container" id="captcha-container">
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                正在加载验证码...
+            </div>
+        </div>
+
+        <div class="status info" id="status">
+            正在初始化验证组件，请稍候...
+        </div>
+
+        <div class="instructions">
+            <h3>📋 验证步骤</h3>
+            <ol>
+                <li>等待验证码加载完成</li>
+                <li>按照提示完成人机验证</li>
+                <li>验证成功后会自动提交结果</li>
+                <li>验证完成后此页面会自动关闭</li>
+                <li>程序将自动继续下载任务</li>
+            </ol>
+        </div>
+
+        <div class="footer">
+            bili-sync 风控验证系统
+        </div>
+    </div>
+
+    <!-- 极验证JS SDK -->
+    <script src="https://static.geetest.com/static/js/gt.0.4.9.js"></script>
+    
+    <script>
+        class CaptchaVerification {
+            constructor() {
+                this.captchaObj = null;
+                this.captchaInfo = null;
+                this.statusEl = document.getElementById('status');
+                this.loadingEl = document.getElementById('loading');
+                this.captchaContainer = document.getElementById('captcha-container');
+                
+                this.init();
+            }
+
+            async init() {
+                try {
+                    // 获取验证码信息
+                    this.updateStatus('正在获取验证码信息...', 'info');
+                    await this.fetchCaptchaInfo();
+                    
+                    // 初始化极验证
+                    this.updateStatus('正在初始化验证组件...', 'info');
+                    await this.initGeetest();
+                    
+                } catch (error) {
+                    console.error('初始化失败:', error);
+                    this.updateStatus(`初始化失败: ${error.message}`, 'error');
+                }
+            }
+
+            async fetchCaptchaInfo() {
+                const response = await fetch('/api/captcha-info');
+                if (!response.ok) {
+                    throw new Error('获取验证码信息失败');
+                }
+                
+                const result = await response.json();
+                if (!result.success) {
+                    throw new Error(result.message);
+                }
+                
+                this.captchaInfo = result.data;
+                console.log('验证码信息:', this.captchaInfo);
+            }
+
+            async initGeetest() {
+                if (!this.captchaInfo || !this.captchaInfo.geetest) {
+                    throw new Error('验证码信息无效');
+                }
+
+                const { gt, challenge } = this.captchaInfo.geetest;
+                
+                return new Promise((resolve, reject) => {
+                    // 初始化极验证 (v3版本)
+                    window.initGeetest({
+                        gt: gt,
+                        challenge: challenge,
+                        protocol: 'https://',
+                        timeout: 60000,
+                        offline: false,
+                        new_captcha: true
+                    }, (captchaObj) => {
+                        console.log('极验证初始化成功');
+                        this.captchaObj = captchaObj;
+                        
+                        // 绑定验证成功事件 (v3版本)
+                        captchaObj.onSuccess(() => {
+                            console.log('验证成功');
+                            this.handleVerifySuccess();
+                        });
+
+                        // 绑定错误事件
+                        captchaObj.onError((error) => {
+                            console.error('验证错误:', error);
+                            this.updateStatus(`验证失败: ${error}`, 'error');
+                        });
+
+                        // 隐藏loading，显示验证码
+                        this.loadingEl.classList.add('hidden');
+                        captchaObj.appendTo(document.getElementById('captcha-container'));
+                        
+                        this.updateStatus('请完成下方的人机验证', 'info');
+                        resolve();
+                    });
+                });
+            }
+
+            async handleVerifySuccess() {
+                try {
+                    this.updateStatus('验证成功，正在提交结果...', 'info');
+                    
+                    // 获取验证结果 (v3版本API)
+                    const result = this.captchaObj.getValidate();
+                    console.log('验证结果:', result);
+                    
+                    // v3版本的结果格式: {geetest_challenge, geetest_validate, geetest_seccode}
+                    const submitUrl = `/api/submit-result?geetest_challenge=${encodeURIComponent(result.geetest_challenge)}&geetest_validate=${encodeURIComponent(result.geetest_validate)}&geetest_seccode=${encodeURIComponent(result.geetest_seccode)}`;
+                    
+                    const response = await fetch(submitUrl, { method: 'POST' });
+                    const submitResult = await response.json();
+                    
+                    if (submitResult.success) {
+                        this.updateStatus('✅ 验证完成！页面将自动关闭...', 'success');
+                        
+                        // 3秒后关闭页面
+                        setTimeout(() => {
+                            window.close();
+                        }, 3000);
+                        
+                    } else {
+                        throw new Error(submitResult.message);
+                    }
+                    
+                } catch (error) {
+                    console.error('提交验证结果失败:', error);
+                    this.updateStatus(`提交失败: ${error.message}`, 'error');
+                }
+            }
+
+            updateStatus(message, type = 'info') {
+                this.statusEl.textContent = message;
+                this.statusEl.className = `status ${type}`;
+                console.log(`[${type.toUpperCase()}] ${message}`);
+            }
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            new CaptchaVerification();
+        });
+
+        // 页面关闭前的提示
+        window.addEventListener('beforeunload', (e) => {
+            if (document.querySelector('.status.success') === null) {
+                e.preventDefault();
+                e.returnValue = '验证尚未完成，确定要关闭页面吗？';
+            }
+        });
+    </script>
+</body>
+</html>

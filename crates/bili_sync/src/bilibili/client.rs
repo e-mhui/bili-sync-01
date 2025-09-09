@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
+use arc_swap::ArcSwapOption;
 use leaky_bucket::RateLimiter;
 use reqwest::{header, Method};
 use serde::{Deserialize, Serialize};
@@ -102,6 +103,11 @@ impl Client {
 
     // a wrapper of reqwest::Client::request to add credential to the request
     pub fn request(&self, method: Method, url: &str, credential: Option<&Credential>) -> reqwest::RequestBuilder {
+        self.request_with_gaia_vtoken(method, url, credential, None)
+    }
+
+    // a wrapper of reqwest::Client::request to add credential and gaia_vtoken to the request
+    pub fn request_with_gaia_vtoken(&self, method: Method, url: &str, credential: Option<&Credential>, gaia_vtoken: Option<&str>) -> reqwest::RequestBuilder {
         let mut req = self.0.request(method, url);
         // 如果有 credential，会将其转换成 cookie 添加到请求的 header 中
         if let Some(credential) = credential {
@@ -127,6 +133,13 @@ impl Client {
 
             req = req.header(header::COOKIE, cookie_str);
         }
+        
+        // 如果有gaia_vtoken，添加到请求头中
+        if let Some(token) = gaia_vtoken {
+            req = req.header("x-gaia-vtoken", token);
+            tracing::debug!("添加gaia_vtoken到请求头: {}", token);
+        }
+        
         req
     }
 
@@ -167,6 +180,8 @@ pub struct BiliClient {
     limiter: Option<Arc<RateLimiter>>,
     #[allow(dead_code)]
     cookie: String,
+    /// 缓存的gaia_vtoken，用于绕过风控
+    gaia_vtoken: Arc<ArcSwapOption<String>>,
 }
 
 impl BiliClient {
@@ -191,6 +206,7 @@ impl BiliClient {
             client,
             limiter,
             cookie,
+            gaia_vtoken: Arc::new(ArcSwapOption::empty()),
         }
     }
 
@@ -211,7 +227,8 @@ impl BiliClient {
         }
         let config = crate::config::reload_config();
         let credential = config.credential.load();
-        self.client.request(method, url, credential.as_deref())
+        let gaia_vtoken = self.get_gaia_vtoken();
+        self.client.request_with_gaia_vtoken(method, url, credential.as_deref(), gaia_vtoken.as_deref())
     }
 
     /// 发送 GET 请求
@@ -1012,5 +1029,29 @@ impl BiliClient {
         }
 
         Ok((videos, total))
+    }
+
+    /// 设置gaia_vtoken缓存
+    pub fn set_gaia_vtoken(&self, token: String) {
+        self.gaia_vtoken.store(Some(Arc::new(token)));
+        tracing::info!("已缓存gaia_vtoken");
+    }
+
+    /// 获取缓存的gaia_vtoken
+    pub fn get_gaia_vtoken(&self) -> Option<String> {
+        self.gaia_vtoken.load().as_ref().map(|token| (**token).clone())
+    }
+
+    /// 清除gaia_vtoken缓存
+    pub fn clear_gaia_vtoken(&self) {
+        self.gaia_vtoken.store(None);
+        tracing::info!("已清除gaia_vtoken缓存");
+    }
+
+    /// 获取csrf token (bili_jct)
+    pub fn get_csrf_token(&self) -> Option<String> {
+        let config = crate::config::reload_config();
+        let credential = config.credential.load();
+        credential.as_ref().map(|cred| cred.bili_jct.clone())
     }
 }

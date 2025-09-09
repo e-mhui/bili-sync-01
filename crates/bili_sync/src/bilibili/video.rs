@@ -383,6 +383,43 @@ impl<'a> Video<'a> {
                     return Ok(analyzer);
                 }
                 Err(e) => {
+                    // 检查是否为风控验证错误
+                    if let Some(bili_err) = e.downcast_ref::<crate::bilibili::BiliError>() {
+                        if let crate::bilibili::BiliError::RiskControlVerificationRequired(v_voucher) = bili_err {
+                            tracing::warn!("检测到风控，开始验证流程: v_voucher={}", v_voucher);
+                            
+                            // 尝试进行验证流程
+                            match self.handle_risk_control_verification(v_voucher.clone()).await {
+                                Ok(gaia_vtoken) => {
+                                    tracing::info!("风控验证成功，已获取gaia_vtoken，重试获取视频流");
+                                    self.client.set_gaia_vtoken(gaia_vtoken);
+                                    
+                                    // 重试当前质量级别
+                                    match self.get_page_analyzer_with_quality(page, qn).await {
+                                        Ok(analyzer) => {
+                                            tracing::info!("✓ 风控验证后成功获取视频流: qn={}", qn);
+                                            return Ok(analyzer);
+                                        }
+                                        Err(retry_err) => {
+                                            tracing::warn!("风控验证后重试失败: {}", retry_err);
+                                            // 继续尝试下一个质量级别
+                                        }
+                                    }
+                                }
+                                Err(verify_err) => {
+                                    tracing::error!("风控验证失败，视频: {}, 错误: {}", self.bvid, verify_err);
+                                    
+                                    // 检查是否是端口冲突问题
+                                    if verify_err.to_string().contains("os error 10048") {
+                                        tracing::warn!("检测到端口冲突，建议检查其他验证进程");
+                                    }
+                                    
+                                    return Err(verify_err);
+                                }
+                            }
+                        }
+                    }
+                    
                     // 检查是否为充电专享视频错误（包括试看视频），如果是则不输出详细的质量级别失败日志
                     let (is_charging_video_error, is_trial_video) = {
                         if let Some(bili_err) = e.downcast_ref::<crate::bilibili::BiliError>() {
@@ -617,6 +654,25 @@ impl<'a> Video<'a> {
             if code != 0 {
                 let message = res["message"].as_str().unwrap_or("未知错误");
                 return Err(crate::bilibili::BiliError::RequestFailed(code, message.to_string()).into());
+            }
+        }
+
+        // 检测v_voucher风控响应
+        if let Some(v_voucher) = res["data"]["v_voucher"].as_str() {
+            // 检查是否只有v_voucher而没有实际的视频流数据
+            let has_dash = res["data"]["dash"]["video"].as_array().is_some_and(|v| !v.is_empty());
+            let has_durl = res["data"]["durl"].as_array().is_some_and(|v| !v.is_empty());
+            
+            if !has_dash && !has_durl {
+                tracing::warn!(
+                    "检测到风控v_voucher响应，视频: {} (aid: {}), cid: {}, v_voucher: {}",
+                    self.bvid, self.aid, page.cid, v_voucher
+                );
+                tracing::debug!(
+                    "v_voucher响应详情: {}",
+                    serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string())
+                );
+                return Err(crate::bilibili::BiliError::RiskControlVerificationRequired(v_voucher.to_string()).into());
             }
         }
 
@@ -1173,6 +1229,57 @@ impl<'a> Video<'a> {
             .await?;
         let body: SubTitleBody = serde_json::from_value(res["body"].take())?;
         Ok(SubTitle { lan: info.lan, body })
+    }
+
+    /// 处理风控验证流程
+    async fn handle_risk_control_verification(&self, v_voucher: String) -> Result<String> {
+        use crate::bilibili::{RiskControl, CaptchaWebServer};
+        use crate::config::with_config;
+
+        tracing::info!("开始处理风控验证，v_voucher: {}", v_voucher);
+
+        // 获取风控配置
+        let risk_config = with_config(|bundle| bundle.config.risk_control.clone());
+
+        if !risk_config.enabled {
+            tracing::warn!("风控验证已禁用，跳过验证");
+            anyhow::bail!("风控验证已禁用");
+        }
+
+        match risk_config.mode.as_str() {
+            "skip" => {
+                tracing::warn!("风控模式设置为跳过，不进行验证");
+                anyhow::bail!("风控模式设置为跳过");
+            }
+            "manual" => {
+                // 创建风控处理器
+                let risk_control = RiskControl::new(&self.client, v_voucher);
+
+                // 第一步：申请验证码
+                let captcha_info = risk_control.register().await?;
+                tracing::info!("成功获取验证码信息");
+
+                // 第二步：启动Web服务器进行人工验证
+                let web_server = CaptchaWebServer::new(risk_config.web_port);
+                tracing::info!("等待用户完成验证码验证，超时时间: {}秒", risk_config.timeout);
+                
+                let captcha_result = tokio::time::timeout(
+                    std::time::Duration::from_secs(risk_config.timeout),
+                    web_server.start_and_wait_for_verification(captcha_info)
+                ).await
+                .map_err(|_| anyhow::anyhow!("验证码验证等待超时"))??;
+
+                // 第三步：提交验证结果获取gaia_vtoken
+                let gaia_vtoken = risk_control.validate(captcha_result).await?;
+                tracing::info!("风控验证完成，获取到gaia_vtoken");
+
+                Ok(gaia_vtoken)
+            }
+            _ => {
+                tracing::error!("未知的风控模式: {}", risk_config.mode);
+                anyhow::bail!("未知的风控模式: {}", risk_config.mode);
+            }
+        }
     }
 }
 

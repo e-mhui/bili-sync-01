@@ -79,12 +79,14 @@ tokio-util = { version = "0.7.15", features = ["io", "rt"] }
 tokio-tungstenite = "0.24.0"
 # toml = "0.8.22" # 已移除：配置已迁移到数据库
 # toml_edit = "0.22.22" # 已移除：配置已迁移到数据库
-# tower = "0.5.2" # 已移除：未使用
+tower = "0.5.2"
+tower-http = { version = "0.6.2", features = ["cors"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["chrono"] }
 utoipa = { version = "5.3.1", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "9.0.0", features = ["axum", "vendored"] }
 uuid = { version = "1.0", features = ["v4"] }
+webbrowser = "1.0.2"
 
 [workspace.metadata.release]
 release = false

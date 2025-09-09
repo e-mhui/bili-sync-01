@@ -192,6 +192,9 @@ pub struct Config {
     // 启动时填充缺失视频CID功能开关（默认关闭）
     #[serde(default)]
     pub enable_cid_population: bool,
+    // 风控验证配置
+    #[serde(default)]
+    pub risk_control: RiskControlConfig,
 }
 
 fn default_skip_bangumi_preview() -> bool {
@@ -276,6 +279,65 @@ impl NotificationConfig {
     }
 }
 
+// 风控验证配置结构体
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RiskControlConfig {
+    /// 是否启用风控验证
+    #[serde(default)]
+    pub enabled: bool,
+    /// 验证模式: "manual" (Web界面人工验证), "skip" (跳过)
+    #[serde(default = "default_risk_control_mode")]
+    pub mode: String,
+    /// Web验证服务端口
+    #[serde(default = "default_risk_control_web_port")]
+    pub web_port: u16,
+    /// 验证等待超时时间（秒）
+    #[serde(default = "default_risk_control_timeout")]
+    pub timeout: u64,
+}
+
+fn default_risk_control_mode() -> String {
+    "skip".to_string() // 默认跳过验证
+}
+
+fn default_risk_control_web_port() -> u16 {
+    8899 // 默认端口
+}
+
+fn default_risk_control_timeout() -> u64 {
+    300 // 默认5分钟超时
+}
+
+impl Default for RiskControlConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mode: default_risk_control_mode(),
+            web_port: default_risk_control_web_port(),
+            timeout: default_risk_control_timeout(),
+        }
+    }
+}
+
+impl RiskControlConfig {
+    #[allow(dead_code)]
+    pub fn validate(&self) -> Result<(), String> {
+        if !matches!(self.mode.as_str(), "manual" | "skip") {
+            return Err("风控验证模式必须是 'manual' 或 'skip'".to_string());
+        }
+
+        if self.web_port < 1024 || self.web_port > 65535 {
+            return Err("Web服务端口必须在1024-65535之间".to_string());
+        }
+
+        if self.timeout < 60 || self.timeout > 600 {
+            return Err("验证超时时间必须在60-600秒之间".to_string());
+        }
+
+        Ok(())
+    }
+}
+
 impl Clone for Config {
     fn clone(&self) -> Self {
         Self {
@@ -334,6 +396,7 @@ impl Clone for Config {
             notification: self.notification.clone(),
             enable_startup_data_fix: self.enable_startup_data_fix,
             enable_cid_population: self.enable_cid_population,
+            risk_control: self.risk_control.clone(),
         }
     }
 }
@@ -373,6 +436,7 @@ impl Default for Config {
             notification: NotificationConfig::default(),
             enable_startup_data_fix: false, // 默认关闭，减少不必要的日志
             enable_cid_population: false,   // 默认关闭，减少不必要的日志
+            risk_control: RiskControlConfig::default(),
         }
     }
 }
