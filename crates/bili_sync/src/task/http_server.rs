@@ -72,6 +72,7 @@ use crate::api::handler::{
     validate_favorite,
     ApiDoc,
 };
+use crate::bilibili::{serve_captcha_page, get_captcha_info, submit_captcha_result};
 use crate::api::request::{BatchUpdateConfigRequest, UpdateConfigItemRequest};
 use crate::api::video_stream::stream_video;
 use crate::api::wrapper::ApiResponse;
@@ -227,6 +228,10 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
         .route("/api/videos/{video_id}/play-info", get(get_video_play_info))
         .route("/api/videos/{video_id}/bvid", get(get_video_bvid))
         .route("/api/videos/proxy-stream", get(proxy_video_stream))
+        // 验证码相关API
+        .route("/captcha", get(serve_captcha_page))
+        .route("/api/captcha/info", get(get_captcha_info))
+        .route("/api/captcha/submit", get(submit_captcha_result))
         // 先应用认证中间件
         .layer(Extension(optimized_connection.clone()))
         .layer(middleware::from_fn(auth::auth))

@@ -1233,7 +1233,7 @@ impl<'a> Video<'a> {
 
     /// 处理风控验证流程
     async fn handle_risk_control_verification(&self, v_voucher: String) -> Result<String> {
-        use crate::bilibili::{RiskControl, CaptchaWebServer};
+        use crate::bilibili::{RiskControl, VERIFICATION_COORDINATOR, VerificationRequest};
         use crate::config::with_config;
 
         tracing::info!("开始处理风控验证，v_voucher: {}", v_voucher);
@@ -1253,27 +1253,49 @@ impl<'a> Video<'a> {
             }
             "manual" => {
                 // 创建风控处理器
-                let risk_control = RiskControl::new(&self.client, v_voucher);
+                let risk_control = RiskControl::new(&self.client, v_voucher.clone());
 
                 // 第一步：申请验证码
                 let captcha_info = risk_control.register().await?;
                 tracing::info!("成功获取验证码信息");
 
-                // 第二步：启动Web服务器进行人工验证
-                let web_server = CaptchaWebServer::new(risk_config.web_port);
-                tracing::info!("等待用户完成验证码验证，超时时间: {}秒", risk_config.timeout);
-                
-                let captcha_result = tokio::time::timeout(
-                    std::time::Duration::from_secs(risk_config.timeout),
-                    web_server.start_and_wait_for_verification(captcha_info)
-                ).await
-                .map_err(|_| anyhow::anyhow!("验证码验证等待超时"))??;
+                // 第二步：请求验证协调器处理验证
+                let verification_request = VERIFICATION_COORDINATOR
+                    .request_verification(v_voucher, captcha_info)
+                    .await?;
 
-                // 第三步：提交验证结果获取gaia_vtoken
-                let gaia_vtoken = risk_control.validate(captcha_result).await?;
-                tracing::info!("风控验证完成，获取到gaia_vtoken");
+                match verification_request {
+                    VerificationRequest::StartNew(_captcha_info) => {
+                        tracing::info!("启动新验证流程，已在管理页 /captcha 提供验证界面");
+                        tracing::info!("请在浏览器中访问管理页面完成验证，超时时间: {}秒", risk_config.timeout);
+                        
+                        // 等待用户完成验证
+                        let captcha_result = tokio::time::timeout(
+                            std::time::Duration::from_secs(risk_config.timeout),
+                            VERIFICATION_COORDINATOR.wait_for_captcha_result()
+                        ).await
+                        .map_err(|_| anyhow::anyhow!("验证码验证等待超时"))??;
 
-                Ok(gaia_vtoken)
+                        // 使用验证结果获取gaia_vtoken
+                        tracing::info!("收到验证结果，正在获取gaia_vtoken");
+                        let gaia_vtoken = risk_control.validate(captcha_result).await?;
+                        
+                        // 保存token到协调器缓存
+                        VERIFICATION_COORDINATOR.save_token(gaia_vtoken.clone()).await;
+                        tracing::info!("风控验证完成，获取到gaia_vtoken");
+                        
+                        Ok(gaia_vtoken)
+                    }
+                    VerificationRequest::WaitForExisting => {
+                        tracing::info!("检测到正在进行的验证，等待完成...");
+                        let gaia_vtoken = VERIFICATION_COORDINATOR.wait_for_completion().await?;
+                        Ok(gaia_vtoken)
+                    }
+                    VerificationRequest::UseCache(gaia_vtoken) => {
+                        tracing::info!("使用缓存的gaia_vtoken");
+                        Ok(gaia_vtoken)
+                    }
+                }
             }
             _ => {
                 tracing::error!("未知的风控模式: {}", risk_config.mode);
