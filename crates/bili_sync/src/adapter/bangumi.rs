@@ -40,7 +40,7 @@ impl BangumiSource {
         video_model: &bili_sync_entity::video::Model,
         page_model: &bili_sync_entity::page::Model,
         db: &sea_orm::DatabaseConnection,
-        api_title: Option<&str>,  // 新增参数：API提供的番剧标题
+        api_title: Option<&str>, // 新增参数：API提供的番剧标题
     ) -> Result<String> {
         use crate::utils::format_arg::bangumi_page_format_args;
 
@@ -236,7 +236,6 @@ impl BangumiSource {
     ) -> Result<Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>>> {
         use crate::utils::bangumi_cache::is_cache_expired;
         use bili_sync_entity::video_source;
-
 
         // 获取当前番剧源的缓存信息
         let source_model = video_source::Entity::find_by_id(self.id)
@@ -434,7 +433,7 @@ impl VideoSource for BangumiSource {
         let mut model = <bili_sync_entity::video_source::ActiveModel as sea_orm::ActiveModelTrait>::default();
         model.id = Set(self.id);
         model.latest_row_at = Set(datetime);
-        crate::adapter::_ActiveModel::Bangumi(model)
+        crate::adapter::_ActiveModel::Bangumi(Box::new(model))
     }
 
     fn path(&self) -> &Path {

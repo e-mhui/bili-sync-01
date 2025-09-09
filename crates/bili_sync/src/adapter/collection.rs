@@ -218,7 +218,6 @@ pub(super) async fn collection_from<'a>(
     VideoSourceEnum,
     Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
 )> {
-
     let collection = Collection::new(bili_client, collection_item);
     let collection_info = collection.get_info().await?;
     collection::Entity::insert(collection::ActiveModel {

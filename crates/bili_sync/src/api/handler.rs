@@ -479,11 +479,11 @@ pub async fn get_videos(
     } else {
         (1, 10)
     };
-    
+
     // 处理排序参数
     let sort_by = params.sort_by.as_deref().unwrap_or("id");
     let sort_order = params.sort_order.as_deref().unwrap_or("desc");
-    
+
     // 应用排序
     query = match sort_by {
         "name" => {
@@ -518,7 +518,7 @@ pub async fn get_videos(
             }
         }
     };
-    
+
     Ok(ApiResponse::ok(VideosResponse {
         videos: {
             // 查询包含season_id和source_type字段，用于番剧标题获取
@@ -1924,7 +1924,6 @@ pub async fn add_video_source_internal(
     std::fs::create_dir_all(&params.path).map_err(|e| anyhow!("创建目录失败: {}", e))?;
 
     txn.commit().await?;
-
 
     Ok(result)
 }
@@ -4794,7 +4793,6 @@ pub async fn update_config_internal(
         }
     }
 
-
     if updated_fields.is_empty() {
         return Ok(crate::api::response::UpdateConfigResponse {
             success: false,
@@ -4965,7 +4963,7 @@ fn find_page_file_pattern(video_path: &std::path::Path, page: &bili_sync_entity:
     if let Some(pattern) = find_page_file_in_dir(video_path, page) {
         return Ok(pattern);
     }
-    
+
     // 如果主目录没找到，尝试在Season子目录中查找
     // 检查所有Season格式的子目录
     if video_path.exists() {
@@ -4983,7 +4981,7 @@ fn find_page_file_pattern(video_path: &std::path::Path, page: &bili_sync_entity:
             }
         }
     }
-    
+
     Ok(String::new())
 }
 
@@ -5177,49 +5175,59 @@ async fn rename_existing_files(
             // 从视频名称提取 series_title
             let series_title = extract_bangumi_series_title(&video.name);
             let season_title = extract_bangumi_season_title(&video.name);
-            
-            template_data.insert("series_title".to_string(), 
-                serde_json::Value::String(series_title));
-            template_data.insert("season_title".to_string(), 
-                serde_json::Value::String(season_title));
-            
+
+            template_data.insert("series_title".to_string(), serde_json::Value::String(series_title));
+            template_data.insert("season_title".to_string(), serde_json::Value::String(season_title));
+
             // 添加其他番剧相关变量
-            template_data.insert("season_number".to_string(), 
-                serde_json::Value::Number(serde_json::Number::from(video.season_number.unwrap_or(1))));
-            template_data.insert("episode_number".to_string(), 
-                serde_json::Value::Number(serde_json::Number::from(video.episode_number.unwrap_or(1))));
-            template_data.insert("season".to_string(), 
-                serde_json::Value::String(video.season_number.unwrap_or(1).to_string()));
-            template_data.insert("season_pad".to_string(), 
-                serde_json::Value::String(format!("{:02}", video.season_number.unwrap_or(1))));
-            template_data.insert("episode".to_string(), 
-                serde_json::Value::String(video.episode_number.unwrap_or(1).to_string()));
-            template_data.insert("episode_pad".to_string(), 
-                serde_json::Value::String(format!("{:02}", video.episode_number.unwrap_or(1))));
-            
+            template_data.insert(
+                "season_number".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(video.season_number.unwrap_or(1))),
+            );
+            template_data.insert(
+                "episode_number".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(video.episode_number.unwrap_or(1))),
+            );
+            template_data.insert(
+                "season".to_string(),
+                serde_json::Value::String(video.season_number.unwrap_or(1).to_string()),
+            );
+            template_data.insert(
+                "season_pad".to_string(),
+                serde_json::Value::String(format!("{:02}", video.season_number.unwrap_or(1))),
+            );
+            template_data.insert(
+                "episode".to_string(),
+                serde_json::Value::String(video.episode_number.unwrap_or(1).to_string()),
+            );
+            template_data.insert(
+                "episode_pad".to_string(),
+                serde_json::Value::String(format!("{:02}", video.episode_number.unwrap_or(1))),
+            );
+
             // 添加其他信息
             if let Some(ref season_id) = video.season_id {
-                template_data.insert("season_id".to_string(), 
-                    serde_json::Value::String(season_id.clone()));
+                template_data.insert("season_id".to_string(), serde_json::Value::String(season_id.clone()));
             }
             if let Some(ref ep_id) = video.ep_id {
-                template_data.insert("ep_id".to_string(), 
-                    serde_json::Value::String(ep_id.clone()));
+                template_data.insert("ep_id".to_string(), serde_json::Value::String(ep_id.clone()));
             }
             if let Some(ref share_copy) = video.share_copy {
-                template_data.insert("share_copy".to_string(), 
-                    serde_json::Value::String(share_copy.clone()));
+                template_data.insert("share_copy".to_string(), serde_json::Value::String(share_copy.clone()));
             }
             if let Some(ref actors) = video.actors {
-                template_data.insert("actors".to_string(), 
-                    serde_json::Value::String(actors.clone()));
+                template_data.insert("actors".to_string(), serde_json::Value::String(actors.clone()));
             }
-            
+
             // 添加年份
-            template_data.insert("year".to_string(), 
-                serde_json::Value::Number(serde_json::Number::from(video.pubtime.year())));
-            template_data.insert("studio".to_string(), 
-                serde_json::Value::String(video.upper_name.clone()));
+            template_data.insert(
+                "year".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(video.pubtime.year())),
+            );
+            template_data.insert(
+                "studio".to_string(),
+                serde_json::Value::String(video.upper_name.clone()),
+            );
         }
 
         // 为合集添加额外的模板变量
@@ -5289,25 +5297,30 @@ async fn rename_existing_files(
 
             // 使用视频记录中的路径信息
             let video_path = Path::new(&video.path);
-            
+
             // **修复重复目录层级问题：重命名时只使用模板的最后一部分**
             // 如果模板生成的路径包含目录结构（如 "庄心妍/庄心妍的采访"）
             // 在重命名时应该只使用最后的文件夹名部分，避免创建重复层级
             let final_folder_name = if base_video_name.contains('/') {
                 // 模板包含路径分隔符，只取最后一部分作为文件夹名
                 let parts: Vec<&str> = base_video_name.split('/').collect();
-                let last_part = parts.last().map(|s| (*s).to_owned()).unwrap_or_else(|| base_video_name.clone());
-                info!("🔧 模板包含路径分隔符，重命名时只使用最后部分: '{}' -> '{}'", 
-                    base_video_name, last_part);
+                let last_part = parts
+                    .last()
+                    .map(|s| (*s).to_owned())
+                    .unwrap_or_else(|| base_video_name.clone());
+                info!(
+                    "🔧 模板包含路径分隔符，重命名时只使用最后部分: '{}' -> '{}'",
+                    base_video_name, last_part
+                );
                 last_part
             } else {
                 // 模板不包含路径分隔符，直接使用
                 base_video_name.clone()
             };
-            
+
             // 使用当前视频的父目录作为基础路径
             let base_parent_dir = video_path.parent().unwrap_or(Path::new("."));
-            
+
             if base_parent_dir.exists() {
                 // **智能判断：根据模板内容决定是否需要去重**
                 // 如果模板包含会产生相同名称的变量（如upper_name），则不使用智能去重
@@ -5338,8 +5351,12 @@ async fn rename_existing_files(
 
                 let expected_new_path = if needs_deduplication {
                     // 使用智能去重生成唯一文件夹名
-                    let unique_folder_name =
-                        generate_unique_folder_name(base_parent_dir, &final_folder_name, &video.bvid, &formatted_pubtime);
+                    let unique_folder_name = generate_unique_folder_name(
+                        base_parent_dir,
+                        &final_folder_name,
+                        &video.bvid,
+                        &formatted_pubtime,
+                    );
                     base_parent_dir.join(&unique_folder_name)
                 } else {
                     // 不使用去重，允许多个视频共享同一文件夹
@@ -5362,7 +5379,7 @@ async fn rename_existing_files(
                     } else {
                         vec![base_parent_dir]
                     };
-                    
+
                     let mut found_path = None;
                     for search_dir in search_dirs {
                         if let Ok(entries) = std::fs::read_dir(search_dir) {
@@ -5560,27 +5577,28 @@ async fn rename_existing_files(
                     // 番剧需要添加 series_title 等变量
                     let series_title = extract_bangumi_series_title(&video.name);
                     let season_title = extract_bangumi_season_title(&video.name);
-                    
-                    page_template_data.insert("series_title".to_string(), 
-                        serde_json::Value::String(series_title));
-                    page_template_data.insert("season_title".to_string(), 
-                        serde_json::Value::String(season_title));
-                    
+
+                    page_template_data.insert("series_title".to_string(), serde_json::Value::String(series_title));
+                    page_template_data.insert("season_title".to_string(), serde_json::Value::String(season_title));
+
                     // 添加其他番剧特有变量
                     if let Some(ref share_copy) = video.share_copy {
-                        page_template_data.insert("share_copy".to_string(), 
-                            serde_json::Value::String(share_copy.clone()));
+                        page_template_data
+                            .insert("share_copy".to_string(), serde_json::Value::String(share_copy.clone()));
                     }
                     if let Some(ref actors) = video.actors {
-                        page_template_data.insert("actors".to_string(), 
-                            serde_json::Value::String(actors.clone()));
+                        page_template_data.insert("actors".to_string(), serde_json::Value::String(actors.clone()));
                     }
-                    page_template_data.insert("year".to_string(), 
-                        serde_json::Value::Number(serde_json::Number::from(video.pubtime.year())));
-                    page_template_data.insert("studio".to_string(), 
-                        serde_json::Value::String(video.upper_name.clone()));
+                    page_template_data.insert(
+                        "year".to_string(),
+                        serde_json::Value::Number(serde_json::Number::from(video.pubtime.year())),
+                    );
+                    page_template_data.insert(
+                        "studio".to_string(),
+                        serde_json::Value::String(video.upper_name.clone()),
+                    );
                 }
-                
+
                 let season_number = if is_bangumi {
                     video.season_number.unwrap_or(1)
                 } else {
@@ -5605,7 +5623,10 @@ async fn rename_existing_files(
                     "pid_pad".to_string(),
                     serde_json::Value::String(format!("{:02}", episode_number)),
                 );
-                page_template_data.insert("episode".to_string(), serde_json::Value::String(episode_number.to_string()));
+                page_template_data.insert(
+                    "episode".to_string(),
+                    serde_json::Value::String(episode_number.to_string()),
+                );
                 page_template_data.insert(
                     "episode_pad".to_string(),
                     serde_json::Value::String(format!("{:02}", episode_number)),
@@ -5716,7 +5737,7 @@ async fn rename_existing_files(
                     } else {
                         final_video_path.clone()
                     };
-                    
+
                     // 检查Season目录是否存在
                     if season_dir.exists() {
                         season_dir
@@ -5732,7 +5753,7 @@ async fn rename_existing_files(
                         for entry in entries.flatten() {
                             let file_path = entry.path();
                             let file_name = file_path.file_name().unwrap_or_default().to_string_lossy();
-                            
+
                             // 记录所有文件以便调试
                             if !found_any_file {
                                 debug!("目录中的文件: {}", file_name);
@@ -6253,12 +6274,14 @@ pub async fn get_submission_videos(
     let result = if let Some(keyword) = params.keyword.as_deref() {
         // 如果提供了关键词，使用搜索功能
         tracing::debug!("搜索UP主 {} 的视频，关键词: '{}'", up_id, keyword);
-        bili_client.search_user_submission_videos(up_id_i64, keyword, page, page_size).await
+        bili_client
+            .search_user_submission_videos(up_id_i64, keyword, page, page_size)
+            .await
     } else {
         // 否则使用普通的获取功能
         bili_client.get_user_submission_videos(up_id_i64, page, page_size).await
     };
-    
+
     match result {
         Ok((videos, total)) => {
             let response = SubmissionVideosResponse {
@@ -6510,17 +6533,17 @@ pub async fn download_log_file(
 ) -> Result<impl axum::response::IntoResponse, ApiError> {
     use axum::http::header;
     use tokio::fs;
-    
+
     // 先刷新所有缓冲的日志到文件，确保下载的是最新的
     crate::utils::file_logger::flush_file_logger();
-    
+
     // 获取日志级别参数
     let level = params.get("level").map(|s| s.as_str()).unwrap_or("all");
-    
+
     // 构建日志文件路径
     let log_dir = crate::config::CONFIG_DIR.join("logs");
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    
+
     let file_name = match level {
         "debug" => format!("logs-debug-{}.csv", today),
         "info" => format!("logs-info-{}.csv", today),
@@ -6528,29 +6551,30 @@ pub async fn download_log_file(
         "error" => format!("logs-error-{}.csv", today),
         _ => format!("logs-all-{}.csv", today),
     };
-    
+
     let file_path = log_dir.join(&file_name);
-    
+
     // 检查文件是否存在
     if !file_path.exists() {
         return Err(InnerApiError::BadRequest(format!("日志文件不存在: {}", file_name)).into());
     }
-    
+
     // 读取文件内容
-    let file_content = fs::read(&file_path).await
+    let file_content = fs::read(&file_path)
+        .await
         .map_err(|e| InnerApiError::BadRequest(format!("读取日志文件失败: {}", e)))?;
-    
+
     // 构建响应
     let response = axum::response::Response::builder()
         .status(200)
         .header(header::CONTENT_TYPE, "text/csv; charset=utf-8")
         .header(
             header::CONTENT_DISPOSITION,
-            format!("attachment; filename=\"{}\"", file_name)
+            format!("attachment; filename=\"{}\"", file_name),
         )
         .body(axum::body::Body::from(file_content))
         .map_err(|e| InnerApiError::BadRequest(format!("构建响应失败: {}", e)))?;
-    
+
     Ok(response)
 }
 
@@ -6563,15 +6587,14 @@ pub async fn download_log_file(
         (status = 500, description = "服务器内部错误")
     )
 )]
-pub async fn get_log_files(
-) -> Result<ApiResponse<LogFilesResponse>, ApiError> {
+pub async fn get_log_files() -> Result<ApiResponse<LogFilesResponse>, ApiError> {
     use std::fs;
-    
+
     let log_dir = crate::config::CONFIG_DIR.join("logs");
     let startup_time = &*crate::utils::file_logger::STARTUP_TIME;
-    
+
     let mut files = vec![];
-    
+
     // 检查各个日志文件是否存在
     let log_files = vec![
         ("all", format!("logs-all-{}.csv", startup_time)),
@@ -6580,7 +6603,7 @@ pub async fn get_log_files(
         ("warn", format!("logs-warn-{}.csv", startup_time)),
         ("error", format!("logs-error-{}.csv", startup_time)),
     ];
-    
+
     for (level, file_name) in log_files {
         let file_path = log_dir.join(&file_name);
         if file_path.exists() {
@@ -6589,7 +6612,8 @@ pub async fn get_log_files(
                     level: level.to_string(),
                     file_name,
                     size: metadata.len(),
-                    modified: metadata.modified()
+                    modified: metadata
+                        .modified()
                         .ok()
                         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                         .map(|d| d.as_secs())
@@ -6598,7 +6622,7 @@ pub async fn get_log_files(
             }
         }
     }
-    
+
     Ok(ApiResponse::ok(LogFilesResponse { files }))
 }
 
@@ -9551,8 +9575,8 @@ ORDER BY
         total_sources: total_all_sources,
         active_sources,
         inactive_sources,
-        last_scan_time: task_status.last_run.map(|t| to_standard_string(t)),
-        next_scan_time: task_status.next_run.map(|t| to_standard_string(t)),
+        last_scan_time: task_status.last_run.map(to_standard_string),
+        next_scan_time: task_status.next_run.map(to_standard_string),
         is_scanning,
     };
 
@@ -9773,11 +9797,11 @@ pub async fn get_notification_status() -> Result<ApiResponse<crate::api::respons
 fn extract_bangumi_series_title(full_title: &str) -> String {
     // 移除开头的书名号
     let title = full_title.trim_start_matches('《');
-    
+
     // 找到书名号结束位置
     if let Some(end_pos) = title.find('》') {
         let season_title = &title[..end_pos];
-        
+
         // 移除季度信息："灵笼 第二季" -> "灵笼"
         if let Some(space_pos) = season_title.rfind(' ') {
             // 检查空格后面是否是季度标记
@@ -9789,12 +9813,12 @@ fn extract_bangumi_series_title(full_title: &str) -> String {
         // 如果没有季度信息，返回整个标题
         return season_title.to_string();
     }
-    
+
     // 如果没有书名号，尝试其他模式
     if let Some(space_pos) = full_title.find(' ') {
         return full_title[..space_pos].to_string();
     }
-    
+
     full_title.to_string()
 }
 
@@ -9802,11 +9826,11 @@ fn extract_bangumi_series_title(full_title: &str) -> String {
 /// 例如：《灵笼 第二季》第1话 末世桃源 -> 灵笼 第二季
 fn extract_bangumi_season_title(full_title: &str) -> String {
     let title = full_title.trim_start_matches('《');
-    
+
     if let Some(end_pos) = title.find('》') {
         return title[..end_pos].to_string();
     }
-    
+
     // 如果没有书名号，找到"第X话"之前的部分
     if let Some(episode_pos) = full_title.find("第") {
         if let Some(hua_pos) = full_title[episode_pos..].find("话") {
@@ -9817,7 +9841,6 @@ fn extract_bangumi_season_title(full_title: &str) -> String {
             }
         }
     }
-    
+
     full_title.to_string()
 }
-

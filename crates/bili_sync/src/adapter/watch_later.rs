@@ -94,7 +94,6 @@ pub(super) async fn watch_later_from<'a>(
     VideoSourceEnum,
     Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
 )> {
-
     let watch_later = WatchLater::new(bili_client);
 
     // 检查是否已存在，如果存在直接返回

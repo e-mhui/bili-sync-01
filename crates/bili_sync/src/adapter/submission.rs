@@ -63,7 +63,7 @@ impl VideoSource for submission::Model {
             let beijing_tz = crate::utils::time_format::beijing_timezone();
             let release_beijing = release_datetime.with_timezone(&beijing_tz);
             let latest_beijing = latest_row_at.with_timezone(&beijing_tz);
-            
+
             let should_take = release_beijing > latest_beijing;
 
             if should_take {
@@ -85,7 +85,10 @@ impl VideoSource for submission::Model {
             should_take
         } else {
             // 全量模式：获取所有视频，但会在 create_videos 中过滤已存在的视频
-            debug!("UP主「{}」全量获取：增量获取已禁用，获取所有视频（将在数据库层面去重）", self.upper_name);
+            debug!(
+                "UP主「{}」全量获取：增量获取已禁用，获取所有视频（将在数据库层面去重）",
+                self.upper_name
+            );
             true
         }
     }
@@ -95,7 +98,10 @@ impl VideoSource for submission::Model {
         if current_config.submission_risk_control.enable_incremental_fetch {
             info!("开始增量扫描「{}」投稿（仅获取新视频）..", self.upper_name);
         } else {
-            info!("开始全量扫描「{}」投稿（获取所有视频，已存在视频将自动跳过）..", self.upper_name);
+            info!(
+                "开始全量扫描「{}」投稿（获取所有视频，已存在视频将自动跳过）..",
+                self.upper_name
+            );
         }
     }
 
@@ -263,7 +269,6 @@ pub(super) async fn submission_from<'a>(
     VideoSourceEnum,
     Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
 )> {
-
     let submission = Submission::new(bili_client, upper_id.to_owned());
     let upper = submission.get_info().await?;
     // 重新创建带有UP主名称的Submission实例，用于后续的视频流处理和日志显示

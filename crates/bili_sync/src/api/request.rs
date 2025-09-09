@@ -14,8 +14,8 @@ pub struct VideosRequest {
     pub page_size: Option<u64>,
     pub show_failed_only: Option<bool>,
     pub force: Option<bool>,
-    pub sort_by: Option<String>,     // "id", "name", "upper_name", "created_at", "updated_at"
-    pub sort_order: Option<String>,  // "asc", "desc"
+    pub sort_by: Option<String>,    // "id", "name", "upper_name", "created_at", "updated_at"
+    pub sort_order: Option<String>, // "asc", "desc"
 }
 
 #[derive(Deserialize, IntoParams)]

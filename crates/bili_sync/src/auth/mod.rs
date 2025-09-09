@@ -18,7 +18,7 @@ pub struct QRCodeInfo {
 pub enum LoginStatus {
     Pending,
     Scanned,
-    Confirmed(LoginResult),
+    Confirmed(Box<LoginResult>),
     Expired,
     Error(String),
 }
@@ -227,7 +227,7 @@ impl QRLoginService {
 
                 let login_result = LoginResult { credential, user_info };
 
-                Ok(LoginStatus::Confirmed(login_result))
+                Ok(LoginStatus::Confirmed(Box::new(login_result)))
             }
             Some(86038) => Ok(LoginStatus::Expired),
             Some(86090) => Ok(LoginStatus::Scanned),

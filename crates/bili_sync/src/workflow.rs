@@ -253,7 +253,7 @@ async fn update_bangumi_cache(
     for (video, pages) in &videos_with_pages {
         if let Some(page) = pages.first() {
             let mut episode = serde_json::json!({
-                "id": video.ep_id.as_ref().map(|s| s.parse::<i64>().ok()).flatten().unwrap_or(0),
+                "id": video.ep_id.as_ref().and_then(|s| s.parse::<i64>().ok()).unwrap_or(0),
                 "aid": video.bvid.clone(), // 暂时使用bvid，实际应该是aid
                 "bvid": video.bvid.clone(),
                 "cid": page.cid,
@@ -328,7 +328,7 @@ async fn update_bangumi_cache(
     };
 
     active_model.update(connection).await?;
-    
+
     // 触发异步同步到内存DB
 
     info!(
@@ -670,7 +670,6 @@ pub async fn fetch_video_details(
                 video_active_model.tags = Set(Some(serde_json::Value::Array(vec![])));
                 video_active_model.save(&txn).await?;
                 txn.commit().await?;
-                
             }
         }
     }
@@ -723,7 +722,7 @@ pub async fn fetch_video_details(
                                 let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.into();
                                 video_active_model.valid = Set(false);
                                 video_active_model.save(connection).await?;
-                                
+
                                 // 触发异步同步到内存DB
                             }
                         }
@@ -770,7 +769,7 @@ pub async fn fetch_video_details(
 
                             let pages = std::mem::take(pages);
                             let pages_len = pages.len();
-                            
+
                             // 提取第一个page的cid用于更新video表
                             let first_page_cid = pages.first().map(|p| p.cid);
 
@@ -912,7 +911,7 @@ pub async fn fetch_video_details(
                             video_source.set_relation_id(&mut video_active_model);
                             video_active_model.single_page = Set(Some(pages_len == 1));
                             video_active_model.tags = Set(Some(serde_json::to_value(tags)?));
-                            
+
                             // 更新video表的cid字段（从第一个page获取）
                             if let Some(cid) = first_page_cid {
                                 video_active_model.cid = Set(Some(cid));
@@ -931,7 +930,6 @@ pub async fn fetch_video_details(
 
                             video_active_model.save(&txn).await?;
                             txn.commit().await?;
-                            
                         }
                     };
                     Ok::<_, anyhow::Error>(())
@@ -1475,7 +1473,10 @@ pub async fn download_video_pages(
                 "unified" => {
                     // 统一模式：所有视频放在以合集名称命名的同一个文件夹下
                     let safe_collection_name = crate::utils::filenamify::filenamify(&collection_source.name);
-                    debug!("合集统一模式 - 原名称: '{}', 安全化后: '{}'", collection_source.name, safe_collection_name);
+                    debug!(
+                        "合集统一模式 - 原名称: '{}', 安全化后: '{}'",
+                        collection_source.name, safe_collection_name
+                    );
                     video_source_base_path.join(&safe_collection_name)
                 }
                 _ => {
@@ -1599,7 +1600,10 @@ pub async fn download_video_pages(
             if let VideoSourceEnum::Collection(collection_source) = video_source {
                 // 对合集名称进行安全化处理，避免poster/fanart文件名包含斜杠导致创建子文件夹
                 let safe_collection_name = crate::utils::filenamify::filenamify(&collection_source.name);
-                debug!("合集poster/fanart文件名安全化 - 原名称: '{}', 安全化后: '{}'", collection_source.name, safe_collection_name);
+                debug!(
+                    "合集poster/fanart文件名安全化 - 原名称: '{}', 安全化后: '{}'",
+                    collection_source.name, safe_collection_name
+                );
                 safe_collection_name
             } else {
                 String::new()
@@ -2366,7 +2370,7 @@ pub async fn download_page(
             } else {
                 None
             };
-            
+
             bangumi_source
                 .render_page_name(video_model, &page_model, connection, api_title.as_deref())
                 .await?
@@ -2721,7 +2725,7 @@ pub async fn fetch_page_video(
                 // 普通视频使用API降级机制（普通视频API -> 番剧API）
                 debug!("使用API降级机制获取播放地址（普通视频API -> 番剧API）");
                 // 传递ep_id以便在需要时降级到番剧API，如果没有ep_id则会自动从视频详情API获取
-                let ep_id = video_model.ep_id.as_ref().map(|s| s.as_str());
+                let ep_id = video_model.ep_id.as_deref();
                 if ep_id.is_some() {
                     debug!("视频已有ep_id: {:?}，可直接用于API降级", ep_id);
                 } else {
@@ -3983,7 +3987,7 @@ async fn process_bangumi_video(
     video_active_model.save(&txn).await?;
 
     txn.commit().await?;
-    
+
     Ok(())
 }
 
@@ -4136,20 +4140,17 @@ async fn get_collection_video_episode_number(
 }
 
 /// 修复page表中错误的video_id
-/// 
+///
 /// **注意**：在写穿透模式下，此功能理论上不应该需要，因为所有写操作都直接写入主数据库，
 /// 确保了ID的一致性。但为了兼容可能存在的历史数据问题，仍然保留此功能。
 /// 使用两阶段策略避免唯一约束冲突
-pub async fn fix_page_video_ids(
-    connection: &DatabaseConnection,
-) -> Result<()> {
-    
+pub async fn fix_page_video_ids(connection: &DatabaseConnection) -> Result<()> {
     debug!("开始检查并修复page表的video_id和cid不匹配问题");
     warn!("注意：在写穿透模式下，此数据修复功能理论上不应该需要。如果频繁出现需要修复的数据，请检查系统配置。");
-    
+
     // 使用事务确保原子性
     let txn = connection.begin().await?;
-    
+
     // 1. 首先处理cid不匹配的记录 - 这些应该删除
     let cid_mismatch_count: i64 = txn
         .query_one(Statement::from_sql_and_values(
@@ -4167,13 +4168,16 @@ pub async fn fix_page_video_ids(
         .await?
         .and_then(|row| row.try_get_by_index::<i64>(0).ok())
         .unwrap_or(0);
-    
+
     // 创建临时表来跟踪需要设置auto_download=0的video
     let mut videos_to_disable = Vec::new();
-    
+
     if cid_mismatch_count > 0 {
-        warn!("发现 {} 条cid不匹配的page记录，这些记录的内容已变化，将删除", cid_mismatch_count);
-        
+        warn!(
+            "发现 {} 条cid不匹配的page记录，这些记录的内容已变化，将删除",
+            cid_mismatch_count
+        );
+
         // 先收集这些记录对应的video_id（用于后续设置auto_download=0）
         let mismatch_videos = txn
             .query_all(Statement::from_sql_and_values(
@@ -4189,13 +4193,13 @@ pub async fn fix_page_video_ids(
                 vec![],
             ))
             .await?;
-        
+
         for row in mismatch_videos {
             if let Ok(video_id) = row.try_get_by_index::<i64>(0) {
                 videos_to_disable.push(video_id);
             }
         }
-        
+
         // 删除cid不匹配的page记录
         let delete_mismatch_result = txn
             .execute(Statement::from_sql_and_values(
@@ -4214,10 +4218,13 @@ pub async fn fix_page_video_ids(
                 vec![],
             ))
             .await?;
-        
-        info!("已删除 {} 条cid不匹配的page记录", delete_mismatch_result.rows_affected());
+
+        info!(
+            "已删除 {} 条cid不匹配的page记录",
+            delete_mismatch_result.rows_affected()
+        );
     }
-    
+
     // 2. 然后统计有多少page记录需要修复video_id
     let wrong_pages_count: i64 = txn
         .query_one(Statement::from_sql_and_values(
@@ -4233,15 +4240,15 @@ pub async fn fix_page_video_ids(
         .await?
         .and_then(|row| row.try_get_by_index::<i64>(0).ok())
         .unwrap_or(0);
-    
+
     if wrong_pages_count == 0 {
         debug!("所有page记录的video_id都正确，无需修复");
         txn.commit().await?;
         return Ok(());
     }
-    
+
     info!("发现 {} 条page记录需要修复video_id", wrong_pages_count);
-    
+
     // 3. 第一阶段：将错误的video_id设置为临时的负数值
     info!("第一阶段：设置临时video_id避免冲突...");
     let set_temp_id_sql = r#"
@@ -4249,7 +4256,7 @@ pub async fn fix_page_video_ids(
         SET video_id = -id
         WHERE video_id NOT IN (SELECT id FROM video)
     "#;
-    
+
     let phase1_result = txn
         .execute(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
@@ -4257,15 +4264,15 @@ pub async fn fix_page_video_ids(
             vec![],
         ))
         .await?;
-    
+
     info!("已将 {} 条记录设置为临时video_id", phase1_result.rows_affected());
-    
+
     // 4. 第二阶段：根据cid匹配更新为正确的video_id
     info!("第二阶段：更新为正确的video_id...");
-    
+
     // 4.1 修复单P视频（pid=1）- 分批处理避免冲突
     info!("开始修复单P视频...");
-    
+
     // 先修复那些不会产生冲突的记录
     let fix_no_conflict_sql = r#"
         UPDATE page
@@ -4284,7 +4291,7 @@ pub async fn fix_page_video_ids(
             AND p2.pid = 1
         )
     "#;
-    
+
     let no_conflict_result = txn
         .execute(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
@@ -4292,9 +4299,9 @@ pub async fn fix_page_video_ids(
             vec![],
         ))
         .await?;
-    
+
     info!("修复了 {} 条不冲突的单P视频记录", no_conflict_result.rows_affected());
-    
+
     // 处理会冲突的记录 - 这些需要特殊处理
     let conflicting_pages = txn
         .query_all(Statement::from_sql_and_values(
@@ -4309,18 +4316,18 @@ pub async fn fix_page_video_ids(
             vec![],
         ))
         .await?;
-    
+
     let mut conflict_count = 0u64;
     let mut duplicate_deleted = 0u64;
-    
+
     for row in conflicting_pages {
-        if let (Ok(page_id), Ok(page_cid), Ok(_correct_vid), Ok(existing_id), Ok(existing_cid)) = 
-            (row.try_get_by_index::<i32>(0), 
-             row.try_get_by_index::<i64>(1),
-             row.try_get_by_index::<i32>(2),
-             row.try_get_by_index::<i32>(3),
-             row.try_get_by_index::<i64>(4)) {
-            
+        if let (Ok(page_id), Ok(page_cid), Ok(_correct_vid), Ok(existing_id), Ok(existing_cid)) = (
+            row.try_get_by_index::<i32>(0),
+            row.try_get_by_index::<i64>(1),
+            row.try_get_by_index::<i32>(2),
+            row.try_get_by_index::<i32>(3),
+            row.try_get_by_index::<i64>(4),
+        ) {
             // 只有当两个page的cid相同时，才是真正的重复记录
             if page_cid == existing_cid {
                 // 真正的重复，删除临时ID的那条
@@ -4335,18 +4342,22 @@ pub async fn fix_page_video_ids(
             } else {
                 // 不同的cid，说明是不同的视频，记录错误但不处理
                 conflict_count += 1;
-                warn!("发现冲突记录：page.id={} cid={} 与 page.id={} cid={} 冲突，需要手动处理",
-                      page_id, page_cid, existing_id, existing_cid);
+                warn!(
+                    "发现冲突记录：page.id={} cid={} 与 page.id={} cid={} 冲突，需要手动处理",
+                    page_id, page_cid, existing_id, existing_cid
+                );
             }
         }
     }
-    
-    info!("修复单P视频完成：删除了 {} 条真正的重复记录，发现 {} 条需要手动处理的冲突", 
-          duplicate_deleted, conflict_count);
-    
+
+    info!(
+        "修复单P视频完成：删除了 {} 条真正的重复记录，发现 {} 条需要手动处理的冲突",
+        duplicate_deleted, conflict_count
+    );
+
     // 4.2 修复多P视频（pid>1）
     info!("修复多P视频的video_id...");
-    
+
     // 使用路径匹配方式修复多P视频
     // 原理：同一视频的多个分P在同一目录下，通过找到同目录的pid=1记录来获取正确的video_id
     let fix_multi_p_sql = r#"
@@ -4369,7 +4380,7 @@ pub async fn fix_page_video_ids(
             AND RTRIM(p1.path, REPLACE(p1.path, '/', '')) = RTRIM(page.path, REPLACE(page.path, '/', ''))
         )
     "#;
-    
+
     let multi_p_result = txn
         .execute(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
@@ -4377,9 +4388,9 @@ pub async fn fix_page_video_ids(
             vec![],
         ))
         .await?;
-    
+
     info!("修复了 {} 条多P视频的page记录", multi_p_result.rows_affected());
-    
+
     // 5. 处理无法修复的记录（video_id仍为负数的）
     let orphan_count: i64 = txn
         .query_one(Statement::from_sql_and_values(
@@ -4394,13 +4405,13 @@ pub async fn fix_page_video_ids(
         .await?
         .and_then(|row| row.try_get_by_index::<i64>(0).ok())
         .unwrap_or(0);
-    
+
     if orphan_count > 0 {
         warn!(
             "发现 {} 条无法修复的page记录（找不到对应的video），将删除这些孤立记录",
             orphan_count
         );
-        
+
         // 删除无法修复的孤立记录
         let delete_result = txn
             .execute(Statement::from_sql_and_values(
@@ -4409,15 +4420,15 @@ pub async fn fix_page_video_ids(
                 vec![],
             ))
             .await?;
-        
+
         info!("已删除 {} 条孤立的page记录", delete_result.rows_affected());
     }
-    
+
     // 6. 设置cid不匹配的video的deleted为1
     // 但要排除已修复的video（即在修复过程中成功更新的video）
     if !videos_to_disable.is_empty() {
         info!("标记 {} 个cid不匹配video为已删除", videos_to_disable.len());
-        
+
         // 收集所有已修复的video_id（这些不应该被标记为已删除）
         let fixed_videos = txn
             .query_all(Statement::from_sql_and_values(
@@ -4430,14 +4441,14 @@ pub async fn fix_page_video_ids(
                 vec![],
             ))
             .await?;
-        
+
         let mut fixed_video_ids = std::collections::HashSet::new();
         for row in fixed_videos {
             if let Ok(video_id) = row.try_get_by_index::<i64>(0) {
                 fixed_video_ids.insert(video_id);
             }
         }
-        
+
         // 只设置那些不在fixed_video_ids中的video
         let mut disabled_count = 0;
         for video_id in &videos_to_disable {
@@ -4445,7 +4456,7 @@ pub async fn fix_page_video_ids(
             if fixed_video_ids.contains(video_id) {
                 continue;
             }
-            
+
             let update_result = txn
                 .execute(Statement::from_sql_and_values(
                     DatabaseBackend::Sqlite,
@@ -4453,18 +4464,18 @@ pub async fn fix_page_video_ids(
                     vec![(*video_id).into()],
                 ))
                 .await?;
-            
+
             if update_result.rows_affected() > 0 {
                 disabled_count += 1;
             }
         }
-        
+
         info!("已标记 {} 个video为已删除（排除了已修复的记录）", disabled_count);
-        
+
         // 6.5 自动为涉及的源启用 scan_deleted_videos
         if disabled_count > 0 {
             info!("检测到视频被标记为已删除，正在自动启用相关源的'扫描已删除视频'功能...");
-            
+
             // 查询刚刚被标记为已删除的视频的源信息
             let deleted_videos_sources = txn
                 .query_all(Statement::from_sql_and_values(
@@ -4484,14 +4495,14 @@ pub async fn fix_page_video_ids(
                     vec![serde_json::to_string(&videos_to_disable)?.into()],
                 ))
                 .await?;
-            
+
             // 收集各类型源的ID
             let mut submission_ids = std::collections::HashSet::new();
             let mut collection_ids = std::collections::HashSet::new();
             let mut favorite_ids = std::collections::HashSet::new();
             let mut watch_later_ids = std::collections::HashSet::new();
             let mut bangumi_source_ids = std::collections::HashSet::new();
-            
+
             for row in deleted_videos_sources {
                 if let Ok(Some(id)) = row.try_get::<Option<i32>>("", "submission_id") {
                     submission_ids.insert(id);
@@ -4506,25 +4517,26 @@ pub async fn fix_page_video_ids(
                     watch_later_ids.insert(id);
                 }
                 // 番剧通过source_id和source_type=1判断
-                if let (Ok(Some(source_id)), Ok(Some(source_type))) = 
-                    (row.try_get::<Option<i32>>("", "source_id"), 
-                     row.try_get::<Option<i32>>("", "source_type")) {
+                if let (Ok(Some(source_id)), Ok(Some(source_type))) = (
+                    row.try_get::<Option<i32>>("", "source_id"),
+                    row.try_get::<Option<i32>>("", "source_type"),
+                ) {
                     if source_type == 1 {
                         bangumi_source_ids.insert(source_id);
                     }
                 }
             }
-            
+
             // 批量更新各个源表的scan_deleted_videos字段
             let mut enabled_sources = vec![];
-            
+
             // UP主投稿
             if !submission_ids.is_empty() {
                 let placeholders = submission_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
                 let result = txn
                     .execute(Statement::from_sql_and_values(
                         DatabaseBackend::Sqlite,
-                        &format!(
+                        format!(
                             "UPDATE submission SET scan_deleted_videos = 1 
                              WHERE id IN ({}) AND scan_deleted_videos = 0",
                             placeholders
@@ -4536,14 +4548,14 @@ pub async fn fix_page_video_ids(
                     enabled_sources.push(format!("{}个UP主投稿", result.rows_affected()));
                 }
             }
-            
+
             // 合集
             if !collection_ids.is_empty() {
                 let placeholders = collection_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
                 let result = txn
                     .execute(Statement::from_sql_and_values(
                         DatabaseBackend::Sqlite,
-                        &format!(
+                        format!(
                             "UPDATE collection SET scan_deleted_videos = 1 
                              WHERE id IN ({}) AND scan_deleted_videos = 0",
                             placeholders
@@ -4555,14 +4567,14 @@ pub async fn fix_page_video_ids(
                     enabled_sources.push(format!("{}个合集", result.rows_affected()));
                 }
             }
-            
+
             // 收藏夹
             if !favorite_ids.is_empty() {
                 let placeholders = favorite_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
                 let result = txn
                     .execute(Statement::from_sql_and_values(
                         DatabaseBackend::Sqlite,
-                        &format!(
+                        format!(
                             "UPDATE favorite SET scan_deleted_videos = 1 
                              WHERE id IN ({}) AND scan_deleted_videos = 0",
                             placeholders
@@ -4574,14 +4586,14 @@ pub async fn fix_page_video_ids(
                     enabled_sources.push(format!("{}个收藏夹", result.rows_affected()));
                 }
             }
-            
+
             // 稍后再看
             if !watch_later_ids.is_empty() {
                 let placeholders = watch_later_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
                 let result = txn
                     .execute(Statement::from_sql_and_values(
                         DatabaseBackend::Sqlite,
-                        &format!(
+                        format!(
                             "UPDATE watch_later SET scan_deleted_videos = 1 
                              WHERE id IN ({}) AND scan_deleted_videos = 0",
                             placeholders
@@ -4593,14 +4605,14 @@ pub async fn fix_page_video_ids(
                     enabled_sources.push(format!("{}个稍后再看", result.rows_affected()));
                 }
             }
-            
+
             // 番剧
             if !bangumi_source_ids.is_empty() {
                 let placeholders = bangumi_source_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
                 let result = txn
                     .execute(Statement::from_sql_and_values(
                         DatabaseBackend::Sqlite,
-                        &format!(
+                        format!(
                             "UPDATE video_source SET scan_deleted_videos = 1 
                              WHERE id IN ({}) AND scan_deleted_videos = 0",
                             placeholders
@@ -4612,16 +4624,19 @@ pub async fn fix_page_video_ids(
                     enabled_sources.push(format!("{}个番剧", result.rows_affected()));
                 }
             }
-            
+
             if !enabled_sources.is_empty() {
-                info!("已自动启用以下视频源的'扫描已删除视频'功能: {}", enabled_sources.join(", "));
+                info!(
+                    "已自动启用以下视频源的'扫描已删除视频'功能: {}",
+                    enabled_sources.join(", ")
+                );
             }
         }
     }
-    
+
     // 7. 提交事务
     txn.commit().await?;
-    
+
     // 8. 最终验证
     let final_check: i64 = connection
         .query_one(Statement::from_sql_and_values(
@@ -4637,13 +4652,13 @@ pub async fn fix_page_video_ids(
         .await?
         .and_then(|row| row.try_get_by_index::<i64>(0).ok())
         .unwrap_or(0);
-    
+
     if final_check == 0 {
         info!("所有page记录的video_id修复完成！");
     } else {
         error!("修复后仍有 {} 条page记录的video_id错误，请检查", final_check);
     }
-    
+
     Ok(())
 }
 
@@ -4655,9 +4670,9 @@ pub async fn populate_missing_video_cids(
     token: CancellationToken,
 ) -> Result<()> {
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-    
+
     debug!("开始检查并填充缺失的视频cid");
-    
+
     // 查询所有cid为空的视频
     let videos_without_cid = video::Entity::find()
         .filter(video::Column::Cid.is_null())
@@ -4665,42 +4680,42 @@ pub async fn populate_missing_video_cids(
         .filter(video::Column::Deleted.eq(0))
         .all(connection)
         .await?;
-    
+
     if videos_without_cid.is_empty() {
         debug!("所有视频都已有cid，无需填充");
         return Ok(());
     }
-    
+
     info!("发现 {} 个视频需要填充cid", videos_without_cid.len());
-    
+
     // 批量处理视频，每批10个
     let chunk_size = 10;
-    let total_batches = (videos_without_cid.len() + chunk_size - 1) / chunk_size;
-    
+    let total_batches = videos_without_cid.len().div_ceil(chunk_size);
+
     for (batch_idx, chunk) in videos_without_cid.chunks(chunk_size).enumerate() {
         if token.is_cancelled() {
             info!("cid填充任务被取消");
             return Ok(());
         }
-        
+
         info!("处理第 {}/{} 批视频", batch_idx + 1, total_batches);
-        
+
         let futures = chunk.iter().map(|video_model| {
             let bili_client = bili_client.clone();
             let connection = connection.clone();
             let token = token.clone();
             let video_model = video_model.clone();
-            
+
             async move {
                 // 获取视频详情
                 let video = Video::new(&bili_client, video_model.bvid.clone());
-                
+
                 let view_info = tokio::select! {
                     biased;
                     _ = token.cancelled() => return Err(anyhow!("任务被取消")),
                     res = video.get_view_info() => res,
                 };
-                
+
                 match view_info {
                     Ok(VideoInfo::Detail { pages, .. }) => {
                         // 获取第一个page的cid
@@ -4710,9 +4725,9 @@ pub async fn populate_missing_video_cids(
                             let mut video_active_model: video::ActiveModel = video_model.into();
                             video_active_model.cid = Set(Some(cid));
                             video_active_model.save(&connection).await?;
-                            
+
                             // 触发异步同步到内存DB
-                            
+
                             debug!("成功更新视频 {} 的cid: {}", bvid, cid);
                         }
                     }
@@ -4723,25 +4738,25 @@ pub async fn populate_missing_video_cids(
                         warn!("视频 {} 返回了非预期的信息类型", video_model.bvid);
                     }
                 }
-                
+
                 Ok::<_, anyhow::Error>(())
             }
         });
-        
+
         let results: Vec<_> = futures::future::join_all(futures).await;
-        
+
         for result in results {
             if let Err(e) = result {
                 error!("处理视频时出错: {}", e);
             }
         }
-        
+
         // 批次之间添加延迟，避免触发风控
         if batch_idx < total_batches - 1 {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         }
     }
-    
+
     info!("cid填充任务完成");
     Ok(())
 }

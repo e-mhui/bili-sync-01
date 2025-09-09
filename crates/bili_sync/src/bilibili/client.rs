@@ -113,18 +113,18 @@ impl Client {
                 format!("DedeUserID={}", credential.dedeuserid),
                 format!("ac_time_value={}", credential.ac_time_value),
             ];
-            
+
             if let Some(ckmd5) = &credential.dedeuserid_ckmd5 {
                 cookie_parts.push(format!("DedeUserID__ckMd5={}", ckmd5));
             }
-            
+
             let cookie_str = cookie_parts.join("; ");
-            
+
             // 调试日志：记录Cookie发送信息
             tracing::debug!("发送Cookie字段数量: {}", cookie_parts.len());
             tracing::debug!("是否包含DedeUserID__ckMd5: {}", credential.dedeuserid_ckmd5.is_some());
             tracing::debug!("Cookie完整内容: {}", cookie_str);
-            
+
             req = req.header(header::COOKIE, cookie_str);
         }
         req
@@ -907,7 +907,8 @@ impl BiliClient {
         page: i32,
         page_size: i32,
     ) -> Result<(Vec<crate::api::response::SubmissionVideoInfo>, i64), anyhow::Error> {
-        self.get_user_submission_videos_with_keyword(up_id, page, page_size, None).await
+        self.get_user_submission_videos_with_keyword(up_id, page, page_size, None)
+            .await
     }
 
     /// 搜索UP主投稿视频 - 支持关键词搜索
@@ -918,7 +919,8 @@ impl BiliClient {
         page: i32,
         page_size: i32,
     ) -> Result<(Vec<crate::api::response::SubmissionVideoInfo>, i64), anyhow::Error> {
-        self.get_user_submission_videos_with_keyword(up_id, page, page_size, Some(keyword)).await
+        self.get_user_submission_videos_with_keyword(up_id, page, page_size, Some(keyword))
+            .await
     }
 
     /// 获取UP主投稿视频列表的内部实现 - 支持可选关键词搜索
@@ -941,7 +943,7 @@ impl BiliClient {
         params.insert("ps".to_string(), page_size.to_string());
         params.insert("order".to_string(), "pubdate".to_string()); // 按发布时间排序
         params.insert("order_avoided".to_string(), "true".to_string());
-        
+
         // 如果提供了关键词，添加到搜索参数中
         if let Some(keyword) = keyword {
             params.insert("keyword".to_string(), keyword.to_string());

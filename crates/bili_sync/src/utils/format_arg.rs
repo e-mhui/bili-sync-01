@@ -103,7 +103,7 @@ pub fn video_format_args(video_model: &bili_sync_entity::video::Model) -> serde_
     let current_config = config::reload_config();
     // 解码HTML实体，确保UP主名称正确显示
     let decoded_upper_name = decode_html_entities(&video_model.upper_name).to_string();
-    
+
     json!({
         "bvid": &video_model.bvid,
         "title": &video_model.name,
@@ -184,7 +184,7 @@ pub fn bangumi_page_format_args(
 
     // 解码HTML实体，确保UP主名称正确显示
     let decoded_upper_name = decode_html_entities(&video_model.upper_name).to_string();
-    
+
     json!({
         "bvid": &video_model.bvid,
         "title": &video_model.name,
@@ -246,7 +246,7 @@ pub fn page_format_args(
 
         // 解码HTML实体，确保UP主名称正确显示
         let decoded_upper_name = decode_html_entities(&video_model.upper_name).to_string();
-        
+
         json!({
             "bvid": &video_model.bvid,
             "title": &video_model.name,
@@ -272,7 +272,7 @@ pub fn page_format_args(
         // 对于单P视频，使用原有的格式（不包含season_pad）
         // 解码HTML实体，确保UP主名称正确显示
         let decoded_upper_name = decode_html_entities(&video_model.upper_name).to_string();
-        
+
         json!({
             "bvid": &video_model.bvid,
             "title": &video_model.name,

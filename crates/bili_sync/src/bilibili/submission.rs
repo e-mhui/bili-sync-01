@@ -19,17 +19,17 @@ pub struct Submission<'a> {
 
 impl<'a> Submission<'a> {
     pub fn new(client: &'a BiliClient, upper_id: String) -> Self {
-        Self { 
-            client, 
-            upper_id, 
+        Self {
+            client,
+            upper_id,
             upper_name: None,
         }
     }
 
     pub fn with_name(client: &'a BiliClient, upper_id: String, upper_name: String) -> Self {
-        Self { 
-            client, 
-            upper_id, 
+        Self {
+            client,
+            upper_id,
             upper_name: Some(upper_name),
         }
     }

@@ -372,7 +372,7 @@ impl Default for Config {
             bangumi_use_season_structure: default_bangumi_use_season_structure(),
             notification: NotificationConfig::default(),
             enable_startup_data_fix: false, // 默认关闭，减少不必要的日志
-            enable_cid_population: false, // 默认关闭，减少不必要的日志
+            enable_cid_population: false,   // 默认关闭，减少不必要的日志
         }
     }
 }

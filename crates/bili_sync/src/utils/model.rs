@@ -3,8 +3,8 @@ use bili_sync_entity::*;
 use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::{OnConflict, SimpleExpr};
 use sea_orm::DatabaseTransaction;
-use tracing::{debug, info};
 use std::collections::HashSet;
+use tracing::{debug, info};
 
 use crate::adapter::{VideoSource, VideoSourceEnum};
 use crate::bilibili::{PageInfo, VideoInfo};
@@ -163,33 +163,30 @@ pub async fn create_videos(
     // 新增：在全量模式下进行去重检查，防止重复处理已存在的视频
     let current_config = crate::config::reload_config();
     let is_full_mode = !current_config.submission_risk_control.enable_incremental_fetch;
-    
+
     let final_videos_info = if is_full_mode && matches!(video_source, VideoSourceEnum::Submission(_)) {
         // 全量模式下的 UP主投稿，检查哪些视频已存在
         let all_bvids: Vec<String> = videos_info.iter().map(extract_bvid).collect();
-        
+
         // 批量查询已存在的视频
         let existing_videos = video::Entity::find()
             .filter(video::Column::Bvid.is_in(all_bvids.clone()))
             .filter(video_source.filter_expr())
             .all(connection)
             .await?;
-        
-        let existing_bvids: HashSet<String> = existing_videos
-            .into_iter()
-            .map(|v| v.bvid)
-            .collect();
-        
+
+        let existing_bvids: HashSet<String> = existing_videos.into_iter().map(|v| v.bvid).collect();
+
         // 过滤出真正的新视频
         let new_videos: Vec<VideoInfo> = videos_info
             .into_iter()
             .filter(|info| !existing_bvids.contains(&extract_bvid(info)))
             .collect();
-        
+
         let total_count = all_bvids.len();
         let existing_count = existing_bvids.len();
         let new_count = new_videos.len();
-        
+
         if existing_count > 0 {
             info!(
                 "全量模式去重检查完成：总视频 {} 个，已存在 {} 个，新视频 {} 个",
@@ -198,7 +195,7 @@ pub async fn create_videos(
         } else {
             debug!("全量模式：所有 {} 个视频都是新视频", new_count);
         }
-        
+
         new_videos
     } else {
         // 增量模式或其他类型的视频源，使用原有逻辑
@@ -654,7 +651,7 @@ pub async fn create_videos(
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -665,16 +662,14 @@ pub async fn create_pages(
     connection: &DatabaseTransaction,
 ) -> Result<()> {
     // 对于单P视频，统一使用视频标题作为页面名称
-    if pages_info.len() == 1 && pages_info[0].page == 1 {
-        if pages_info[0].name != video_model.name {
-            debug!(
-                "单P视频页面名称标准化: 视频 {} ({}), 原名称='{}' -> 使用视频标题='{}'",
-                video_model.bvid, video_model.id, pages_info[0].name, video_model.name
-            );
-            pages_info[0].name = video_model.name.clone();
-        }
+    if pages_info.len() == 1 && pages_info[0].page == 1 && pages_info[0].name != video_model.name {
+        debug!(
+            "单P视频页面名称标准化: 视频 {} ({}), 原名称='{}' -> 使用视频标题='{}'",
+            video_model.bvid, video_model.id, pages_info[0].name, video_model.name
+        );
+        pages_info[0].name = video_model.name.clone();
     }
-    
+
     let page_models = pages_info
         .into_iter()
         .map(|p| p.into_active_model(video_model))
@@ -690,7 +685,7 @@ pub async fn create_pages(
             .exec(connection)
             .await?;
     }
-    
+
     Ok(())
 }
 
@@ -704,7 +699,7 @@ pub async fn update_videos_model(videos: Vec<video::ActiveModel>, connection: &D
         )
         .exec(connection)
         .await?;
-    
+
     Ok(())
 }
 
@@ -716,6 +711,6 @@ pub async fn update_pages_model(pages: Vec<page::ActiveModel>, connection: &Data
             .to_owned(),
     );
     query.exec(connection).await?;
-    
+
     Ok(())
 }

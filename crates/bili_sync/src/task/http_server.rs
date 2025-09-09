@@ -123,14 +123,14 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
     // 使用主数据库连接
     let optimized_connection = {
         debug!("使用主数据库连接");
-        
+
         // 验证主数据库连接
         if test_db_connection(&_database_connection).await {
             debug!("主数据库连接验证成功");
         } else {
             warn!("主数据库连接验证失败，HTTP服务器可能无法正常工作");
         }
-        
+
         _database_connection
     };
     let app = Router::new()

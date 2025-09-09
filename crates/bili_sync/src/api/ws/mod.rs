@@ -12,8 +12,7 @@ use futures::{future, SinkExt, StreamExt};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use sysinfo::{
-    get_current_pid, CpuRefreshKind, DiskRefreshKind, Disks, MemoryRefreshKind,
-    ProcessRefreshKind, RefreshKind, System,
+    get_current_pid, CpuRefreshKind, DiskRefreshKind, Disks, MemoryRefreshKind, ProcessRefreshKind, RefreshKind, System,
 };
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::{IntervalStream, WatchStream};

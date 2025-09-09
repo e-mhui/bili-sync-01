@@ -153,12 +153,11 @@ pub enum _ActiveModel {
     Collection(bili_sync_entity::collection::ActiveModel),
     Submission(bili_sync_entity::submission::ActiveModel),
     WatchLater(bili_sync_entity::watch_later::ActiveModel),
-    Bangumi(bili_sync_entity::video_source::ActiveModel),
+    Bangumi(Box<bili_sync_entity::video_source::ActiveModel>),
 }
 
 impl _ActiveModel {
     pub async fn save(self, connection: &DatabaseConnection) -> Result<()> {
-
         match self {
             _ActiveModel::Favorite(model) => {
                 model.save(connection).await?;
@@ -191,7 +190,6 @@ pub async fn bangumi_from<'a>(
     VideoSourceEnum,
     Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
 )> {
-
     // 使用可用的ID构建查询条件
     let mut query =
         bili_sync_entity::video_source::Entity::find().filter(bili_sync_entity::video_source::Column::Type.eq(1));

@@ -1,5 +1,5 @@
 use crate::config::CONFIG_DIR;
-use chrono::{Local, TimeZone, NaiveDate};
+use chrono::{Local, NaiveDate, TimeZone};
 use once_cell::sync::Lazy;
 use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
@@ -98,13 +98,13 @@ impl FileLogWriter {
         if current_date != *stored_date {
             // 日期已变化，需要轮转日志
             drop(stored_date); // 释放锁
-            
+
             // 刷新当前缓冲区到旧文件
             self.flush_internal();
-            
+
             // 创建新的日志文件
             self.create_daily_log_files(current_date)?;
-            
+
             // 更新当前日期
             *self.current_date.lock().unwrap() = current_date;
         }
@@ -139,7 +139,7 @@ impl FileLogWriter {
                                 let modified_datetime = Local
                                     .timestamp_opt(modified_timestamp, 0)
                                     .single()
-                                    .unwrap_or_else(|| Local::now());
+                                    .unwrap_or_else(Local::now);
 
                                 if modified_datetime < thirty_days_ago {
                                     // 删除超过30天的日志文件
@@ -177,7 +177,7 @@ impl FileLogWriter {
                 // 先取出所有日志，避免死锁
                 let entries: Vec<LogEntry> = buffer.drain(..).collect();
                 drop(buffer); // 释放锁
-                
+
                 // 写入文件
                 self.write_entries_to_files(entries);
             }
@@ -290,7 +290,6 @@ impl FileLogWriter {
         }
     }
 
-
     // 优雅停止
     pub fn shutdown(&self) {
         // 最后一次刷新所有缓冲的日志
@@ -320,4 +319,3 @@ pub fn shutdown_file_logger() {
         writer.shutdown();
     }
 }
-

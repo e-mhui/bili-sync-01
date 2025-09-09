@@ -18,18 +18,13 @@ impl MigrationTrait for Migration {
 
         // 不在迁移中填充数据，因为需要重新调用API获取
         // 数据将在后续的扫描过程中自动填充
-        
+
         Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .alter_table(
-                Table::alter()
-                    .table(Video::Table)
-                    .drop_column(Video::Cid)
-                    .to_owned(),
-            )
+            .alter_table(Table::alter().table(Video::Table).drop_column(Video::Cid).to_owned())
             .await
     }
 }

@@ -146,7 +146,6 @@ impl DeleteTaskQueue {
 
     /// 添加删除任务到队列（同时保存到数据库）
     pub async fn enqueue_task(&self, task: DeleteVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
-
         // 保存到数据库
         let task_data = serde_json::to_string(&task)?;
         let active_model = task_queue::ActiveModel {
@@ -187,7 +186,6 @@ impl DeleteTaskQueue {
         task: &DeleteVideoSourceTask,
         connection: &DatabaseConnection,
     ) -> Result<()> {
-
         let task_data = serde_json::to_string(task)?;
 
         // 查找并更新数据库中的任务状态
@@ -333,7 +331,6 @@ impl VideoDeleteTaskQueue {
 
     /// 检查视频是否已有待处理的删除任务
     pub async fn has_pending_delete_task(&self, video_id: i32, connection: &DatabaseConnection) -> Result<bool> {
-
         let count = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
@@ -370,7 +367,6 @@ impl VideoDeleteTaskQueue {
             return Ok(());
         }
 
-
         // 保存到数据库
         let task_data = serde_json::to_string(&task)?;
         let active_model = task_queue::ActiveModel {
@@ -406,7 +402,6 @@ impl VideoDeleteTaskQueue {
 
     /// 标记任务为已完成（更新数据库状态）
     pub async fn mark_task_completed(&self, task: &DeleteVideoTask, connection: &DatabaseConnection) -> Result<()> {
-
         let task_data = serde_json::to_string(task)?;
 
         // 查找并更新数据库中的任务状态
@@ -428,7 +423,6 @@ impl VideoDeleteTaskQueue {
 
     /// 标记任务为失败（更新数据库状态）
     pub async fn mark_task_failed(&self, task: &DeleteVideoTask, connection: &DatabaseConnection) -> Result<()> {
-
         let task_data = serde_json::to_string(task)?;
 
         // 查找并更新数据库中的任务状态
@@ -543,7 +537,6 @@ async fn delete_video_internal(db: Arc<DatabaseConnection>, video_id: i32) -> Re
     use bili_sync_entity::{page, video};
     use sea_orm::*;
 
-
     // 检查视频是否存在
     let video = video::Entity::find_by_id(video_id)
         .one(db.as_ref())
@@ -628,7 +621,6 @@ async fn delete_video_files_from_pages_task(
     use bili_sync_entity::{page, video};
     use sea_orm::*;
     use tokio::fs;
-
 
     // 获取该视频的所有页面（分P）
     let pages = page::Entity::find()
@@ -867,7 +859,6 @@ impl AddTaskQueue {
 
     /// 添加添加任务到队列（同时保存到数据库）
     pub async fn enqueue_task(&self, task: AddVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
-
         // 保存到数据库
         let task_data = serde_json::to_string(&task)?;
         let active_model = task_queue::ActiveModel {
@@ -904,7 +895,6 @@ impl AddTaskQueue {
 
     /// 标记任务为已完成（更新数据库状态）
     pub async fn mark_task_completed(&self, task: &AddVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
-
         let task_data = serde_json::to_string(task)?;
 
         // 查找并更新数据库中的任务状态
@@ -926,7 +916,6 @@ impl AddTaskQueue {
 
     /// 标记任务为失败（更新数据库状态）
     pub async fn mark_task_failed(&self, task: &AddVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
-
         let task_data = serde_json::to_string(task)?;
 
         // 查找并更新数据库中的任务状态
@@ -1057,7 +1046,6 @@ impl ConfigTaskQueue {
 
     /// 添加更新配置任务到队列（同时保存到数据库）
     pub async fn enqueue_update_task(&self, task: UpdateConfigTask, connection: &DatabaseConnection) -> Result<()> {
-
         // 保存到数据库
         let task_data = serde_json::to_string(&task)?;
         let active_model = task_queue::ActiveModel {
@@ -1086,7 +1074,6 @@ impl ConfigTaskQueue {
 
     /// 添加重载配置任务到队列（同时保存到数据库）
     pub async fn enqueue_reload_task(&self, task: ReloadConfigTask, connection: &DatabaseConnection) -> Result<()> {
-
         // 保存到数据库
         let task_data = serde_json::to_string(&task)?;
         let active_model = task_queue::ActiveModel {
@@ -1131,7 +1118,6 @@ impl ConfigTaskQueue {
         task: &UpdateConfigTask,
         connection: &DatabaseConnection,
     ) -> Result<()> {
-
         let task_data = serde_json::to_string(task)?;
 
         // 查找并更新数据库中的任务状态
@@ -1157,7 +1143,6 @@ impl ConfigTaskQueue {
         task: &UpdateConfigTask,
         connection: &DatabaseConnection,
     ) -> Result<()> {
-
         let task_data = serde_json::to_string(task)?;
 
         // 查找并更新数据库中的任务状态
@@ -1185,7 +1170,6 @@ impl ConfigTaskQueue {
         task: &ReloadConfigTask,
         connection: &DatabaseConnection,
     ) -> Result<()> {
-
         let task_data = serde_json::to_string(task)?;
 
         // 查找并更新数据库中的任务状态
@@ -1211,7 +1195,6 @@ impl ConfigTaskQueue {
         task: &ReloadConfigTask,
         connection: &DatabaseConnection,
     ) -> Result<()> {
-
         let task_data = serde_json::to_string(task)?;
 
         // 查找并更新数据库中的任务状态
@@ -1257,7 +1240,6 @@ impl ConfigTaskQueue {
 
     /// 查询数据库中待处理的更新配置任务数量
     pub async fn get_pending_update_tasks_count(&self, connection: &DatabaseConnection) -> Result<u64, anyhow::Error> {
-
         let count = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::UpdateConfig))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
@@ -1268,7 +1250,6 @@ impl ConfigTaskQueue {
 
     /// 查询数据库中待处理的重载配置任务数量
     pub async fn get_pending_reload_tasks_count(&self, connection: &DatabaseConnection) -> Result<u64, anyhow::Error> {
-
         let count = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::ReloadConfig))
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
@@ -1279,7 +1260,6 @@ impl ConfigTaskQueue {
 
     /// 从数据库恢复配置任务到内存队列
     pub async fn recover_config_tasks_from_db(&self, connection: &DatabaseConnection) -> Result<u32, anyhow::Error> {
-
         // 查询所有待处理的配置任务
         let pending_tasks = TaskQueueEntity::find()
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
@@ -1751,7 +1731,6 @@ pub async fn process_video_delete_tasks(db: Arc<DatabaseConnection>) -> Result<u
 /// 从数据库恢复待处理的任务到内存队列中
 pub async fn recover_pending_tasks(connection: &DatabaseConnection) -> Result<(), anyhow::Error> {
     info!("开始恢复数据库中的待处理任务到内存队列");
-
 
     // 查询所有待处理状态的任务
     let pending_tasks = TaskQueueEntity::find()

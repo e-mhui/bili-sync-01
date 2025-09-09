@@ -186,21 +186,22 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
         error!("启动时初始化视频源失败: {}", e);
     } else {
         debug!("启动时视频源初始化成功");
-        
+
         // 重新加载配置以获取最新的数据修复设置
         let config = crate::config::reload_config();
-        
+
         // 检查并填充缺失的视频cid（仅在启用时执行）
         if config.enable_cid_population {
             debug!("检查是否需要填充视频cid...");
             let token = tokio_util::sync::CancellationToken::new();
-            if let Err(e) = crate::workflow::populate_missing_video_cids(&bili_client, &connection, token.clone()).await {
+            if let Err(e) = crate::workflow::populate_missing_video_cids(&bili_client, &connection, token.clone()).await
+            {
                 error!("填充视频cid失败: {}", e);
             }
         } else {
             debug!("视频CID填充功能已禁用，跳过检查");
         }
-        
+
         // 修复page表的video_id（仅在启用时执行）
         if config.enable_startup_data_fix {
             debug!("检查是否需要修复page表的video_id...");
@@ -473,8 +474,9 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                         // 检查是否有新视频信息需要添加到收集器（修复：同时检查数量和向量）
                         if !new_videos.is_empty() {
                             // 获取待删除的视频ID列表，过滤掉充电专享视频
-                            let pending_delete_video_ids = crate::task::VIDEO_DELETE_TASK_QUEUE.get_pending_video_ids().await;
-                            
+                            let pending_delete_video_ids =
+                                crate::task::VIDEO_DELETE_TASK_QUEUE.get_pending_video_ids().await;
+
                             // 过滤掉待删除队列中的视频
                             let filtered_videos: Vec<_> = new_videos
                                 .into_iter()
@@ -492,18 +494,22 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                                     }
                                 })
                                 .collect();
-                            
+
                             let filtered_count = filtered_videos.len();
                             let original_count = new_video_count;
                             if filtered_count < original_count {
                                 info!("过滤充电视频: 原始 {} 个，过滤后 {} 个", original_count, filtered_count);
                             }
-                            
+
                             if !filtered_videos.is_empty() {
                                 if let Ok((video_source, _)) =
-                                    crate::adapter::video_source_from(args, path, &bili_client, &optimized_connection).await
+                                    crate::adapter::video_source_from(args, path, &bili_client, &optimized_connection)
+                                        .await
                                 {
-                                    debug!("向scan_collector添加 {} 个新视频信息（已过滤充电视频）", filtered_videos.len());
+                                    debug!(
+                                        "向scan_collector添加 {} 个新视频信息（已过滤充电视频）",
+                                        filtered_videos.len()
+                                    );
                                     scan_collector.add_new_videos(&video_source, filtered_videos);
                                 } else {
                                     warn!("无法获取视频源信息，跳过添加新视频到收集器");
@@ -590,7 +596,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             debug!("扫描完成，所有进度已保存");
 
             // mmap自动处理数据持久化，不需要手动同步
-            
+
             info!("本轮扫描完成 - 视频源数量: {}", ordered_sources.len());
 
             // 生成扫描摘要并发送推送通知

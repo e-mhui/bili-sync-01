@@ -24,7 +24,6 @@ impl ConfigManager {
     pub async fn ensure_tables_exist(&self) -> Result<()> {
         info!("检查配置表是否存在...");
 
-
         // 创建config_items表
         let create_config_items = "
             CREATE TABLE IF NOT EXISTS config_items (
@@ -249,7 +248,6 @@ impl ConfigManager {
 
         debug!("配置项 {} 已更新", key);
 
-
         Ok(())
     }
 
@@ -279,7 +277,6 @@ impl ConfigManager {
 
     /// 记录配置变更历史 (使用原生SQL)
     async fn record_config_change(&self, key: &str, old_value: Option<&str>, new_value: &str) -> Result<()> {
-
         let sql = "INSERT INTO config_changes (key_name, old_value, new_value, changed_at) VALUES (?, ?, ?, ?)";
 
         let stmt = sea_orm::Statement::from_sql_and_values(
@@ -314,7 +311,6 @@ impl ConfigManager {
         key: Option<&str>,
         limit: Option<u64>,
     ) -> Result<Vec<config_item::ConfigChangeModel>> {
-
         let mut sql = "SELECT id, key_name, old_value, new_value, changed_at FROM config_changes".to_string();
         let mut values = Vec::new();
 

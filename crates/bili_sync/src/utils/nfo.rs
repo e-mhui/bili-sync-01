@@ -1712,13 +1712,13 @@ impl<'a> TVShow<'a> {
         // 优先使用API的发布时间，如果没有则使用配置的时间类型
         let aired_time = if let Some(ref publish_time) = season_info.publish_time {
             // 使用统一的时间解析函数
-            parse_time_string(publish_time).unwrap_or_else(|| {
-                // 解析失败，使用配置的时间类型
-                match config.nfo_config.time_type {
+            {
+                let fallback_time = match config.nfo_config.time_type {
                     crate::config::NFOTimeType::FavTime => video.favtime,
                     crate::config::NFOTimeType::PubTime => video.pubtime,
-                }
-            })
+                };
+                parse_time_string(publish_time).unwrap_or(fallback_time)
+            }
         } else {
             // 没有API时间，使用配置的时间类型
             match config.nfo_config.time_type {
@@ -1971,13 +1971,13 @@ impl<'a> Season<'a> {
         // 优先使用API的发布时间，如果没有则使用配置的时间类型
         let aired_time = if let Some(ref publish_time) = season_info.publish_time {
             // 使用统一的时间解析函数
-            parse_time_string(publish_time).unwrap_or_else(|| {
-                // 解析失败，使用配置的时间类型
-                match config.nfo_config.time_type {
+            {
+                let fallback_time = match config.nfo_config.time_type {
                     crate::config::NFOTimeType::FavTime => video.favtime,
                     crate::config::NFOTimeType::PubTime => video.pubtime,
-                }
-            })
+                };
+                parse_time_string(publish_time).unwrap_or(fallback_time)
+            }
         } else {
             // 没有API时间，使用配置的时间类型
             match config.nfo_config.time_type {
