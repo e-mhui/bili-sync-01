@@ -105,7 +105,7 @@ mod rename_tests {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, generate_qr_code, poll_qr_status, get_current_user, clear_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid, test_notification_handler, get_notification_config, update_notification_config, get_notification_status),
+    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, generate_qr_code, poll_qr_status, get_current_user, clear_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid, test_notification_handler, get_notification_config, update_notification_config, get_notification_status, test_risk_control_handler),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -1254,6 +1254,102 @@ pub async fn reset_specific_tasks(
         resetted_videos_count: resetted_videos_info.len(),
         resetted_pages_count: resetted_pages_info.len(),
     }))
+}
+
+/// 测试风控验证（开发调试用）
+#[utoipa::path(
+    post,
+    path = "/api/test/risk-control",
+    responses(
+        (status = 200, description = "测试风控验证结果", body = ApiResponse<crate::api::response::TestRiskControlResponse>),
+        (status = 400, description = "配置错误", body = String),
+        (status = 500, description = "服务器内部错误", body = String)
+    )
+)]
+pub async fn test_risk_control_handler() -> Result<ApiResponse<crate::api::response::TestRiskControlResponse>, ApiError> {
+    use crate::config::with_config;
+    
+    tracing::info!("开始测试风控验证功能");
+
+    // 获取风控配置
+    let risk_config = with_config(|bundle| bundle.config.risk_control.clone());
+
+    if !risk_config.enabled {
+        return Ok(ApiResponse::bad_request(crate::api::response::TestRiskControlResponse {
+            success: false,
+            message: "风控验证功能未启用，请在设置中启用后重试".to_string(),
+            verification_url: None,
+            instructions: Some("请前往设置页面的'验证码风控'部分启用风控验证功能".to_string()),
+        }));
+    }
+
+    match risk_config.mode.as_str() {
+        "skip" => {
+            Ok(ApiResponse::ok(crate::api::response::TestRiskControlResponse {
+                success: true,
+                message: "风控模式设置为跳过，测试完成".to_string(),
+                verification_url: None,
+                instructions: Some("当前风控模式为'跳过'，实际使用时将直接跳过验证".to_string()),
+            }))
+        }
+        "manual" => {
+            Ok(ApiResponse::ok(crate::api::response::TestRiskControlResponse {
+                success: true,
+                message: "手动验证模式配置正确，可以处理风控验证".to_string(),
+                verification_url: Some("/captcha".to_string()),
+                instructions: Some(format!(
+                    "当前配置为手动验证模式。\n\
+                     超时时间: {} 秒\n\
+                     当遇到真实风控时，验证界面将在 /captcha 页面显示",
+                    risk_config.timeout
+                )),
+            }))
+        }
+        "auto" => {
+            let auto_config = risk_config.auto_solve.as_ref();
+            if auto_config.is_none() {
+                return Ok(ApiResponse::bad_request(crate::api::response::TestRiskControlResponse {
+                    success: false,
+                    message: "自动验证模式需要配置验证码识别服务".to_string(),
+                    verification_url: None,
+                    instructions: Some("请在设置中配置验证码识别服务的API密钥".to_string()),
+                }));
+            }
+            
+            let auto_config = auto_config.unwrap();
+            Ok(ApiResponse::ok(crate::api::response::TestRiskControlResponse {
+                success: true,
+                message: format!(
+                    "自动验证模式配置正确。配置的服务: {}，最大重试次数: {}",
+                    auto_config.service, auto_config.max_retries
+                ),
+                verification_url: None,
+                instructions: Some(format!(
+                    "当前配置的自动验证服务: {}\n\
+                     API密钥: {}...\n\
+                     最大重试次数: {}\n\
+                     单次超时时间: {} 秒\n\
+                     实际使用时将自动调用验证码识别服务完成验证",
+                    auto_config.service,
+                    if auto_config.api_key.len() > 8 {
+                        &auto_config.api_key[..8]
+                    } else {
+                        "未配置"
+                    },
+                    auto_config.max_retries,
+                    auto_config.solve_timeout
+                )),
+            }))
+        }
+        _ => {
+            Ok(ApiResponse::bad_request(crate::api::response::TestRiskControlResponse {
+                success: false,
+                message: format!("无效的风控模式: {}", risk_config.mode),
+                verification_url: None,
+                instructions: Some("请设置有效的风控模式: manual、auto 或 skip".to_string()),
+            }))
+        }
+    }
 }
 
 /// 更新特定视频及其所含分页的状态位

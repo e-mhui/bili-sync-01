@@ -27,6 +27,7 @@ pub async fn auth(headers: HeaderMap, request: Request, next: Next) -> Result<Re
         "/api/auth/qr/poll",          // 轮询登录状态不需要认证
         "/api/auth/current-user",     // 获取当前用户信息不需要认证
         "/api/auth/clear-credential", // 清除凭证不需要认证
+        "/api/test/risk-control",     // 测试风控API不需要认证
         "/api/ws",                    // WebSocket使用协议头认证，不使用Authorization头
     ];
 

@@ -707,3 +707,12 @@ pub struct AutoSolveConfigResponse {
     pub max_retries: u32,
     pub solve_timeout: u64,
 }
+
+// 测试风控验证响应
+#[derive(Serialize, ToSchema)]
+pub struct TestRiskControlResponse {
+    pub success: bool,
+    pub message: String,
+    pub verification_url: Option<String>,
+    pub instructions: Option<String>,
+}
