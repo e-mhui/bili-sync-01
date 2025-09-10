@@ -1296,6 +1296,50 @@ impl<'a> Video<'a> {
                     }
                 }
             }
+            "auto" => {
+                // 创建风控处理器
+                let risk_control = RiskControl::new(self.client, v_voucher.clone());
+                
+                // 第一步：申请验证码
+                let captcha_info = risk_control.register().await?;
+                tracing::info!("成功获取验证码信息，准备自动解决");
+                
+                // 第二步：请求验证协调器处理
+                let verification_request = VERIFICATION_COORDINATOR
+                    .request_verification(v_voucher, captcha_info)
+                    .await?;
+                
+                match verification_request {
+                    VerificationRequest::StartNew(_) => {
+                        tracing::info!("开始自动解决验证码");
+                        
+                        // 调用自动解决方法
+                        let page_url = "https://www.bilibili.com";
+                        let captcha_result = VERIFICATION_COORDINATOR
+                            .auto_solve_captcha(&risk_config, page_url)
+                            .await?;
+                        
+                        // 使用验证结果获取gaia_vtoken
+                        tracing::info!("自动验证成功，正在获取gaia_vtoken");
+                        let gaia_vtoken = risk_control.validate(captcha_result).await?;
+                        
+                        // 保存token到协调器缓存
+                        VERIFICATION_COORDINATOR.save_token(gaia_vtoken.clone()).await;
+                        tracing::info!("自动风控验证完成，获取到gaia_vtoken");
+                        
+                        Ok(gaia_vtoken)
+                    }
+                    VerificationRequest::WaitForExisting => {
+                        tracing::info!("检测到正在进行的验证，等待完成...");
+                        let gaia_vtoken = VERIFICATION_COORDINATOR.wait_for_completion().await?;
+                        Ok(gaia_vtoken)
+                    }
+                    VerificationRequest::UseCache(gaia_vtoken) => {
+                        tracing::info!("使用缓存的gaia_vtoken");
+                        Ok(gaia_vtoken)
+                    }
+                }
+            }
             _ => {
                 tracing::error!("未知的风控模式: {}", risk_config.mode);
                 anyhow::bail!("未知的风控模式: {}", risk_config.mode);

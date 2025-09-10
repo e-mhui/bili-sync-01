@@ -1,10 +1,9 @@
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::time::Duration;
 
 use crate::config::AutoSolveConfig;
-use super::{CaptchaInfo, CaptchaResult, GeetestInfo};
+use super::{CaptchaResult, GeetestInfo};
 
 /// 验证码识别服务类型
 #[derive(Debug, Clone)]
@@ -230,7 +229,7 @@ impl CaptchaSolver {
     }
 
     /// 使用CapSolver服务
-    async fn solve_with_capsolver(&self, geetest_info: &GeetestInfo, page_url: &str) -> Result<CaptchaResult> {
+    async fn solve_with_capsolver(&self, _geetest_info: &GeetestInfo, _page_url: &str) -> Result<CaptchaResult> {
         tracing::info!("使用CapSolver服务解决GeeTest验证码");
         
         // CapSolver API实现类似，这里暂时返回错误
@@ -238,7 +237,7 @@ impl CaptchaSolver {
     }
 
     /// 使用云码服务
-    async fn solve_with_yunma(&self, geetest_info: &GeetestInfo, page_url: &str) -> Result<CaptchaResult> {
+    async fn solve_with_yunma(&self, _geetest_info: &GeetestInfo, _page_url: &str) -> Result<CaptchaResult> {
         tracing::info!("使用云码服务解决GeeTest验证码");
         
         // 云码API实现，这里暂时返回错误
