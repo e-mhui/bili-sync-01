@@ -285,12 +285,42 @@ pub struct RiskControlConfig {
     /// 是否启用风控验证
     #[serde(default)]
     pub enabled: bool,
-    /// 验证模式: "manual" (Web界面人工验证), "skip" (跳过)
+    /// 验证模式: "manual" (Web界面人工验证), "auto" (自动验证), "skip" (跳过)
     #[serde(default = "default_risk_control_mode")]
     pub mode: String,
     /// 验证等待超时时间（秒）
     #[serde(default = "default_risk_control_timeout")]
     pub timeout: u64,
+    /// 自动验证配置
+    #[serde(default)]
+    pub auto_solve: Option<AutoSolveConfig>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AutoSolveConfig {
+    /// 验证码识别服务: "2captcha", "anticaptcha", "capsolver", "yunma"
+    #[serde(default = "default_captcha_service")]
+    pub service: String,
+    /// API密钥
+    pub api_key: String,
+    /// 最大重试次数
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+    /// 单次验证超时时间（秒）
+    #[serde(default = "default_solve_timeout")]
+    pub solve_timeout: u64,
+}
+
+fn default_captcha_service() -> String {
+    "2captcha".to_string()
+}
+
+fn default_max_retries() -> u32 {
+    3
+}
+
+fn default_solve_timeout() -> u64 {
+    120 // 2分钟
 }
 
 fn default_risk_control_mode() -> String {
@@ -307,6 +337,7 @@ impl Default for RiskControlConfig {
             enabled: false,
             mode: default_risk_control_mode(),
             timeout: default_risk_control_timeout(),
+            auto_solve: None,
         }
     }
 }
@@ -314,12 +345,43 @@ impl Default for RiskControlConfig {
 impl RiskControlConfig {
     #[allow(dead_code)]
     pub fn validate(&self) -> Result<(), String> {
-        if !matches!(self.mode.as_str(), "manual" | "skip") {
-            return Err("风控验证模式必须是 'manual' 或 'skip'".to_string());
+        if !matches!(self.mode.as_str(), "manual" | "auto" | "skip") {
+            return Err("风控验证模式必须是 'manual', 'auto' 或 'skip'".to_string());
         }
 
-        if self.timeout < 60 || self.timeout > 600 {
-            return Err("验证超时时间必须在60-600秒之间".to_string());
+        if self.timeout < 60 || self.timeout > 3600 {
+            return Err("验证超时时间必须在60-3600秒之间".to_string());
+        }
+
+        // 如果是自动模式，需要验证自动配置
+        if self.mode == "auto" {
+            if let Some(auto_config) = &self.auto_solve {
+                auto_config.validate()?;
+            } else {
+                return Err("自动验证模式需要配置 auto_solve 参数".to_string());
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl AutoSolveConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if !matches!(self.service.as_str(), "2captcha" | "anticaptcha" | "capsolver" | "yunma") {
+            return Err("验证码识别服务必须是 '2captcha', 'anticaptcha', 'capsolver' 或 'yunma'".to_string());
+        }
+
+        if self.api_key.is_empty() {
+            return Err("API密钥不能为空".to_string());
+        }
+
+        if self.max_retries == 0 || self.max_retries > 10 {
+            return Err("最大重试次数必须在1-10之间".to_string());
+        }
+
+        if self.solve_timeout < 30 || self.solve_timeout > 300 {
+            return Err("单次验证超时时间必须在30-300秒之间".to_string());
         }
 
         Ok(())

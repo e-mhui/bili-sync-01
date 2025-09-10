@@ -349,6 +349,11 @@ export interface UpdateConfigRequest {
 	risk_control_enabled?: boolean;
 	risk_control_mode?: string;
 	risk_control_timeout?: number;
+	// 自动验证配置
+	risk_control_auto_solve_service?: string;
+	risk_control_auto_solve_api_key?: string;
+	risk_control_auto_solve_max_retries?: number;
+	risk_control_auto_solve_timeout?: number;
 }
 
 // 更新配置响应类型
