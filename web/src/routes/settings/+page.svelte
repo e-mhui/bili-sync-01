@@ -502,7 +502,6 @@
 			// 风控验证配置
 			riskControlEnabled = config.risk_control?.enabled ?? false;
 			riskControlMode = config.risk_control?.mode || 'manual';
-			riskControlWebPort = config.risk_control?.web_port || 8899;
 			riskControlTimeout = config.risk_control?.timeout || 300;
 
 			// aria2监控配置
@@ -691,7 +690,6 @@
 				// 风控验证配置
 				risk_control_enabled: riskControlEnabled,
 				risk_control_mode: riskControlMode,
-				risk_control_web_port: riskControlWebPort,
 				risk_control_timeout: riskControlTimeout
 			};
 
@@ -3386,8 +3384,14 @@
 						</svg>
 					</button>
 				</SheetHeader>
-				<div class="flex-1 overflow-y-auto {isMobile ? 'p-4' : 'p-6'}">
-					<div class="space-y-6">
+				<form
+					onsubmit={(e) => {
+						e.preventDefault();
+						saveRiskControlConfig();
+					}}
+					class="flex flex-col {isMobile ? 'h-[calc(90vh-8rem)]' : 'h-[calc(100vh-12rem)]'}"
+				>
+					<div class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
 						<div class="space-y-4">
 							<div class="space-y-2">
 								<Label for="risk-control-enabled">启用风控验证</Label>
@@ -3405,7 +3409,7 @@
 								<select
 									id="risk-control-mode"
 									bind:value={riskControlMode}
-									class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 								>
 									<option value="manual">manual - 手动验证</option>
 									<option value="skip">skip - 跳过验证</option>
@@ -3451,24 +3455,13 @@
 							</div>
 						</div>
 
-						<!-- 保存按钮 -->
-						<div class="flex justify-end space-x-2 pt-4 border-t">
-							<Button 
-								variant="outline" 
-								onclick={() => (openSheet = null)}
-							>
-								取消
-							</Button>
-							<Button 
-								onclick={() => saveRiskControlConfig()}
-								disabled={isSaving}
-							>
-								{isSaving ? '保存中...' : '保存设置'}
-							</Button>
-						</div>
 					</div>
-				</div>
-			</div>
+				<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
+					<Button type="submit" disabled={isSaving} class="w-full">
+						{isSaving ? '保存中...' : '保存设置'}
+					</Button>
+				</SheetFooter>
+			</form>
 		</div>
 	</SheetContent>
 </Sheet>
