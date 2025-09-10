@@ -1448,6 +1448,11 @@ impl ConfigTaskQueue {
                 risk_control_enabled: None,
                 risk_control_mode: None,
                 risk_control_timeout: None,
+                // 自动验证配置，任务队列中不使用
+                risk_control_auto_solve_service: None,
+                risk_control_auto_solve_api_key: None,
+                risk_control_auto_solve_max_retries: None,
+                risk_control_auto_solve_timeout: None,
             };
 
             match update_config_internal(db.clone(), request).await {

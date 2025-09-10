@@ -180,6 +180,11 @@ pub struct UpdateConfigRequest {
     pub risk_control_enabled: Option<bool>,
     pub risk_control_mode: Option<String>,
     pub risk_control_timeout: Option<u64>,
+    // 自动验证配置
+    pub risk_control_auto_solve_service: Option<String>,
+    pub risk_control_auto_solve_api_key: Option<String>,
+    pub risk_control_auto_solve_max_retries: Option<u32>,
+    pub risk_control_auto_solve_timeout: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

@@ -4152,6 +4152,14 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
             enabled: config.risk_control.enabled,
             mode: config.risk_control.mode.clone(),
             timeout: config.risk_control.timeout,
+            auto_solve: config.risk_control.auto_solve.as_ref().map(|auto_solve| {
+                crate::api::response::AutoSolveConfigResponse {
+                    service: auto_solve.service.clone(),
+                    api_key: auto_solve.api_key.clone(),
+                    max_retries: auto_solve.max_retries,
+                    solve_timeout: auto_solve.solve_timeout,
+                }
+            }),
         },
     }))
 }
@@ -4811,12 +4819,12 @@ pub async fn update_config_internal(
         if !mode.trim().is_empty() && mode != config.risk_control.mode {
             // 验证模式的有效性
             match mode.as_str() {
-                "manual" | "skip" => {
+                "manual" | "auto" | "skip" => {
                     config.risk_control.mode = mode;
                     updated_fields.push("risk_control.mode");
                 }
                 _ => {
-                    return Err(anyhow!("无效的风控模式，只支持 'manual'（手动验证）或 'skip'（跳过验证）").into());
+                    return Err(anyhow!("无效的风控模式，只支持 'manual'（手动验证）、'auto'（自动验证）或 'skip'（跳过验证）").into());
                 }
             }
         }
@@ -4826,6 +4834,87 @@ pub async fn update_config_internal(
         if timeout > 0 && timeout != config.risk_control.timeout {
             config.risk_control.timeout = timeout;
             updated_fields.push("risk_control.timeout");
+        }
+    }
+
+    // 自动验证配置处理
+    if let Some(service) = params.risk_control_auto_solve_service {
+        if !service.trim().is_empty() {
+            // 验证服务的有效性
+            match service.as_str() {
+                "2captcha" | "anticaptcha" | "capsolver" | "yunma" => {
+                    // 如果auto_solve配置不存在，创建一个新的
+                    if config.risk_control.auto_solve.is_none() {
+                        config.risk_control.auto_solve = Some(crate::config::AutoSolveConfig {
+                            service: service.clone(),
+                            api_key: String::new(),
+                            max_retries: 3,
+                            solve_timeout: 120,
+                        });
+                        updated_fields.push("risk_control.auto_solve.service");
+                    } else if config.risk_control.auto_solve.as_ref().unwrap().service != service {
+                        config.risk_control.auto_solve.as_mut().unwrap().service = service;
+                        updated_fields.push("risk_control.auto_solve.service");
+                    }
+                }
+                _ => {
+                    return Err(anyhow!("无效的验证码识别服务，只支持 '2captcha', 'anticaptcha', 'capsolver' 或 'yunma'").into());
+                }
+            }
+        }
+    }
+
+    if let Some(api_key) = params.risk_control_auto_solve_api_key {
+        if !api_key.trim().is_empty() {
+            // 如果auto_solve配置不存在，创建一个新的
+            if config.risk_control.auto_solve.is_none() {
+                config.risk_control.auto_solve = Some(crate::config::AutoSolveConfig {
+                    service: "2captcha".to_string(),
+                    api_key: api_key.clone(),
+                    max_retries: 3,
+                    solve_timeout: 120,
+                });
+                updated_fields.push("risk_control.auto_solve.api_key");
+            } else if config.risk_control.auto_solve.as_ref().unwrap().api_key != api_key {
+                config.risk_control.auto_solve.as_mut().unwrap().api_key = api_key;
+                updated_fields.push("risk_control.auto_solve.api_key");
+            }
+        }
+    }
+
+    if let Some(max_retries) = params.risk_control_auto_solve_max_retries {
+        if max_retries > 0 && max_retries <= 10 {
+            // 如果auto_solve配置不存在，创建一个新的
+            if config.risk_control.auto_solve.is_none() {
+                config.risk_control.auto_solve = Some(crate::config::AutoSolveConfig {
+                    service: "2captcha".to_string(),
+                    api_key: String::new(),
+                    max_retries,
+                    solve_timeout: 120,
+                });
+                updated_fields.push("risk_control.auto_solve.max_retries");
+            } else if config.risk_control.auto_solve.as_ref().unwrap().max_retries != max_retries {
+                config.risk_control.auto_solve.as_mut().unwrap().max_retries = max_retries;
+                updated_fields.push("risk_control.auto_solve.max_retries");
+            }
+        }
+    }
+
+    if let Some(solve_timeout) = params.risk_control_auto_solve_timeout {
+        if solve_timeout >= 30 && solve_timeout <= 300 {
+            // 如果auto_solve配置不存在，创建一个新的
+            if config.risk_control.auto_solve.is_none() {
+                config.risk_control.auto_solve = Some(crate::config::AutoSolveConfig {
+                    service: "2captcha".to_string(),
+                    api_key: String::new(),
+                    max_retries: 3,
+                    solve_timeout,
+                });
+                updated_fields.push("risk_control.auto_solve.solve_timeout");
+            } else if config.risk_control.auto_solve.as_ref().unwrap().solve_timeout != solve_timeout {
+                config.risk_control.auto_solve.as_mut().unwrap().solve_timeout = solve_timeout;
+                updated_fields.push("risk_control.auto_solve.solve_timeout");
+            }
         }
     }
 

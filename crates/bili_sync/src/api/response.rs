@@ -695,4 +695,15 @@ pub struct RiskControlConfigResponse {
     pub enabled: bool,
     pub mode: String,
     pub timeout: u64,
+    // 自动验证配置
+    pub auto_solve: Option<AutoSolveConfigResponse>,
+}
+
+// 自动验证配置响应
+#[derive(Serialize, ToSchema)]
+pub struct AutoSolveConfigResponse {
+    pub service: String,
+    pub api_key: String,
+    pub max_retries: u32,
+    pub solve_timeout: u64,
 }
