@@ -4979,7 +4979,7 @@ pub async fn update_config_internal(
     }
 
     if let Some(max_retries) = params.risk_control_auto_solve_max_retries {
-        if max_retries > 0 && max_retries <= 10 {
+        if (1..=10).contains(&max_retries) {
             // 如果auto_solve配置不存在，创建一个新的
             if config.risk_control.auto_solve.is_none() {
                 config.risk_control.auto_solve = Some(crate::config::AutoSolveConfig {
@@ -4997,7 +4997,7 @@ pub async fn update_config_internal(
     }
 
     if let Some(solve_timeout) = params.risk_control_auto_solve_timeout {
-        if solve_timeout >= 30 && solve_timeout <= 300 {
+        if (30..=300).contains(&solve_timeout) {
             // 如果auto_solve配置不存在，创建一个新的
             if config.risk_control.auto_solve.is_none() {
                 config.risk_control.auto_solve = Some(crate::config::AutoSolveConfig {
