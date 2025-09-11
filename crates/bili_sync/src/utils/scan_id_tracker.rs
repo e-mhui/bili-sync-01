@@ -133,8 +133,26 @@ pub fn group_sources_by_new_old(
         if max_id.is_none() || source.id > max_id.unwrap() {
             new_sources.push(source);
         } else {
-            // 旧源：只添加还未处理的（ID大于last_processed_id的）
-            if last_processed_id.is_none() || source.id > last_processed_id.unwrap() {
+            // 旧源：检查是否有断点需要恢复
+            let has_checkpoint = match source.source_type {
+                SourceType::Submission => {
+                    // 检查页码tracker中是否存在该源
+                    use crate::adapter::Args;
+                    if let Args::Submission { upper_id } = &source.args {
+                        let tracker = crate::bilibili::submission::SUBMISSION_PAGE_TRACKER.read().unwrap();
+                        tracker.contains_key(upper_id)
+                    } else {
+                        false
+                    }
+                },
+                _ => false
+            };
+            
+            // 如果有断点或者还未处理，则添加到旧源列表
+            if has_checkpoint || last_processed_id.is_none() || source.id > last_processed_id.unwrap() {
+                if has_checkpoint {
+                    debug!("检测到断点恢复源 (ID: {}, 类型: {:?})，包含在扫描列表中", source.id, source.source_type);
+                }
                 old_sources.push(source);
             } else {
                 // 已处理过的源，跳过

@@ -439,7 +439,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
                 // 在处理视频源前记录到收集器
                 if let Ok((video_source, _)) =
-                    crate::adapter::video_source_from(args, path, &bili_client, &optimized_connection).await
+                    crate::adapter::video_source_from(args, path, &bili_client, &optimized_connection, None).await
                 {
                     scan_collector.start_source(&video_source);
                 }
@@ -503,7 +503,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
                             if !filtered_videos.is_empty() {
                                 if let Ok((video_source, _)) =
-                                    crate::adapter::video_source_from(args, path, &bili_client, &optimized_connection)
+                                    crate::adapter::video_source_from(args, path, &bili_client, &optimized_connection, None)
                                         .await
                                 {
                                     debug!(

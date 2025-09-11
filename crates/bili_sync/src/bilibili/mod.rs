@@ -32,7 +32,7 @@ mod danmaku;
 mod error;
 mod favorite_list;
 mod risk_control;
-mod submission;
+pub mod submission;
 mod subtitle;
 mod verification_coordinator;
 mod video;

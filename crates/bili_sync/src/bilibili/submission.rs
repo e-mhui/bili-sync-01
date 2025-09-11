@@ -6,11 +6,19 @@ use reqwest::Method;
 use serde_json::Value;
 use std::time::Duration;
 use tracing::{debug, info, warn};
+use std::collections::HashMap;
+use std::sync::RwLock;
+use once_cell::sync::Lazy;
 
 use crate::bilibili::credential::encoded_query;
 use crate::bilibili::favorite_list::Upper;
 use crate::bilibili::{BiliClient, Validate, VideoInfo, MIXIN_KEY};
 use crate::config::SubmissionRiskControlConfig;
+
+/// 全局提交源页码跟踪器，用于断点续传
+/// 存储格式: (页码, 该页已处理的视频索引)
+pub static SUBMISSION_PAGE_TRACKER: Lazy<RwLock<HashMap<String, (usize, usize)>>> = 
+    Lazy::new(|| RwLock::new(HashMap::new()));
 pub struct Submission<'a> {
     client: &'a BiliClient,
     upper_id: String,
@@ -77,17 +85,42 @@ impl<'a> Submission<'a> {
             .validate()
     }
 
-    pub fn into_video_stream(self) -> impl Stream<Item = Result<VideoInfo>> + 'a {
+    pub fn into_video_stream(self, cancellation_token: tokio_util::sync::CancellationToken) -> impl Stream<Item = Result<VideoInfo>> + 'a {
         try_stream! {
-            let mut page: usize = 1;
+            let _page: usize = 1;
             let mut request_count = 0;
             let mut total_video_count: Option<i64> = None;
             let mut is_large_submission = false;
 
             let current_config = crate::config::reload_config();
             let config = &current_config.submission_risk_control;
+            
+            // 获取上次中断的页码和视频索引
+            let (mut page, skip_videos_count) = match self.get_last_processed_checkpoint().await {
+                Ok((saved_page, video_index)) if saved_page > 1 || video_index > 0 => {
+                    if video_index > 0 {
+                        info!("UP主 {} 从断点页码 {} 第 {} 个视频后继续获取", self.display_name(), saved_page, video_index);
+                    } else {
+                        info!("UP主 {} 从断点页码 {} 继续获取", self.display_name(), saved_page);
+                    }
+                    (saved_page, video_index)
+                },
+                _ => (1, 0)
+            };
+            
+            // 记录是否为断点恢复（用于判断是否需要重新检测UP主类型）
+            let _is_resuming_from_checkpoint = page > 1;
 
             loop {
+                // 在每次循环开始时检查取消状态
+                if cancellation_token.is_cancelled() {
+                    info!("UP主 {} 获取过程被取消，当前页码: {}", self.display_name(), page);
+                    // 保存当前页码用于断点续传（页面开始时取消，从当前页重新开始）
+                    if let Err(e) = self.save_last_processed_checkpoint(page, 0).await {
+                        warn!("保存断点失败: {}", e);
+                    }
+                    return;
+                }
                 // 在第一次请求后实施延迟策略
                 if request_count > 0 {
                     let delay = Self::calculate_adaptive_delay(
@@ -107,20 +140,17 @@ impl<'a> Submission<'a> {
                         tokio::time::sleep(delay).await;
                     }
 
-                    // 分批处理：每处理batch_size页后额外延迟
-                    if is_large_submission && config.enable_batch_processing && page > 1 && (page - 1) % config.batch_size == 0 {
-                        let batch_delay = Duration::from_secs(config.batch_delay_seconds);
-                        info!(
-                            "UP主 {} 分批处理：完成第 {} 批（{}页），延迟 {}秒",
-                            self.display_name(),
-                            (page - 1) / config.batch_size,
-                            config.batch_size,
-                            config.batch_delay_seconds
-                        );
-                        tokio::time::sleep(batch_delay).await;
-                    }
                 }
 
+                // 再次检查取消状态（请求API前）
+                if cancellation_token.is_cancelled() {
+                    info!("UP主 {} 在第 {} 页请求前检测到取消信号", self.display_name(), page);
+                    if let Err(e) = self.save_last_processed_checkpoint(page, 0).await {
+                        warn!("保存断点失败: {}", e);
+                    }
+                    return;
+                }
+                
                 let mut videos = self
                     .get_videos(page as i32)
                     .await
@@ -142,7 +172,8 @@ impl<'a> Submission<'a> {
                 request_count += 1;
 
                 // 在第一次请求时检测是否为大量视频UP主并确定处理策略
-                if page == 1 {
+                // 对于断点恢复，也需要重新检测UP主类型
+                if request_count == 1 {
                     if let Some(count) = videos["data"]["page"]["count"].as_i64() {
                         total_video_count = Some(count);
                         is_large_submission = count > config.large_submission_threshold as i64;
@@ -168,6 +199,20 @@ impl<'a> Submission<'a> {
                     }
                 }
 
+                // 分批处理：每处理batch_size页后额外延迟
+                // 在成功请求API后判断是否需要分批延迟（基于绝对页码位置）
+                if is_large_submission && config.enable_batch_processing && page % config.batch_size == 0 {
+                    let batch_delay = Duration::from_secs(config.batch_delay_seconds);
+                    info!(
+                        "UP主 {} 分批处理：完成第 {} 批（页码{}），延迟 {}秒",
+                        self.display_name(),
+                        page / config.batch_size,
+                        page,
+                        config.batch_delay_seconds
+                    );
+                    tokio::time::sleep(batch_delay).await;
+                }
+
                 let vlist = &mut videos["data"]["list"]["vlist"];
                 if vlist.as_array().is_none_or(|v| v.is_empty()) {
                     if page == 1 {
@@ -181,7 +226,21 @@ impl<'a> Submission<'a> {
                 let videos_info: Vec<VideoInfo> = serde_json::from_value(vlist.take())
                     .with_context(|| format!("failed to parse videos of upper {} page {}", self.display_name(), page))?;
 
-                for video_info in videos_info {
+                for (video_index, video_info) in videos_info.into_iter().enumerate() {
+                    // 如果是恢复的第一页，跳过已处理的视频
+                    if page == match self.get_last_processed_checkpoint().await { Ok((p, _)) => p, _ => 0 } 
+                        && video_index < skip_videos_count {
+                        continue;
+                    }
+                    
+                    // 在yield每个视频前检查取消状态
+                    if cancellation_token.is_cancelled() {
+                        info!("UP主 {} 在第 {} 页第 {} 个视频处理时检测到取消信号", self.display_name(), page, video_index + 1);
+                        if let Err(e) = self.save_last_processed_checkpoint(page, video_index).await {
+                            warn!("保存断点失败: {}", e);
+                        }
+                        return;
+                    }
                     yield video_info;
                 }
 
@@ -196,14 +255,21 @@ impl<'a> Submission<'a> {
                 }
                 break;
             }
+            
+            // 注意：这里不清除断点记录，因为我们还没有扫描完成
+            // 只有在整个流结束时才清除（在扫描完成后记录统计信息的部分）
 
-            // 扫描完成后记录统计信息
+            // 扫描完成后记录统计信息并清除断点记录
             if let Some(total_count) = total_video_count {
+                // 扫描完成，清除断点记录
+                if let Err(e) = self.clear_last_processed_checkpoint().await {
+                    warn!("清除断点失败: {}", e);
+                }
                 if is_large_submission && config.enable_batch_processing {
                     let total_batches = (page - 1).div_ceil(config.batch_size);
                     info!(
-                        "UP主 {} 分批扫描完成：共 {} 个视频，分 {} 批处理（每批{}页），发起 {} 次API请求",
-                        self.display_name(), total_count, total_batches, config.batch_size, request_count
+                        "UP主 {} 分批扫描完成：共 {} 个视频，处理到第{}页，分 {} 批处理（每批{}页），发起 {} 次API请求",
+                        self.display_name(), total_count, page - 1, total_batches, config.batch_size, request_count
                     );
                 } else {
                     info!(
@@ -213,6 +279,40 @@ impl<'a> Submission<'a> {
                 }
             }
         }
+    }
+
+    /// 获取上次处理的页码（用于断点续传）
+    #[allow(dead_code)]
+    fn get_last_processed_page_key(&self) -> String {
+        format!("submission_last_page_{}", self.upper_id)
+    }
+    
+    /// 获取上次处理的检查点（用于断点续传）
+    async fn get_last_processed_checkpoint(&self) -> anyhow::Result<(usize, usize)> {
+        let tracker = SUBMISSION_PAGE_TRACKER.read().unwrap();
+        let checkpoint = tracker.get(&self.upper_id).copied().unwrap_or((1, 0));
+        Ok(checkpoint)
+    }
+    
+    /// 保存当前处理的检查点
+    async fn save_last_processed_checkpoint(&self, page: usize, video_index: usize) -> anyhow::Result<()> {
+        let mut tracker = SUBMISSION_PAGE_TRACKER.write().unwrap();
+        tracker.insert(self.upper_id.clone(), (page, video_index));
+        if video_index > 0 {
+            info!("保存UP主 {} 的断点: 第{}页第{}个视频", self.upper_id, page, video_index);
+        } else {
+            info!("保存UP主 {} 的断点页码: {}", self.upper_id, page);
+        }
+        Ok(())
+    }
+    
+    /// 清除保存的检查点（完整扫描完成后）
+    async fn clear_last_processed_checkpoint(&self) -> anyhow::Result<()> {
+        let mut tracker = SUBMISSION_PAGE_TRACKER.write().unwrap();
+        if tracker.remove(&self.upper_id).is_some() {
+            info!("清除UP主 {} 的断点（扫描完成）", self.upper_id);
+        }
+        Ok(())
     }
 
     /// 计算自适应延迟时间

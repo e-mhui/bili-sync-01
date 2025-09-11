@@ -55,6 +55,17 @@ impl VideoSource for submission::Model {
             return true;
         }
 
+        // 检查是否存在断点恢复情况
+        let upper_id_str = self.upper_id.to_string();
+        let has_checkpoint = {
+            let tracker = crate::bilibili::submission::SUBMISSION_PAGE_TRACKER.read().unwrap();
+            tracker.contains_key(&upper_id_str)
+        };
+        
+        if has_checkpoint {
+            return true;
+        }
+
         // 检查是否启用增量获取
         let current_config = crate::config::reload_config();
         if current_config.submission_risk_control.enable_incremental_fetch {
@@ -94,14 +105,25 @@ impl VideoSource for submission::Model {
     }
 
     fn log_refresh_video_start(&self) {
-        let current_config = crate::config::reload_config();
-        if current_config.submission_risk_control.enable_incremental_fetch {
-            info!("开始增量扫描「{}」投稿（仅获取新视频）..", self.upper_name);
+        // 检查是否有断点恢复
+        let upper_id_str = self.upper_id.to_string();
+        let has_checkpoint = {
+            let tracker = crate::bilibili::submission::SUBMISSION_PAGE_TRACKER.read().unwrap();
+            tracker.contains_key(&upper_id_str)
+        };
+        
+        if has_checkpoint {
+            info!("开始断点恢复「{}」投稿扫描..", self.upper_name);
         } else {
-            info!(
-                "开始全量扫描「{}」投稿（获取所有视频，已存在视频将自动跳过）..",
-                self.upper_name
-            );
+            let current_config = crate::config::reload_config();
+            if current_config.submission_risk_control.enable_incremental_fetch {
+                info!("开始增量扫描「{}」投稿（仅获取新视频）..", self.upper_name);
+            } else {
+                info!(
+                    "开始全量扫描「{}」投稿（获取所有视频，已存在视频将自动跳过）..",
+                    self.upper_name
+                );
+            }
         }
     }
 
@@ -265,6 +287,7 @@ pub(super) async fn submission_from<'a>(
     path: &Path,
     bili_client: &'a BiliClient,
     connection: &DatabaseConnection,
+    cancellation_token: Option<tokio_util::sync::CancellationToken>,
 ) -> Result<(
     VideoSourceEnum,
     Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
@@ -297,6 +320,8 @@ pub(super) async fn submission_from<'a>(
             .await?
             .context("submission not found")?
             .into(),
-        Box::pin(submission_with_name.into_video_stream()),
+        Box::pin(submission_with_name.into_video_stream(
+            cancellation_token.unwrap_or_else(|| tokio_util::sync::CancellationToken::new())
+        )),
     ))
 }

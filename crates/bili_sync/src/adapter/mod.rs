@@ -131,6 +131,7 @@ pub async fn video_source_from<'a>(
     path: &'a Path,
     bili_client: &'a BiliClient,
     connection: &DatabaseConnection,
+    cancellation_token: Option<tokio_util::sync::CancellationToken>,
 ) -> Result<(
     VideoSourceEnum,
     Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
@@ -139,7 +140,7 @@ pub async fn video_source_from<'a>(
         Args::Favorite { fid } => favorite_from(fid, path, bili_client, connection).await,
         Args::Collection { collection_item } => collection_from(collection_item, path, bili_client, connection).await,
         Args::WatchLater => watch_later_from(path, bili_client, connection).await,
-        Args::Submission { upper_id } => submission_from(upper_id, path, bili_client, connection).await,
+        Args::Submission { upper_id } => submission_from(upper_id, path, bili_client, connection, cancellation_token).await,
         Args::Bangumi {
             season_id,
             media_id,

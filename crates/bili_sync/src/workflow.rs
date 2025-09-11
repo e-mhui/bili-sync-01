@@ -129,13 +129,13 @@ pub async fn process_video_source(
     };
 
     // 从参数中获取视频列表的 Model 与视频流
-    let (video_source, video_streams) = match video_source_from(args, path, bili_client, connection).await {
+    let (video_source, video_streams) = match video_source_from(args, path, bili_client, connection, Some(token.clone())).await {
         Ok(result) => result,
         Err(e) => {
             let error_msg = format!("{:#}", e);
             if retry_with_refresh(error_msg).await.is_ok() {
                 // 刷新成功，重试
-                video_source_from(args, path, bili_client, connection).await?
+                video_source_from(args, path, bili_client, connection, Some(token.clone())).await?
             } else {
                 return Err(e);
             }
@@ -150,13 +150,23 @@ pub async fn process_video_source(
                 let error_msg = format!("{:#}", e);
                 if retry_with_refresh(error_msg).await.is_ok() {
                     // 刷新成功，重新获取视频流并重试
-                    let (_, video_streams) = video_source_from(args, path, bili_client, connection).await?;
+                    let (_, video_streams) = video_source_from(args, path, bili_client, connection, Some(token.clone())).await?;
                     refresh_video_source(&video_source, video_streams, connection, token.clone(), bili_client).await?
                 } else {
                     return Err(e);
                 }
             }
         };
+
+    // Guard: skip further steps if paused/cancelled or no new videos in this round
+    if crate::task::TASK_CONTROLLER.is_paused() || token.is_cancelled() {
+        info!("任务已暂停/取消，跳过详情与下载阶段");
+        return Ok((new_video_count, new_videos));
+    }
+    if new_video_count == 0 {
+        info!("本轮未发现新视频，跳过详情与下载阶段");
+        return Ok((new_video_count, new_videos));
+    }
 
     // 单独请求视频详情接口，获取视频的详情信息与所有的分页，写入数据库
     if let Err(e) = fetch_video_details(bili_client, &video_source, connection, token.clone()).await {
@@ -384,6 +394,11 @@ pub async fn refresh_video_source<'a>(
     let mut new_videos = Vec::new();
 
     while let Some(videos_info) = video_streams.next().await {
+        // 在处理每批视频前检查取消状态
+        if token.is_cancelled() || crate::task::TASK_CONTROLLER.is_paused() {
+            warn!("视频源处理过程中检测到取消/暂停信号，停止处理");
+            break;
+        }
         // 获取插入前的视频数量
         let before_count = get_video_count_for_source(video_source, connection).await?;
 
@@ -546,6 +561,11 @@ pub async fn fetch_video_details(
     connection: &DatabaseConnection,
     token: CancellationToken,
 ) -> Result<()> {
+    // Early exit when paused/cancelled
+    if crate::task::TASK_CONTROLLER.is_paused() || token.is_cancelled() {
+        info!("任务已暂停/取消，跳过视频详情阶段");
+        return Ok(());
+    }
     video_source.log_fetch_video_start();
     let videos_model = filter_unfilled_videos(video_source.filter_expr(), connection).await?;
 
@@ -976,6 +996,11 @@ pub async fn download_unprocessed_videos(
     downloader: &UnifiedDownloader,
     token: CancellationToken,
 ) -> Result<()> {
+    // Early exit when paused/cancelled
+    if crate::task::TASK_CONTROLLER.is_paused() || token.is_cancelled() {
+        info!("任务已暂停/取消，跳过下载阶段");
+        return Ok(());
+    }
     video_source.log_download_video_start();
     let current_config = crate::config::reload_config();
     let semaphore = Semaphore::new(current_config.concurrent_limit.video);
@@ -1087,6 +1112,11 @@ pub async fn retry_failed_videos_once(
     downloader: &UnifiedDownloader,
     token: CancellationToken,
 ) -> Result<()> {
+    // Early exit when paused/cancelled
+    if crate::task::TASK_CONTROLLER.is_paused() || token.is_cancelled() {
+        info!("任务已暂停/取消，跳过失败视频重试阶段");
+        return Ok(());
+    }
     let failed_videos_pages = get_failed_videos_in_current_cycle(video_source.filter_expr(), connection).await?;
 
     if failed_videos_pages.is_empty() {
