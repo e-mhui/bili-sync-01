@@ -293,6 +293,8 @@ pub struct ConfigResponse {
     pub notification: NotificationConfigResponse,
     // 风控验证配置
     pub risk_control: RiskControlConfigResponse,
+    // 服务器绑定地址
+    pub bind_address: String,
 }
 
 // B站凭证信息结构体

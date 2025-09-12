@@ -185,6 +185,8 @@ pub struct UpdateConfigRequest {
     pub risk_control_auto_solve_api_key: Option<String>,
     pub risk_control_auto_solve_max_retries: Option<u32>,
     pub risk_control_auto_solve_timeout: Option<u64>,
+    // 服务器绑定地址
+    pub bind_address: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

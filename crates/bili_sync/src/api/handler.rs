@@ -4270,6 +4270,8 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
                 }
             }),
         },
+        // 服务器绑定地址
+        bind_address: config.bind_address.clone(),
     }))
 }
 
@@ -4912,6 +4914,45 @@ pub async fn update_config_internal(
             if new_path != config.upper_path {
                 config.upper_path = new_path;
                 updated_fields.push("upper_path");
+            }
+        }
+    }
+
+    // 服务器绑定地址配置
+    if let Some(bind_address) = params.bind_address {
+        if !bind_address.trim().is_empty() {
+            let normalized_address = if bind_address.contains(':') {
+                // 已经包含端口，直接使用
+                bind_address.clone()
+            } else {
+                // 只有端口号，添加默认IP
+                if let Ok(port) = bind_address.parse::<u16>() {
+                    if port == 0 {
+                        return Err(anyhow!("端口号不能为0").into());
+                    }
+                    format!("0.0.0.0:{}", port)
+                } else {
+                    return Err(anyhow!("无效的端口号格式").into());
+                }
+            };
+
+            // 验证地址格式
+            if let Some(colon_pos) = normalized_address.rfind(':') {
+                let (_ip, port_str) = normalized_address.split_at(colon_pos + 1);
+                if let Ok(port) = port_str.parse::<u16>() {
+                    if port == 0 {
+                        return Err(anyhow!("端口号不能为0").into());
+                    }
+                } else {
+                    return Err(anyhow!("无效的端口号格式").into());
+                }
+            } else {
+                return Err(anyhow!("绑定地址格式无效，应为 'IP:端口' 或 '端口'").into());
+            }
+
+            if normalized_address != config.bind_address {
+                config.bind_address = normalized_address;
+                updated_fields.push("bind_address");
             }
         }
     }

@@ -1453,6 +1453,8 @@ impl ConfigTaskQueue {
                 risk_control_auto_solve_api_key: None,
                 risk_control_auto_solve_max_retries: None,
                 risk_control_auto_solve_timeout: None,
+                // 服务器绑定地址，任务队列中不使用
+                bind_address: None,
             };
 
             match update_config_internal(db.clone(), request).await {

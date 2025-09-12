@@ -134,6 +134,7 @@
 	let timeFormat = '%Y-%m-%d';
 	let interval = 1200;
 	let nfoTimeType = 'favtime';
+	let bindAddress = '0.0.0.0:12345';
 	let parallelDownloadEnabled = false;
 	let parallelDownloadThreads = 4;
 
@@ -246,6 +247,8 @@
 	let pageNameValid = true;
 	let multiPageNameError = '';
 	let multiPageNameValid = true;
+	let bindAddressError = '';
+	let bindAddressValid = true;
 
 	// 互斥逻辑：视频文件名模板 vs 多P视频文件名模板
 	let videoNameHasPath = false;
@@ -442,6 +445,7 @@
 			timeFormat = config.time_format || '';
 			interval = config.interval || 1200;
 			nfoTimeType = config.nfo_time_type || 'favtime';
+			bindAddress = config.bind_address || '0.0.0.0:12345';
 			parallelDownloadEnabled = config.parallel_download_enabled || false;
 			parallelDownloadThreads = config.parallel_download_threads || 4;
 
@@ -568,6 +572,46 @@
 		return true;
 	}
 
+	// 验证服务器绑定地址
+	function validateBindAddress(value: string) {
+		const trimmedValue = value.trim();
+		if (!trimmedValue) {
+			bindAddressError = '绑定地址不能为空';
+			bindAddressValid = false;
+			return false;
+		}
+
+		// 检查是否包含端口号
+		if (trimmedValue.includes(':')) {
+			// 格式：IP:端口
+			const parts = trimmedValue.split(':');
+			if (parts.length !== 2) {
+				bindAddressError = '绑定地址格式错误，应为 "IP:端口" 或 "端口"';
+				bindAddressValid = false;
+				return false;
+			}
+			
+			const port = parseInt(parts[1]);
+			if (isNaN(port) || port < 1 || port > 65535) {
+				bindAddressError = '端口号必须是1-65535之间的数字';
+				bindAddressValid = false;
+				return false;
+			}
+		} else {
+			// 只有端口号
+			const port = parseInt(trimmedValue);
+			if (isNaN(port) || port < 1 || port > 65535) {
+				bindAddressError = '端口号必须是1-65535之间的数字';
+				bindAddressValid = false;
+				return false;
+			}
+		}
+		
+		bindAddressError = '';
+		bindAddressValid = true;
+		return true;
+	}
+
 	// 互斥逻辑处理
 	function handleVideoNameChange(value: string) {
 		videoNameHasPath = hasPathSeparator(value);
@@ -628,6 +672,12 @@
 				return;
 			}
 
+			if (!validateBindAddress(bindAddress)) {
+				toast.error('配置验证失败', { description: bindAddressError });
+				saving = false;
+				return;
+			}
+
 			const params = {
 				video_name: videoName,
 				page_name: pageName,
@@ -639,6 +689,7 @@
 				time_format: timeFormat,
 				interval: interval,
 				nfo_time_type: nfoTimeType,
+				bind_address: bindAddress,
 				parallel_download_enabled: parallelDownloadEnabled,
 				parallel_download_threads: parallelDownloadThreads,
 				// 视频质量设置
@@ -708,7 +759,15 @@
 			const response = await api.updateConfig(params);
 
 			if (response.data.success) {
-				toast.success('保存成功', { description: response.data.message });
+				// 检查是否修改了bind_address，如果是则提醒需要重启
+				if (params.bind_address && params.bind_address !== config?.bind_address) {
+					toast.success('保存成功', { 
+						description: '端口配置已更新，请重启程序使配置生效',
+						duration: 8000 // 延长显示时间
+					});
+				} else {
+					toast.success('保存成功', { description: response.data.message });
+				}
 				openSheet = null; // 关闭抽屉
 			} else {
 				toast.error('保存失败', { description: response.data.message });
@@ -3062,6 +3121,22 @@
 								<p class="text-muted-foreground text-sm">每次扫描下载的时间间隔</p>
 							</div>
 
+							<div class="space-y-2">
+								<Label for="bind-address">服务器端口</Label>
+								<Input
+									id="bind-address"
+									type="text"
+									bind:value={bindAddress}
+									placeholder="0.0.0.0:12345"
+									class={bindAddressValid ? '' : 'border-red-500'}
+									on:input={() => validateBindAddress(bindAddress)}
+								/>
+								{#if bindAddressError}
+									<p class="text-sm text-red-500">{bindAddressError}</p>
+								{:else}
+									<p class="text-muted-foreground text-sm">服务器监听地址和端口（修改后需要重启程序生效）</p>
+								{/if}
+							</div>
 
 							<div class="flex items-center space-x-2">
 								<input

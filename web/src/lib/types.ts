@@ -271,6 +271,8 @@ export interface ConfigResponse {
 		mode: string;
 		timeout: number;
 	};
+	// 服务器绑定地址
+	bind_address: string;
 }
 
 // 更新配置请求类型
@@ -354,6 +356,8 @@ export interface UpdateConfigRequest {
 	risk_control_auto_solve_api_key?: string;
 	risk_control_auto_solve_max_retries?: number;
 	risk_control_auto_solve_timeout?: number;
+	// 服务器绑定地址
+	bind_address?: string;
 }
 
 // 更新配置响应类型
