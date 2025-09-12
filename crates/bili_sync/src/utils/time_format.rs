@@ -43,17 +43,7 @@ where
     dt.format(STANDARD_TIME_FORMAT).to_string()
 }
 
-/// 将UTC DateTime转换为北京时间字符串
-pub fn utc_datetime_to_beijing_string(dt: &DateTime<chrono::Utc>) -> String {
-    let beijing_time = dt.with_timezone(&beijing_timezone());
-    beijing_time.format(STANDARD_TIME_FORMAT).to_string()
-}
 
-/// 将UTC DateTime转换为北京时间的NaiveDateTime（为了兼容数据库存储）
-pub fn utc_datetime_to_beijing_naive(dt: &DateTime<chrono::Utc>) -> chrono::NaiveDateTime {
-    let beijing_time = dt.with_timezone(&beijing_timezone());
-    beijing_time.naive_local()
-}
 
 /// 解析时间字符串，支持多种格式
 pub fn parse_time_string(time_str: &str) -> Option<NaiveDateTime> {
