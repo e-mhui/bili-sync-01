@@ -326,9 +326,9 @@ impl<'a> Submission<'a> {
         }
         
         if video_index > 0 {
-            info!("保存UP主 {} 的断点: 第{}页第{}个视频", self.upper_id, page, video_index);
+            debug!("保存UP主 {} 的断点: 第{}页第{}个视频", self.upper_id, page, video_index);
         } else {
-            info!("保存UP主 {} 的断点页码: {}", self.upper_id, page);
+            debug!("保存UP主 {} 的断点页码: {}", self.upper_id, page);
         }
         Ok(())
     }

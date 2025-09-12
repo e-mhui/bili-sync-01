@@ -93,7 +93,7 @@ pub async fn save_checkpoints_to_db(db: &Arc<DatabaseConnection>) -> Result<()> 
         active_model.update(db.as_ref()).await?;
         
         if !checkpoints.checkpoints.is_empty() {
-            info!("已更新 {} 个断点信息到数据库", checkpoints.checkpoints.len());
+            debug!("已更新 {} 个断点信息到数据库", checkpoints.checkpoints.len());
         } else {
             debug!("清除了数据库中的断点信息");
         }
@@ -113,56 +113,25 @@ pub async fn save_checkpoints_to_db(db: &Arc<DatabaseConnection>) -> Result<()> 
     Ok(())
 }
 
-/// 清除特定UP主的断点信息
-pub async fn clear_checkpoint_for_upper(
-    db: &Arc<DatabaseConnection>,
-    upper_id: &str,
-) -> Result<()> {
-    // 从内存中移除
-    {
+/// 清除指定UP主的断点信息（删除视频源时使用）
+pub async fn clear_submission_checkpoint(db: &Arc<DatabaseConnection>, upper_id: i64) -> Result<()> {
+    let upper_id_str = upper_id.to_string();
+    
+    // 从内存中清除指定UP主的断点
+    let removed = {
         let mut tracker = SUBMISSION_PAGE_TRACKER.write().unwrap();
-        if tracker.remove(upper_id).is_some() {
-            debug!("已从内存中清除UP主 {} 的断点信息", upper_id);
-        }
+        tracker.remove(&upper_id_str).is_some()
+    };
+    
+    if removed {
+        info!("清除UP主 {} 的断点信息（删除视频源）", upper_id);
+        
+        // 保存更新后的断点信息到数据库
+        save_checkpoints_to_db(db).await?;
+    } else {
+        debug!("UP主 {} 没有断点信息需要清除", upper_id);
     }
-
-    // 同步到数据库
-    save_checkpoints_to_db(db).await?;
+    
     Ok(())
 }
 
-/// 清除所有断点信息
-pub async fn clear_all_checkpoints(db: &Arc<DatabaseConnection>) -> Result<()> {
-    // 清空内存
-    {
-        let mut tracker = SUBMISSION_PAGE_TRACKER.write().unwrap();
-        let count = tracker.len();
-        tracker.clear();
-        if count > 0 {
-            info!("已清除 {} 个断点信息", count);
-        }
-    }
-
-    // 从数据库中删除配置项
-    use bili_sync_entity::entities::{config_item, prelude::ConfigItem};
-    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-
-    let result = ConfigItem::delete_many()
-        .filter(config_item::Column::KeyName.eq(CHECKPOINT_KEY))
-        .exec(db.as_ref())
-        .await?;
-
-    if result.rows_affected > 0 {
-        info!("已从数据库中清除断点信息配置项");
-    }
-
-    Ok(())
-}
-
-/// 获取当前断点信息的统计
-pub fn get_checkpoint_stats() -> (usize, Vec<String>) {
-    let tracker = SUBMISSION_PAGE_TRACKER.read().unwrap();
-    let count = tracker.len();
-    let upper_ids: Vec<String> = tracker.keys().cloned().collect();
-    (count, upper_ids)
-}

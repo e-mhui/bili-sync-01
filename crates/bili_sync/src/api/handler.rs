@@ -2643,6 +2643,9 @@ pub async fn delete_video_source_internal(
     id: i32,
     delete_local_files: bool,
 ) -> Result<crate::api::response::DeleteVideoSourceResponse, ApiError> {
+    // 用于保存需要清除断点的UP主ID（仅submission类型使用）
+    let mut upper_id_to_clear: Option<i64> = None;
+    
     // 使用主数据库连接
     let txn = db.begin().await?;
 
@@ -2897,6 +2900,9 @@ pub async fn delete_video_source_internal(
                 .one(&txn)
                 .await?
                 .ok_or_else(|| anyhow!("未找到指定的UP主投稿"))?;
+            
+            // 保存upper_id用于后续清除断点
+            upper_id_to_clear = Some(submission.upper_id);
 
             // 获取属于该UP主投稿的视频
             let videos = video::Entity::find()
@@ -3263,6 +3269,13 @@ pub async fn delete_video_source_internal(
     };
 
     txn.commit().await?;
+
+    // 事务提交后，清除断点信息（如果是删除投稿源）
+    if let Some(upper_id) = upper_id_to_clear {
+        if let Err(e) = crate::utils::submission_checkpoint::clear_submission_checkpoint(&db, upper_id).await {
+            warn!("清除UP主 {} 断点信息失败: {}", upper_id, e);
+        }
+    }
 
     Ok(result)
 }
