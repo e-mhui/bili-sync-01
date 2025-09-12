@@ -43,6 +43,18 @@ where
     dt.format(STANDARD_TIME_FORMAT).to_string()
 }
 
+/// 将UTC DateTime转换为北京时间字符串
+pub fn utc_datetime_to_beijing_string(dt: &DateTime<chrono::Utc>) -> String {
+    let beijing_time = dt.with_timezone(&beijing_timezone());
+    beijing_time.format(STANDARD_TIME_FORMAT).to_string()
+}
+
+/// 将UTC DateTime转换为北京时间的NaiveDateTime（为了兼容数据库存储）
+pub fn utc_datetime_to_beijing_naive(dt: &DateTime<chrono::Utc>) -> chrono::NaiveDateTime {
+    let beijing_time = dt.with_timezone(&beijing_timezone());
+    beijing_time.naive_local()
+}
+
 /// 解析时间字符串，支持多种格式
 pub fn parse_time_string(time_str: &str) -> Option<NaiveDateTime> {
     // 尝试多种格式解析
@@ -81,8 +93,7 @@ pub fn parse_time_string(time_str: &str) -> Option<NaiveDateTime> {
 }
 
 /// 将 Unix 时间戳转换为标准格式字符串（北京时间）
-#[allow(dead_code)]
-pub fn timestamp_to_standard_string(timestamp: i64) -> String {
+pub fn timestamp_to_beijing_string(timestamp: i64) -> String {
     match DateTime::from_timestamp(timestamp, 0) {
         Some(dt) => dt
             .with_timezone(&beijing_timezone())
@@ -90,6 +101,12 @@ pub fn timestamp_to_standard_string(timestamp: i64) -> String {
             .to_string(),
         None => now_standard_string(), // 如果时间戳无效，返回当前时间
     }
+}
+
+/// 将 Unix 时间戳转换为标准格式字符串（北京时间） - 兼容性别名
+#[allow(dead_code)]
+pub fn timestamp_to_standard_string(timestamp: i64) -> String {
+    timestamp_to_beijing_string(timestamp)
 }
 
 #[cfg(test)]

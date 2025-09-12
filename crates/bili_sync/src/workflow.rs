@@ -462,7 +462,7 @@ pub async fn refresh_video_source<'a>(
         // 如果有新增视频，通过查询数据库来确定哪些是新增的
         if new_count > 0 {
             // 查询这批视频中哪些是新插入的（根据创建时间）
-            let now = chrono::Utc::now();
+            let now = crate::utils::time_format::beijing_now();
             let recent_threshold = now - chrono::Duration::seconds(10); // 10秒内创建的视频
 
             let newly_inserted = video::Entity::find()

@@ -93,7 +93,7 @@ pub fn serialize_cache(cache: &BangumiCache) -> Result<String> {
 pub fn is_cache_expired(cache_updated_at: Option<DateTime<Utc>>, max_age_hours: i64) -> bool {
     match cache_updated_at {
         Some(updated_at) => {
-            let now = Utc::now();
+            let now = crate::utils::time_format::beijing_now();
             let age = now.signed_duration_since(updated_at);
             age.num_hours() > max_age_hours
         }
