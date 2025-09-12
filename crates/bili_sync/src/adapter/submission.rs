@@ -79,14 +79,14 @@ impl VideoSource for submission::Model {
 
             if should_take {
                 debug!(
-                    "UP主「{}」增量获取：视频发布时间 {} > 上次扫描时间 {}",
+                    "UP主「{}」增量获取：视频发布时间 {} > 上次扫描最新视频发布时间 {}",
                     self.upper_name,
                     release_beijing_str,
                     latest_row_at_string
                 );
             } else {
                 debug!(
-                    "UP主「{}」增量跳过：视频发布时间 {} <= 上次扫描时间 {}",
+                    "UP主「{}」增量跳过：视频发布时间 {} <= 上次扫描最新视频发布时间 {}",
                     self.upper_name,
                     release_beijing_str,
                     latest_row_at_string
