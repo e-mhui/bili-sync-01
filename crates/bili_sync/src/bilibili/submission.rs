@@ -100,16 +100,23 @@ impl<'a> Submission<'a> {
                 Ok((saved_page, video_index)) if saved_page > 1 || video_index > 0 => {
                     if video_index > 0 {
                         info!("UP主 {} 从断点页码 {} 第 {} 个视频后继续获取", self.display_name(), saved_page, video_index);
+                        debug!("断点恢复详情: 页码={}, 跳过前{}个视频", saved_page, video_index);
                     } else {
                         info!("UP主 {} 从断点页码 {} 继续获取", self.display_name(), saved_page);
+                        debug!("断点恢复详情: 页码={}, 无需跳过视频", saved_page);
                     }
                     (saved_page, video_index)
                 },
-                _ => (1, 0)
+                _ => {
+                    debug!("无断点记录，从第1页开始获取");
+                    (1, 0)
+                }
             };
             
-            // 记录是否为断点恢复（用于判断是否需要重新检测UP主类型）
-            let _is_resuming_from_checkpoint = page > 1;
+            // 记录恢复信息
+            let _is_resuming_from_checkpoint = page > 1 || skip_videos_count > 0;
+            let resume_page = page;  // 记录恢复的起始页码，用于判断是否需要跳过视频
+            let mut current_skip_count = skip_videos_count;  // 当前页需要跳过的视频数
 
             loop {
                 // 在每次循环开始时检查取消状态
@@ -226,10 +233,11 @@ impl<'a> Submission<'a> {
                 let videos_info: Vec<VideoInfo> = serde_json::from_value(vlist.take())
                     .with_context(|| format!("failed to parse videos of upper {} page {}", self.display_name(), page))?;
 
+                debug!("第{}页获取到{}个视频，跳过前{}个", page, videos_info.len(), current_skip_count);
                 for (video_index, video_info) in videos_info.into_iter().enumerate() {
                     // 如果是恢复的第一页，跳过已处理的视频
-                    if page == match self.get_last_processed_checkpoint().await { Ok((p, _)) => p, _ => 0 } 
-                        && video_index < skip_videos_count {
+                    if page == resume_page && video_index < current_skip_count {
+                        debug!("跳过已处理的视频: 第{}页第{}个（恢复模式）", page, video_index + 1);
                         continue;
                     }
                     
@@ -247,7 +255,10 @@ impl<'a> Submission<'a> {
                 let count = &videos["data"]["page"]["count"];
                 if let Some(v) = count.as_i64() {
                     if v > (page * 30) as i64 {
+                        debug!("切换到第 {} 页继续处理", page + 1);
                         page += 1;
+                        // 进入新页面时，清零跳过计数
+                        current_skip_count = 0;
                         continue;
                     }
                 } else {
