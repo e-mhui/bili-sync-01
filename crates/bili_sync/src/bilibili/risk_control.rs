@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::bilibili::BiliClient;
 
 /// v_voucher风控验证处理模块
-/// 
+///
 /// 当API返回v_voucher时，需要通过验证码验证来获取gaia_vtoken，
 /// 然后用gaia_vtoken重新请求原API以绕过风控。
 pub struct RiskControl<'a> {
@@ -62,7 +62,7 @@ impl<'a> RiskControl<'a> {
     }
 
     /// 第一步：使用v_voucher申请captcha验证码
-    /// 
+    ///
     /// 调用 https://api.bilibili.com/x/gaia-vgate/v1/register
     /// 参数：v_voucher, csrf（可选）
     /// 返回：token, challenge等验证码信息
@@ -70,7 +70,7 @@ impl<'a> RiskControl<'a> {
         tracing::info!("开始申请风控验证码，v_voucher: {}", self.v_voucher);
 
         let mut form_data = vec![("v_voucher", self.v_voucher.clone())];
-        
+
         // 如果已登录，添加csrf token
         if let Some(csrf) = self.client.get_csrf_token() {
             form_data.push(("csrf", csrf));
@@ -78,7 +78,10 @@ impl<'a> RiskControl<'a> {
 
         let response = self
             .client
-            .request(reqwest::Method::POST, "https://api.bilibili.com/x/gaia-vgate/v1/register")
+            .request(
+                reqwest::Method::POST,
+                "https://api.bilibili.com/x/gaia-vgate/v1/register",
+            )
             .await
             .form(&form_data)
             .send()
@@ -114,7 +117,7 @@ impl<'a> RiskControl<'a> {
     }
 
     /// 第二步：验证captcha并获取gaia_vtoken
-    /// 
+    ///
     /// 调用 https://api.bilibili.com/x/gaia-vgate/v1/validate
     /// 参数：challenge, token, validate, seccode, csrf
     /// 返回：grisk_id (即gaia_vtoken)
@@ -135,7 +138,10 @@ impl<'a> RiskControl<'a> {
 
         let response = self
             .client
-            .request(reqwest::Method::POST, "https://api.bilibili.com/x/gaia-vgate/v1/validate")
+            .request(
+                reqwest::Method::POST,
+                "https://api.bilibili.com/x/gaia-vgate/v1/validate",
+            )
             .await
             .form(&form_data)
             .send()
@@ -165,13 +171,13 @@ impl<'a> RiskControl<'a> {
     }
 
     /// 完整的风控处理流程（需要人工介入验证码）
-    /// 
+    ///
     /// 注意：此方法需要实现验证码的人工处理，目前仅作为接口预留
     #[allow(dead_code)]
     pub async fn handle_full_verification(&self) -> Result<String> {
         // 1. 申请验证码
         let captcha_info = self.register().await?;
-        
+
         tracing::warn!(
             "需要完成验证码验证，请访问极验验证界面：gt={}, challenge={}",
             captcha_info.geetest.as_ref().unwrap().gt,

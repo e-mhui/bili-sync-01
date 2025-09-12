@@ -3,10 +3,10 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use once_cell::sync::Lazy;
-use tokio::sync::{Mutex, Notify, oneshot};
+use tokio::sync::{oneshot, Mutex, Notify};
 
-use crate::config::RiskControlConfig;
 use super::{CaptchaInfo, CaptchaResult, CaptchaSolver};
+use crate::config::RiskControlConfig;
 
 /// 验证请求类型
 #[derive(Debug)]
@@ -30,10 +30,7 @@ enum VerificationState {
         result_sender: Option<oneshot::Sender<CaptchaResult>>,
     },
     /// 验证完成，token可用
-    Completed {
-        gaia_vtoken: String,
-        expires_at: Instant,
-    },
+    Completed { gaia_vtoken: String, expires_at: Instant },
 }
 
 /// 全局验证协调器
@@ -51,9 +48,13 @@ impl VerificationCoordinator {
     }
 
     /// 请求验证，返回应该执行的操作
-    pub async fn request_verification(&self, v_voucher: String, captcha_info: CaptchaInfo) -> Result<VerificationRequest> {
+    pub async fn request_verification(
+        &self,
+        v_voucher: String,
+        captcha_info: CaptchaInfo,
+    ) -> Result<VerificationRequest> {
         let mut state = self.state.lock().await;
-        
+
         match &*state {
             VerificationState::Idle => {
                 tracing::info!("启动新的验证流程，v_voucher: {}", v_voucher);
@@ -68,7 +69,10 @@ impl VerificationCoordinator {
                 tracing::info!("检测到正在进行的验证，等待完成...");
                 Ok(VerificationRequest::WaitForExisting)
             }
-            VerificationState::Completed { gaia_vtoken, expires_at } => {
+            VerificationState::Completed {
+                gaia_vtoken,
+                expires_at,
+            } => {
                 if expires_at > &Instant::now() {
                     tracing::info!("使用缓存的gaia_vtoken");
                     Ok(VerificationRequest::UseCache(gaia_vtoken.clone()))
@@ -88,9 +92,7 @@ impl VerificationCoordinator {
     pub async fn get_captcha_info(&self) -> Option<CaptchaInfo> {
         let state = self.state.lock().await;
         match &*state {
-            VerificationState::WaitingForUser { captcha_info, .. } => {
-                Some(captcha_info.clone())
-            }
+            VerificationState::WaitingForUser { captcha_info, .. } => Some(captcha_info.clone()),
             _ => None,
         }
     }
@@ -98,7 +100,7 @@ impl VerificationCoordinator {
     /// 提交验证结果（用于API）
     pub async fn submit_captcha_result(&self, result: CaptchaResult) -> Result<()> {
         let mut state = self.state.lock().await;
-        
+
         match std::mem::replace(&mut *state, VerificationState::Idle) {
             VerificationState::WaitingForUser { result_sender, .. } => {
                 if let Some(sender) = result_sender {
@@ -133,7 +135,7 @@ impl VerificationCoordinator {
 
         // 等待验证完成（带超时）
         let result = tokio::time::timeout(Duration::from_secs(300), receiver).await;
-        
+
         match result {
             Ok(Ok(captcha_result)) => {
                 tracing::info!("收到验证结果");
@@ -161,7 +163,7 @@ impl VerificationCoordinator {
             gaia_vtoken,
             expires_at: Instant::now() + Duration::from_secs(3600), // 1小时过期
         };
-        
+
         // 通知所有等待的进程
         self.notify.notify_waiters();
         tracing::info!("gaia_vtoken已保存并通知等待进程");
@@ -171,7 +173,10 @@ impl VerificationCoordinator {
     pub async fn get_cached_token(&self) -> Option<String> {
         let state = self.state.lock().await;
         match &*state {
-            VerificationState::Completed { gaia_vtoken, expires_at } => {
+            VerificationState::Completed {
+                gaia_vtoken,
+                expires_at,
+            } => {
                 if expires_at > &Instant::now() {
                     Some(gaia_vtoken.clone())
                 } else {
@@ -189,7 +194,7 @@ impl VerificationCoordinator {
             if let Some(token) = self.get_cached_token().await {
                 return Ok(token);
             }
-            
+
             // 等待通知
             self.notify.notified().await;
         }
@@ -197,30 +202,34 @@ impl VerificationCoordinator {
 
     /// 自动解决验证码
     pub async fn auto_solve_captcha(&self, config: &RiskControlConfig, page_url: &str) -> Result<CaptchaResult> {
-        let captcha_info = self.get_captcha_info().await
+        let captcha_info = self
+            .get_captcha_info()
+            .await
             .ok_or_else(|| anyhow::anyhow!("当前没有待验证的验证码"))?;
 
         // 检查是否有GeeTest信息
-        let geetest_info = captcha_info.geetest
+        let geetest_info = captcha_info
+            .geetest
             .ok_or_else(|| anyhow::anyhow!("验证码信息中缺少GeeTest数据"))?;
 
         // 获取自动解决配置
-        let auto_solve_config = config.auto_solve.as_ref()
+        let auto_solve_config = config
+            .auto_solve
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("自动解决功能未配置"))?;
 
         tracing::info!("开始自动解决验证码，服务: {}", auto_solve_config.service);
 
         // 创建验证码解决器
         let solver = CaptchaSolver::new(auto_solve_config.clone());
-        
+
         // 解决验证码
         let result = solver.solve_geetest(&geetest_info, page_url).await?;
-        
+
         tracing::info!("验证码自动解决成功");
         Ok(result)
     }
 }
 
 /// 全局验证协调器实例
-pub static VERIFICATION_COORDINATOR: Lazy<VerificationCoordinator> = 
-    Lazy::new(VerificationCoordinator::new);
+pub static VERIFICATION_COORDINATOR: Lazy<VerificationCoordinator> = Lazy::new(VerificationCoordinator::new);

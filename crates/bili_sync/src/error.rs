@@ -303,8 +303,8 @@ impl ErrorClassifier {
             }
             crate::bilibili::BiliError::RiskControlVerificationRequired(v_voucher) => {
                 ClassifiedError::new(
-                    ErrorType::RiskControl, 
-                    format!("需要风控验证 (v_voucher: {})", v_voucher)
+                    ErrorType::RiskControl,
+                    format!("需要风控验证 (v_voucher: {})", v_voucher),
                 )
                 .with_retry_policy(false, true) // 不重试，可忽略（跳过该视频）
             }

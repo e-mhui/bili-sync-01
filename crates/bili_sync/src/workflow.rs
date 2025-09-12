@@ -129,18 +129,19 @@ pub async fn process_video_source(
     };
 
     // 从参数中获取视频列表的 Model 与视频流
-    let (video_source, video_streams) = match video_source_from(args, path, bili_client, connection, Some(token.clone())).await {
-        Ok(result) => result,
-        Err(e) => {
-            let error_msg = format!("{:#}", e);
-            if retry_with_refresh(error_msg).await.is_ok() {
-                // 刷新成功，重试
-                video_source_from(args, path, bili_client, connection, Some(token.clone())).await?
-            } else {
-                return Err(e);
+    let (video_source, video_streams) =
+        match video_source_from(args, path, bili_client, connection, Some(token.clone())).await {
+            Ok(result) => result,
+            Err(e) => {
+                let error_msg = format!("{:#}", e);
+                if retry_with_refresh(error_msg).await.is_ok() {
+                    // 刷新成功，重试
+                    video_source_from(args, path, bili_client, connection, Some(token.clone())).await?
+                } else {
+                    return Err(e);
+                }
             }
-        }
-    };
+        };
 
     // 从视频流中获取新视频的简要信息，写入数据库，并获取新增视频数量和信息
     let (new_video_count, new_videos) =
@@ -150,7 +151,8 @@ pub async fn process_video_source(
                 let error_msg = format!("{:#}", e);
                 if retry_with_refresh(error_msg).await.is_ok() {
                     // 刷新成功，重新获取视频流并重试
-                    let (_, video_streams) = video_source_from(args, path, bili_client, connection, Some(token.clone())).await?;
+                    let (_, video_streams) =
+                        video_source_from(args, path, bili_client, connection, Some(token.clone())).await?;
                     refresh_video_source(&video_source, video_streams, connection, token.clone(), bili_client).await?
                 } else {
                     return Err(e);
@@ -5050,7 +5052,7 @@ mod tests {
                 template
                     .path_safe_render("test_path_windows", &json!({"title": "关注/永雏塔菲喵"}))
                     .unwrap(),
-                r"关注_永雏塔菲\\test\\a"
+                "关注_永雏塔菲\\test\\a"
             );
         }
         assert_eq!(

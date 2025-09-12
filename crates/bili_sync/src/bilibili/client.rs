@@ -107,7 +107,13 @@ impl Client {
     }
 
     // a wrapper of reqwest::Client::request to add credential and gaia_vtoken to the request
-    pub fn request_with_gaia_vtoken(&self, method: Method, url: &str, credential: Option<&Credential>, gaia_vtoken: Option<&str>) -> reqwest::RequestBuilder {
+    pub fn request_with_gaia_vtoken(
+        &self,
+        method: Method,
+        url: &str,
+        credential: Option<&Credential>,
+        gaia_vtoken: Option<&str>,
+    ) -> reqwest::RequestBuilder {
         let mut req = self.0.request(method, url);
         // 如果有 credential，会将其转换成 cookie 添加到请求的 header 中
         if let Some(credential) = credential {
@@ -133,13 +139,13 @@ impl Client {
 
             req = req.header(header::COOKIE, cookie_str);
         }
-        
+
         // 如果有gaia_vtoken，添加到请求头中
         if let Some(token) = gaia_vtoken {
             req = req.header("x-gaia-vtoken", token);
             tracing::debug!("添加gaia_vtoken到请求头: {}", token);
         }
-        
+
         req
     }
 
@@ -228,7 +234,8 @@ impl BiliClient {
         let config = crate::config::reload_config();
         let credential = config.credential.load();
         let gaia_vtoken = self.get_gaia_vtoken();
-        self.client.request_with_gaia_vtoken(method, url, credential.as_deref(), gaia_vtoken.as_deref())
+        self.client
+            .request_with_gaia_vtoken(method, url, credential.as_deref(), gaia_vtoken.as_deref())
     }
 
     /// 发送 GET 请求
@@ -1041,7 +1048,6 @@ impl BiliClient {
     pub fn get_gaia_vtoken(&self) -> Option<String> {
         self.gaia_vtoken.load().as_ref().map(|token| (**token).clone())
     }
-
 
     /// 获取csrf token (bili_jct)
     pub fn get_csrf_token(&self) -> Option<String> {

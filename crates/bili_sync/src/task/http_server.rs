@@ -73,11 +73,11 @@ use crate::api::handler::{
     validate_favorite,
     ApiDoc,
 };
-use crate::bilibili::{serve_captcha_page, get_captcha_info, submit_captcha_result};
 use crate::api::request::{BatchUpdateConfigRequest, UpdateConfigItemRequest};
 use crate::api::video_stream::stream_video;
 use crate::api::wrapper::ApiResponse;
 use crate::api::ws;
+use crate::bilibili::{get_captcha_info, serve_captcha_page, submit_captcha_result};
 // CONFIG导入已移除 - 现在使用动态配置
 
 #[derive(Embed)]

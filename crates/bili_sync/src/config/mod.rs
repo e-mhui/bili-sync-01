@@ -368,7 +368,10 @@ impl RiskControlConfig {
 
 impl AutoSolveConfig {
     pub fn validate(&self) -> Result<(), String> {
-        if !matches!(self.service.as_str(), "2captcha" | "anticaptcha" | "capsolver" | "yunma") {
+        if !matches!(
+            self.service.as_str(),
+            "2captcha" | "anticaptcha" | "capsolver" | "yunma"
+        ) {
             return Err("验证码识别服务必须是 '2captcha', 'anticaptcha', 'capsolver' 或 'yunma'".to_string());
         }
 

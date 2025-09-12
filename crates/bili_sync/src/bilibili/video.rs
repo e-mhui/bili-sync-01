@@ -384,41 +384,42 @@ impl<'a> Video<'a> {
                 }
                 Err(e) => {
                     // 检查是否为风控验证错误
-                    if let Some(crate::bilibili::BiliError::RiskControlVerificationRequired(v_voucher)) = 
-                        e.downcast_ref::<crate::bilibili::BiliError>() {
-                            tracing::warn!("检测到风控，开始验证流程: v_voucher={}", v_voucher);
-                            
-                            // 尝试进行验证流程
-                            match self.handle_risk_control_verification(v_voucher.clone()).await {
-                                Ok(gaia_vtoken) => {
-                                    tracing::info!("风控验证成功，已获取gaia_vtoken，重试获取视频流");
-                                    self.client.set_gaia_vtoken(gaia_vtoken);
-                                    
-                                    // 重试当前质量级别
-                                    match self.get_page_analyzer_with_quality(page, qn).await {
-                                        Ok(analyzer) => {
-                                            tracing::info!("✓ 风控验证后成功获取视频流: qn={}", qn);
-                                            return Ok(analyzer);
-                                        }
-                                        Err(retry_err) => {
-                                            tracing::warn!("风控验证后重试失败: {}", retry_err);
-                                            // 继续尝试下一个质量级别
-                                        }
+                    if let Some(crate::bilibili::BiliError::RiskControlVerificationRequired(v_voucher)) =
+                        e.downcast_ref::<crate::bilibili::BiliError>()
+                    {
+                        tracing::warn!("检测到风控，开始验证流程: v_voucher={}", v_voucher);
+
+                        // 尝试进行验证流程
+                        match self.handle_risk_control_verification(v_voucher.clone()).await {
+                            Ok(gaia_vtoken) => {
+                                tracing::info!("风控验证成功，已获取gaia_vtoken，重试获取视频流");
+                                self.client.set_gaia_vtoken(gaia_vtoken);
+
+                                // 重试当前质量级别
+                                match self.get_page_analyzer_with_quality(page, qn).await {
+                                    Ok(analyzer) => {
+                                        tracing::info!("✓ 风控验证后成功获取视频流: qn={}", qn);
+                                        return Ok(analyzer);
                                     }
-                                }
-                                Err(verify_err) => {
-                                    tracing::error!("风控验证失败，视频: {}, 错误: {}", self.bvid, verify_err);
-                                    
-                                    // 检查是否是端口冲突问题
-                                    if verify_err.to_string().contains("os error 10048") {
-                                        tracing::warn!("检测到端口冲突，建议检查其他验证进程");
+                                    Err(retry_err) => {
+                                        tracing::warn!("风控验证后重试失败: {}", retry_err);
+                                        // 继续尝试下一个质量级别
                                     }
-                                    
-                                    return Err(verify_err);
                                 }
                             }
+                            Err(verify_err) => {
+                                tracing::error!("风控验证失败，视频: {}, 错误: {}", self.bvid, verify_err);
+
+                                // 检查是否是端口冲突问题
+                                if verify_err.to_string().contains("os error 10048") {
+                                    tracing::warn!("检测到端口冲突，建议检查其他验证进程");
+                                }
+
+                                return Err(verify_err);
+                            }
+                        }
                     }
-                    
+
                     // 检查是否为充电专享视频错误（包括试看视频），如果是则不输出详细的质量级别失败日志
                     let (is_charging_video_error, is_trial_video) = {
                         if let Some(bili_err) = e.downcast_ref::<crate::bilibili::BiliError>() {
@@ -514,7 +515,8 @@ impl<'a> Video<'a> {
             }
             Err(e) => {
                 // 检查错误类型，判断是否需要降级到番剧API
-                let should_fallback_to_bangumi = if let Some(crate::bilibili::BiliError::RequestFailed(-404, msg)) = e.downcast_ref::<crate::bilibili::BiliError>()
+                let should_fallback_to_bangumi = if let Some(crate::bilibili::BiliError::RequestFailed(-404, msg)) =
+                    e.downcast_ref::<crate::bilibili::BiliError>()
                 {
                     // -404 错误，检查消息是否包含"啥都木有"或其他表示内容不存在的关键词
                     let msg_lower = msg.to_lowercase();
@@ -661,11 +663,14 @@ impl<'a> Video<'a> {
             // 检查是否只有v_voucher而没有实际的视频流数据
             let has_dash = res["data"]["dash"]["video"].as_array().is_some_and(|v| !v.is_empty());
             let has_durl = res["data"]["durl"].as_array().is_some_and(|v| !v.is_empty());
-            
+
             if !has_dash && !has_durl {
                 tracing::warn!(
                     "检测到风控v_voucher响应，视频: {} (aid: {}), cid: {}, v_voucher: {}",
-                    self.bvid, self.aid, page.cid, v_voucher
+                    self.bvid,
+                    self.aid,
+                    page.cid,
+                    v_voucher
                 );
                 tracing::debug!(
                     "v_voucher响应详情: {}",
@@ -1232,7 +1237,7 @@ impl<'a> Video<'a> {
 
     /// 处理风控验证流程
     async fn handle_risk_control_verification(&self, v_voucher: String) -> Result<String> {
-        use crate::bilibili::{RiskControl, VERIFICATION_COORDINATOR, VerificationRequest};
+        use crate::bilibili::{RiskControl, VerificationRequest, VERIFICATION_COORDINATOR};
         use crate::config::with_config;
 
         tracing::info!("开始处理风控验证，v_voucher: {}", v_voucher);
@@ -1267,22 +1272,23 @@ impl<'a> Video<'a> {
                     VerificationRequest::StartNew(_captcha_info) => {
                         tracing::info!("启动新验证流程，已在管理页 /captcha 提供验证界面");
                         tracing::info!("请在浏览器中访问管理页面完成验证，超时时间: {}秒", risk_config.timeout);
-                        
+
                         // 等待用户完成验证
                         let captcha_result = tokio::time::timeout(
                             std::time::Duration::from_secs(risk_config.timeout),
-                            VERIFICATION_COORDINATOR.wait_for_captcha_result()
-                        ).await
+                            VERIFICATION_COORDINATOR.wait_for_captcha_result(),
+                        )
+                        .await
                         .map_err(|_| anyhow::anyhow!("验证码验证等待超时"))??;
 
                         // 使用验证结果获取gaia_vtoken
                         tracing::info!("收到验证结果，正在获取gaia_vtoken");
                         let gaia_vtoken = risk_control.validate(captcha_result).await?;
-                        
+
                         // 保存token到协调器缓存
                         VERIFICATION_COORDINATOR.save_token(gaia_vtoken.clone()).await;
                         tracing::info!("风控验证完成，获取到gaia_vtoken");
-                        
+
                         Ok(gaia_vtoken)
                     }
                     VerificationRequest::WaitForExisting => {
@@ -1299,34 +1305,34 @@ impl<'a> Video<'a> {
             "auto" => {
                 // 创建风控处理器
                 let risk_control = RiskControl::new(self.client, v_voucher.clone());
-                
+
                 // 第一步：申请验证码
                 let captcha_info = risk_control.register().await?;
                 tracing::info!("成功获取验证码信息，准备自动解决");
-                
+
                 // 第二步：请求验证协调器处理
                 let verification_request = VERIFICATION_COORDINATOR
                     .request_verification(v_voucher, captcha_info)
                     .await?;
-                
+
                 match verification_request {
                     VerificationRequest::StartNew(_) => {
                         tracing::info!("开始自动解决验证码");
-                        
+
                         // 调用自动解决方法
                         let page_url = "https://www.bilibili.com";
                         let captcha_result = VERIFICATION_COORDINATOR
                             .auto_solve_captcha(&risk_config, page_url)
                             .await?;
-                        
+
                         // 使用验证结果获取gaia_vtoken
                         tracing::info!("自动验证成功，正在获取gaia_vtoken");
                         let gaia_vtoken = risk_control.validate(captcha_result).await?;
-                        
+
                         // 保存token到协调器缓存
                         VERIFICATION_COORDINATOR.save_token(gaia_vtoken.clone()).await;
                         tracing::info!("自动风控验证完成，获取到gaia_vtoken");
-                        
+
                         Ok(gaia_vtoken)
                     }
                     VerificationRequest::WaitForExisting => {

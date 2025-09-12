@@ -36,11 +36,10 @@ pub async fn restore_checkpoints_from_db(db: &Arc<DatabaseConnection>) -> Result
     match config_item {
         Some(item) => {
             // 反序列化JSON
-            let checkpoints: SubmissionCheckpoints = serde_json::from_str(&item.value_json)
-                .unwrap_or_else(|e| {
-                    warn!("解析断点信息失败: {}, 将使用空的断点信息", e);
-                    SubmissionCheckpoints::default()
-                });
+            let checkpoints: SubmissionCheckpoints = serde_json::from_str(&item.value_json).unwrap_or_else(|e| {
+                warn!("解析断点信息失败: {}, 将使用空的断点信息", e);
+                SubmissionCheckpoints::default()
+            });
 
             // 恢复到内存中的静态变量
             let mut tracker = SUBMISSION_PAGE_TRACKER.write().unwrap();
@@ -91,7 +90,7 @@ pub async fn save_checkpoints_to_db(db: &Arc<DatabaseConnection>) -> Result<()> 
         active_model.value_json = Set(value_json);
         active_model.updated_at = Set(crate::utils::time_format::now_standard_string());
         active_model.update(db.as_ref()).await?;
-        
+
         if !checkpoints.checkpoints.is_empty() {
             debug!("已更新 {} 个断点信息到数据库", checkpoints.checkpoints.len());
         } else {
@@ -116,22 +115,21 @@ pub async fn save_checkpoints_to_db(db: &Arc<DatabaseConnection>) -> Result<()> 
 /// 清除指定UP主的断点信息（删除视频源时使用）
 pub async fn clear_submission_checkpoint(db: &Arc<DatabaseConnection>, upper_id: i64) -> Result<()> {
     let upper_id_str = upper_id.to_string();
-    
+
     // 从内存中清除指定UP主的断点
     let removed = {
         let mut tracker = SUBMISSION_PAGE_TRACKER.write().unwrap();
         tracker.remove(&upper_id_str).is_some()
     };
-    
+
     if removed {
         info!("清除UP主 {} 的断点信息（删除视频源）", upper_id);
-        
+
         // 保存更新后的断点信息到数据库
         save_checkpoints_to_db(db).await?;
     } else {
         debug!("UP主 {} 没有断点信息需要清除", upper_id);
     }
-    
+
     Ok(())
 }
-

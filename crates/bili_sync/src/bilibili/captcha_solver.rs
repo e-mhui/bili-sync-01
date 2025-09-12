@@ -2,8 +2,8 @@ use anyhow::Result;
 use serde_json::json;
 use std::time::Duration;
 
-use crate::config::AutoSolveConfig;
 use super::{CaptchaResult, GeetestInfo};
+use crate::config::AutoSolveConfig;
 
 /// 验证码识别服务类型
 #[derive(Debug, Clone)]
@@ -46,19 +46,19 @@ impl CaptchaSolver {
     /// 解决极验验证码
     pub async fn solve_geetest(&self, geetest_info: &GeetestInfo, page_url: &str) -> Result<CaptchaResult> {
         let service = CaptchaService::from(self.config.service.as_str());
-        
+
         let mut last_error = None;
-        
+
         for attempt in 1..=self.config.max_retries {
             tracing::info!("验证码识别尝试 {}/{}", attempt, self.config.max_retries);
-            
+
             let result = match service {
                 CaptchaService::TwoCaptcha => self.solve_with_2captcha(geetest_info, page_url).await,
                 CaptchaService::AntiCaptcha => self.solve_with_anticaptcha(geetest_info, page_url).await,
                 CaptchaService::CapSolver => self.solve_with_capsolver(geetest_info, page_url).await,
                 CaptchaService::YunMa => self.solve_with_yunma(geetest_info, page_url).await,
             };
-            
+
             match result {
                 Ok(captcha_result) => {
                     tracing::info!("验证码识别成功，尝试次数: {}", attempt);
@@ -66,22 +66,26 @@ impl CaptchaSolver {
                 }
                 Err(e) => {
                     last_error = Some(e);
-                    tracing::warn!("验证码识别失败，尝试次数: {}, 错误: {}", attempt, last_error.as_ref().unwrap());
-                    
+                    tracing::warn!(
+                        "验证码识别失败，尝试次数: {}, 错误: {}",
+                        attempt,
+                        last_error.as_ref().unwrap()
+                    );
+
                     if attempt < self.config.max_retries {
                         tokio::time::sleep(Duration::from_secs(2)).await;
                     }
                 }
             }
         }
-        
+
         Err(last_error.unwrap_or_else(|| anyhow::anyhow!("验证码识别失败")))
     }
 
     /// 使用2Captcha服务
     async fn solve_with_2captcha(&self, geetest_info: &GeetestInfo, page_url: &str) -> Result<CaptchaResult> {
         tracing::info!("使用2Captcha服务解决GeeTest验证码");
-        
+
         // 1. 提交验证码任务
         let submit_data = json!({
             "method": "geetest",
@@ -92,7 +96,8 @@ impl CaptchaSolver {
             "json": 1
         });
 
-        let submit_response: serde_json::Value = self.client
+        let submit_response: serde_json::Value = self
+            .client
             .post("http://2captcha.com/in.php")
             .form(&submit_data)
             .send()
@@ -101,10 +106,14 @@ impl CaptchaSolver {
             .await?;
 
         if submit_response["status"].as_i64() != Some(1) {
-            anyhow::bail!("2Captcha提交失败: {}", submit_response["error_text"].as_str().unwrap_or("未知错误"));
+            anyhow::bail!(
+                "2Captcha提交失败: {}",
+                submit_response["error_text"].as_str().unwrap_or("未知错误")
+            );
         }
 
-        let captcha_id = submit_response["request"].as_str()
+        let captcha_id = submit_response["request"]
+            .as_str()
             .ok_or_else(|| anyhow::anyhow!("无法获取验证码ID"))?;
 
         tracing::info!("验证码任务已提交，ID: {}", captcha_id);
@@ -120,7 +129,8 @@ impl CaptchaSolver {
 
             tokio::time::sleep(Duration::from_secs(5)).await;
 
-            let result_response: serde_json::Value = self.client
+            let result_response: serde_json::Value = self
+                .client
                 .get("http://2captcha.com/res.php")
                 .query(&[
                     ("key", self.config.api_key.as_str()),
@@ -134,7 +144,8 @@ impl CaptchaSolver {
                 .await?;
 
             if result_response["status"].as_i64() == Some(1) {
-                let request = result_response["request"].as_str()
+                let request = result_response["request"]
+                    .as_str()
                     .ok_or_else(|| anyhow::anyhow!("无法获取验证结果"))?;
 
                 // 解析结果：challenge:validate:seccode
@@ -150,7 +161,10 @@ impl CaptchaSolver {
                     token: geetest_info.challenge.clone(),
                 });
             } else if result_response["error_text"].as_str() != Some("CAPCHA_NOT_READY") {
-                anyhow::bail!("2Captcha识别失败: {}", result_response["error_text"].as_str().unwrap_or("未知错误"));
+                anyhow::bail!(
+                    "2Captcha识别失败: {}",
+                    result_response["error_text"].as_str().unwrap_or("未知错误")
+                );
             }
         }
     }
@@ -158,7 +172,7 @@ impl CaptchaSolver {
     /// 使用AntiCaptcha服务
     async fn solve_with_anticaptcha(&self, geetest_info: &GeetestInfo, page_url: &str) -> Result<CaptchaResult> {
         tracing::info!("使用AntiCaptcha服务解决GeeTest验证码");
-        
+
         // 1. 创建任务
         let create_task_data = json!({
             "clientKey": self.config.api_key,
@@ -170,7 +184,8 @@ impl CaptchaSolver {
             }
         });
 
-        let create_response: serde_json::Value = self.client
+        let create_response: serde_json::Value = self
+            .client
             .post("https://api.anti-captcha.com/createTask")
             .json(&create_task_data)
             .send()
@@ -179,10 +194,14 @@ impl CaptchaSolver {
             .await?;
 
         if create_response["errorId"].as_i64() != Some(0) {
-            anyhow::bail!("AntiCaptcha创建任务失败: {}", create_response["errorDescription"].as_str().unwrap_or("未知错误"));
+            anyhow::bail!(
+                "AntiCaptcha创建任务失败: {}",
+                create_response["errorDescription"].as_str().unwrap_or("未知错误")
+            );
         }
 
-        let task_id = create_response["taskId"].as_i64()
+        let task_id = create_response["taskId"]
+            .as_i64()
             .ok_or_else(|| anyhow::anyhow!("无法获取任务ID"))?;
 
         tracing::info!("验证码任务已创建，ID: {}", task_id);
@@ -203,7 +222,8 @@ impl CaptchaSolver {
                 "taskId": task_id
             });
 
-            let result_response: serde_json::Value = self.client
+            let result_response: serde_json::Value = self
+                .client
                 .post("https://api.anti-captcha.com/getTaskResult")
                 .json(&result_data)
                 .send()
@@ -212,12 +232,15 @@ impl CaptchaSolver {
                 .await?;
 
             if result_response["errorId"].as_i64() != Some(0) {
-                anyhow::bail!("AntiCaptcha获取结果失败: {}", result_response["errorDescription"].as_str().unwrap_or("未知错误"));
+                anyhow::bail!(
+                    "AntiCaptcha获取结果失败: {}",
+                    result_response["errorDescription"].as_str().unwrap_or("未知错误")
+                );
             }
 
             if result_response["status"].as_str() == Some("ready") {
                 let solution = &result_response["solution"];
-                
+
                 return Ok(CaptchaResult {
                     challenge: solution["challenge"].as_str().unwrap_or("").to_string(),
                     validate: solution["validate"].as_str().unwrap_or("").to_string(),
@@ -231,7 +254,7 @@ impl CaptchaSolver {
     /// 使用CapSolver服务
     async fn solve_with_capsolver(&self, _geetest_info: &GeetestInfo, _page_url: &str) -> Result<CaptchaResult> {
         tracing::info!("使用CapSolver服务解决GeeTest验证码");
-        
+
         // CapSolver API实现类似，这里暂时返回错误
         anyhow::bail!("CapSolver服务暂未实现");
     }
@@ -239,7 +262,7 @@ impl CaptchaSolver {
     /// 使用云码服务
     async fn solve_with_yunma(&self, _geetest_info: &GeetestInfo, _page_url: &str) -> Result<CaptchaResult> {
         tracing::info!("使用云码服务解决GeeTest验证码");
-        
+
         // 云码API实现，这里暂时返回错误
         anyhow::bail!("云码服务暂未实现");
     }
@@ -252,7 +275,10 @@ mod tests {
     #[test]
     fn test_service_from_str() {
         assert!(matches!(CaptchaService::from("2captcha"), CaptchaService::TwoCaptcha));
-        assert!(matches!(CaptchaService::from("anticaptcha"), CaptchaService::AntiCaptcha));
+        assert!(matches!(
+            CaptchaService::from("anticaptcha"),
+            CaptchaService::AntiCaptcha
+        ));
         assert!(matches!(CaptchaService::from("capsolver"), CaptchaService::CapSolver));
         assert!(matches!(CaptchaService::from("yunma"), CaptchaService::YunMa));
         assert!(matches!(CaptchaService::from("unknown"), CaptchaService::TwoCaptcha));

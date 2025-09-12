@@ -144,14 +144,17 @@ pub fn group_sources_by_new_old(
                     } else {
                         false
                     }
-                },
-                _ => false
+                }
+                _ => false,
             };
-            
+
             // 如果有断点或者还未处理，则添加到旧源列表
             if has_checkpoint || last_processed_id.is_none() || source.id > last_processed_id.unwrap() {
                 if has_checkpoint {
-                    debug!("检测到断点恢复源 (ID: {}, 类型: {:?})，包含在扫描列表中", source.id, source.source_type);
+                    debug!(
+                        "检测到断点恢复源 (ID: {}, 类型: {:?})，包含在扫描列表中",
+                        source.id, source.source_type
+                    );
                 }
                 old_sources.push(source);
             } else {

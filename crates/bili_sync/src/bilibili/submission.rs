@@ -2,24 +2,24 @@ use anyhow::{anyhow, Context, Result};
 use arc_swap::access::Access;
 use async_stream::try_stream;
 use futures::Stream;
+use once_cell::sync::Lazy;
 use reqwest::Method;
 use serde_json::Value;
-use std::time::Duration;
-use tracing::{debug, info, warn};
 use std::collections::HashMap;
 use std::sync::RwLock;
-use once_cell::sync::Lazy;
+use std::time::Duration;
+use tracing::{debug, info, warn};
 
 use crate::bilibili::credential::encoded_query;
 use crate::bilibili::favorite_list::Upper;
 use crate::bilibili::{BiliClient, Validate, VideoInfo, MIXIN_KEY};
 use crate::config::SubmissionRiskControlConfig;
-use crate::utils::submission_checkpoint;
 use crate::database::get_global_db;
+use crate::utils::submission_checkpoint;
 
 /// 全局提交源页码跟踪器，用于断点续传
 /// 存储格式: (页码, 该页已处理的视频索引)
-pub static SUBMISSION_PAGE_TRACKER: Lazy<RwLock<HashMap<String, (usize, usize)>>> = 
+pub static SUBMISSION_PAGE_TRACKER: Lazy<RwLock<HashMap<String, (usize, usize)>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 pub struct Submission<'a> {
     client: &'a BiliClient,
@@ -87,7 +87,10 @@ impl<'a> Submission<'a> {
             .validate()
     }
 
-    pub fn into_video_stream(self, cancellation_token: tokio_util::sync::CancellationToken) -> impl Stream<Item = Result<VideoInfo>> + 'a {
+    pub fn into_video_stream(
+        self,
+        cancellation_token: tokio_util::sync::CancellationToken,
+    ) -> impl Stream<Item = Result<VideoInfo>> + 'a {
         try_stream! {
             let _page: usize = 1;
             let mut request_count = 0;
@@ -96,7 +99,7 @@ impl<'a> Submission<'a> {
 
             let current_config = crate::config::reload_config();
             let config = &current_config.submission_risk_control;
-            
+
             // 获取上次中断的页码和视频索引
             let (mut page, skip_videos_count) = match self.get_last_processed_checkpoint().await {
                 Ok((saved_page, video_index)) if saved_page > 1 || video_index > 0 => {
@@ -114,7 +117,7 @@ impl<'a> Submission<'a> {
                     (1, 0)
                 }
             };
-            
+
             // 记录恢复信息
             let _is_resuming_from_checkpoint = page > 1 || skip_videos_count > 0;
             let resume_page = page;  // 记录恢复的起始页码，用于判断是否需要跳过视频
@@ -159,7 +162,7 @@ impl<'a> Submission<'a> {
                     }
                     return;
                 }
-                
+
                 let mut videos = self
                     .get_videos(page as i32)
                     .await
@@ -242,7 +245,7 @@ impl<'a> Submission<'a> {
                         debug!("跳过已处理的视频: 第{}页第{}个（恢复模式）", page, video_index + 1);
                         continue;
                     }
-                    
+
                     // 在yield每个视频前检查取消状态
                     if cancellation_token.is_cancelled() {
                         info!("UP主 {} 在第 {} 页第 {} 个视频处理时检测到取消信号", self.display_name(), page, video_index + 1);
@@ -273,7 +276,7 @@ impl<'a> Submission<'a> {
                 }
                 break;
             }
-            
+
             // 注意：这里不清除断点记录，因为我们还没有扫描完成
             // 只有在整个流结束时才清除（在扫描完成后记录统计信息的部分）
 
@@ -304,14 +307,14 @@ impl<'a> Submission<'a> {
     fn get_last_processed_page_key(&self) -> String {
         format!("submission_last_page_{}", self.upper_id)
     }
-    
+
     /// 获取上次处理的检查点（用于断点续传）
     async fn get_last_processed_checkpoint(&self) -> anyhow::Result<(usize, usize)> {
         let tracker = SUBMISSION_PAGE_TRACKER.read().unwrap();
         let checkpoint = tracker.get(&self.upper_id).copied().unwrap_or((1, 0));
         Ok(checkpoint)
     }
-    
+
     /// 保存当前处理的检查点
     async fn save_last_processed_checkpoint(&self, page: usize, video_index: usize) -> anyhow::Result<()> {
         // 保存到内存
@@ -319,12 +322,12 @@ impl<'a> Submission<'a> {
             let mut tracker = SUBMISSION_PAGE_TRACKER.write().unwrap();
             tracker.insert(self.upper_id.clone(), (page, video_index));
         }
-        
+
         // 持久化到数据库
         if let Some(db) = get_global_db() {
             submission_checkpoint::save_checkpoints_to_db(&db).await?;
         }
-        
+
         if video_index > 0 {
             debug!("保存UP主 {} 的断点: 第{}页第{}个视频", self.upper_id, page, video_index);
         } else {
@@ -332,7 +335,7 @@ impl<'a> Submission<'a> {
         }
         Ok(())
     }
-    
+
     /// 清除保存的检查点（完整扫描完成后）
     async fn clear_last_processed_checkpoint(&self) -> anyhow::Result<()> {
         // 从内存清除
@@ -342,12 +345,12 @@ impl<'a> Submission<'a> {
                 info!("清除UP主 {} 的断点（扫描完成）", self.upper_id);
             }
         }
-        
+
         // 持久化到数据库（清除该UP主的断点）
         if let Some(db) = get_global_db() {
             submission_checkpoint::save_checkpoints_to_db(&db).await?;
         }
-        
+
         Ok(())
     }
 

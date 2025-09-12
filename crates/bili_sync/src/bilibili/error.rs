@@ -37,7 +37,7 @@ impl BiliError {
     pub fn is_retryable(&self) -> bool {
         match self {
             Self::NetworkTimeout => true,
-            Self::RiskControlOccurred => false, // 风控不建议立即重试
+            Self::RiskControlOccurred => false,                // 风控不建议立即重试
             Self::RiskControlVerificationRequired(_) => false, // 需要验证，不建议重试
             Self::VideoStreamDenied(_) => false,
             Self::VideoStreamEmpty(_) => false, // 视频流为空通常不建议重试
@@ -53,7 +53,7 @@ impl BiliError {
     pub fn get_retry_delay(&self) -> Option<u64> {
         match self {
             Self::NetworkTimeout => Some(10),
-            Self::RiskControlOccurred => Some(300), // 风控建议等待5分钟
+            Self::RiskControlOccurred => Some(300),           // 风控建议等待5分钟
             Self::RiskControlVerificationRequired(_) => None, // 需要人工验证，不建议自动重试
             Self::RequestFailed(code, _) => match *code {
                 -500..=-400 => Some(30), // 服务器错误等待30秒

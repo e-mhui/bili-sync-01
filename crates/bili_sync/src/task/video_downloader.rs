@@ -502,9 +502,14 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                             }
 
                             if !filtered_videos.is_empty() {
-                                if let Ok((video_source, _)) =
-                                    crate::adapter::video_source_from(args, path, &bili_client, &optimized_connection, None)
-                                        .await
+                                if let Ok((video_source, _)) = crate::adapter::video_source_from(
+                                    args,
+                                    path,
+                                    &bili_client,
+                                    &optimized_connection,
+                                    None,
+                                )
+                                .await
                                 {
                                     debug!(
                                         "向scan_collector添加 {} 个新视频信息（已过滤充电视频）",

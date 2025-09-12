@@ -61,7 +61,7 @@ impl VideoSource for submission::Model {
             let tracker = crate::bilibili::submission::SUBMISSION_PAGE_TRACKER.read().unwrap();
             tracker.contains_key(&upper_id_str)
         };
-        
+
         if has_checkpoint {
             return true;
         }
@@ -80,16 +80,12 @@ impl VideoSource for submission::Model {
             if should_take {
                 debug!(
                     "UP主「{}」增量获取：视频发布时间 {} > 上次扫描最新视频发布时间 {}",
-                    self.upper_name,
-                    release_beijing_str,
-                    latest_row_at_string
+                    self.upper_name, release_beijing_str, latest_row_at_string
                 );
             } else {
                 debug!(
                     "UP主「{}」增量跳过：视频发布时间 {} <= 上次扫描最新视频发布时间 {}",
-                    self.upper_name,
-                    release_beijing_str,
-                    latest_row_at_string
+                    self.upper_name, release_beijing_str, latest_row_at_string
                 );
             }
 
@@ -111,7 +107,7 @@ impl VideoSource for submission::Model {
             let tracker = crate::bilibili::submission::SUBMISSION_PAGE_TRACKER.read().unwrap();
             tracker.contains_key(&upper_id_str)
         };
-        
+
         if has_checkpoint {
             info!("开始断点恢复「{}」投稿扫描..", self.upper_name);
         } else {
@@ -320,8 +316,9 @@ pub(super) async fn submission_from<'a>(
             .await?
             .context("submission not found")?
             .into(),
-        Box::pin(submission_with_name.into_video_stream(
-            cancellation_token.unwrap_or_else(|| tokio_util::sync::CancellationToken::new())
-        )),
+        Box::pin(
+            submission_with_name
+                .into_video_stream(cancellation_token.unwrap_or_default()),
+        ),
     ))
 }

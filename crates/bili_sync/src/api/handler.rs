@@ -1266,56 +1266,57 @@ pub async fn reset_specific_tasks(
         (status = 500, description = "服务器内部错误", body = String)
     )
 )]
-pub async fn test_risk_control_handler() -> Result<ApiResponse<crate::api::response::TestRiskControlResponse>, ApiError> {
+pub async fn test_risk_control_handler() -> Result<ApiResponse<crate::api::response::TestRiskControlResponse>, ApiError>
+{
     use crate::config::with_config;
-    
+
     tracing::info!("开始测试风控验证功能");
 
     // 获取风控配置
     let risk_config = with_config(|bundle| bundle.config.risk_control.clone());
 
     if !risk_config.enabled {
-        return Ok(ApiResponse::bad_request(crate::api::response::TestRiskControlResponse {
-            success: false,
-            message: "风控验证功能未启用，请在设置中启用后重试".to_string(),
-            verification_url: None,
-            instructions: Some("请前往设置页面的'验证码风控'部分启用风控验证功能".to_string()),
-        }));
+        return Ok(ApiResponse::bad_request(
+            crate::api::response::TestRiskControlResponse {
+                success: false,
+                message: "风控验证功能未启用，请在设置中启用后重试".to_string(),
+                verification_url: None,
+                instructions: Some("请前往设置页面的'验证码风控'部分启用风控验证功能".to_string()),
+            },
+        ));
     }
 
     match risk_config.mode.as_str() {
-        "skip" => {
-            Ok(ApiResponse::ok(crate::api::response::TestRiskControlResponse {
-                success: true,
-                message: "风控模式设置为跳过，测试完成".to_string(),
-                verification_url: None,
-                instructions: Some("当前风控模式为'跳过'，实际使用时将直接跳过验证".to_string()),
-            }))
-        }
-        "manual" => {
-            Ok(ApiResponse::ok(crate::api::response::TestRiskControlResponse {
-                success: true,
-                message: "手动验证模式配置正确，可以处理风控验证".to_string(),
-                verification_url: Some("/captcha".to_string()),
-                instructions: Some(format!(
-                    "当前配置为手动验证模式。\n\
+        "skip" => Ok(ApiResponse::ok(crate::api::response::TestRiskControlResponse {
+            success: true,
+            message: "风控模式设置为跳过，测试完成".to_string(),
+            verification_url: None,
+            instructions: Some("当前风控模式为'跳过'，实际使用时将直接跳过验证".to_string()),
+        })),
+        "manual" => Ok(ApiResponse::ok(crate::api::response::TestRiskControlResponse {
+            success: true,
+            message: "手动验证模式配置正确，可以处理风控验证".to_string(),
+            verification_url: Some("/captcha".to_string()),
+            instructions: Some(format!(
+                "当前配置为手动验证模式。\n\
                      超时时间: {} 秒\n\
                      当遇到真实风控时，验证界面将在 /captcha 页面显示",
-                    risk_config.timeout
-                )),
-            }))
-        }
+                risk_config.timeout
+            )),
+        })),
         "auto" => {
             let auto_config = risk_config.auto_solve.as_ref();
             if auto_config.is_none() {
-                return Ok(ApiResponse::bad_request(crate::api::response::TestRiskControlResponse {
-                    success: false,
-                    message: "自动验证模式需要配置验证码识别服务".to_string(),
-                    verification_url: None,
-                    instructions: Some("请在设置中配置验证码识别服务的API密钥".to_string()),
-                }));
+                return Ok(ApiResponse::bad_request(
+                    crate::api::response::TestRiskControlResponse {
+                        success: false,
+                        message: "自动验证模式需要配置验证码识别服务".to_string(),
+                        verification_url: None,
+                        instructions: Some("请在设置中配置验证码识别服务的API密钥".to_string()),
+                    },
+                ));
             }
-            
+
             let auto_config = auto_config.unwrap();
             Ok(ApiResponse::ok(crate::api::response::TestRiskControlResponse {
                 success: true,
@@ -1341,14 +1342,14 @@ pub async fn test_risk_control_handler() -> Result<ApiResponse<crate::api::respo
                 )),
             }))
         }
-        _ => {
-            Ok(ApiResponse::bad_request(crate::api::response::TestRiskControlResponse {
+        _ => Ok(ApiResponse::bad_request(
+            crate::api::response::TestRiskControlResponse {
                 success: false,
                 message: format!("无效的风控模式: {}", risk_config.mode),
                 verification_url: None,
                 instructions: Some("请设置有效的风控模式: manual、auto 或 skip".to_string()),
-            }))
-        }
+            },
+        )),
     }
 }
 
@@ -2645,7 +2646,7 @@ pub async fn delete_video_source_internal(
 ) -> Result<crate::api::response::DeleteVideoSourceResponse, ApiError> {
     // 用于保存需要清除断点的UP主ID（仅submission类型使用）
     let mut upper_id_to_clear: Option<i64> = None;
-    
+
     // 使用主数据库连接
     let txn = db.begin().await?;
 
@@ -2900,7 +2901,7 @@ pub async fn delete_video_source_internal(
                 .one(&txn)
                 .await?
                 .ok_or_else(|| anyhow!("未找到指定的UP主投稿"))?;
-            
+
             // 保存upper_id用于后续清除断点
             upper_id_to_clear = Some(submission.upper_id);
 
@@ -4974,7 +4975,10 @@ pub async fn update_config_internal(
                     updated_fields.push("risk_control.mode");
                 }
                 _ => {
-                    return Err(anyhow!("无效的风控模式，只支持 'manual'（手动验证）、'auto'（自动验证）或 'skip'（跳过验证）").into());
+                    return Err(anyhow!(
+                        "无效的风控模式，只支持 'manual'（手动验证）、'auto'（自动验证）或 'skip'（跳过验证）"
+                    )
+                    .into());
                 }
             }
         }
@@ -5008,7 +5012,10 @@ pub async fn update_config_internal(
                     }
                 }
                 _ => {
-                    return Err(anyhow!("无效的验证码识别服务，只支持 '2captcha', 'anticaptcha', 'capsolver' 或 'yunma'").into());
+                    return Err(anyhow!(
+                        "无效的验证码识别服务，只支持 '2captcha', 'anticaptcha', 'capsolver' 或 'yunma'"
+                    )
+                    .into());
                 }
             }
         }
