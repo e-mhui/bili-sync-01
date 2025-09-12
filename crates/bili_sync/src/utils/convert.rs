@@ -66,9 +66,9 @@ impl VideoInfo {
                 category: Set(vtype),
                 intro: Set(intro),
                 cover: Set(cover),
-                ctime: Set(ctime.naive_utc()),
-                pubtime: Set(pubtime.naive_utc()),
-                favtime: Set(fav_time.naive_utc()),
+                ctime: Set(ctime.with_timezone(&crate::utils::time_format::beijing_timezone()).naive_local()),
+                pubtime: Set(pubtime.with_timezone(&crate::utils::time_format::beijing_timezone()).naive_local()),
+                favtime: Set(fav_time.with_timezone(&crate::utils::time_format::beijing_timezone()).naive_local()),
                 download_status: Set(0),
                 valid: Set(attr == 0),
                 upper_id: Set(upper.mid),
@@ -93,9 +93,9 @@ impl VideoInfo {
                 category: Set(2), // 稍后再看里的内容类型肯定是视频
                 intro: Set(intro),
                 cover: Set(cover),
-                ctime: Set(ctime.naive_utc()),
-                pubtime: Set(pubtime.naive_utc()),
-                favtime: Set(fav_time.naive_utc()),
+                ctime: Set(ctime.with_timezone(&crate::utils::time_format::beijing_timezone()).naive_local()),
+                pubtime: Set(pubtime.with_timezone(&crate::utils::time_format::beijing_timezone()).naive_local()),
+                favtime: Set(fav_time.with_timezone(&crate::utils::time_format::beijing_timezone()).naive_local()),
                 download_status: Set(0),
                 valid: Set(state == 0),
                 upper_id: Set(upper.mid),
@@ -115,8 +115,8 @@ impl VideoInfo {
                 name: Set(title),
                 intro: Set(intro),
                 cover: Set(cover),
-                ctime: Set(ctime.naive_utc()),
-                pubtime: Set(ctime.naive_utc()), // 使用ctime作为pubtime
+                ctime: Set(ctime.with_timezone(&crate::utils::time_format::beijing_timezone()).naive_local()),
+                pubtime: Set(ctime.with_timezone(&crate::utils::time_format::beijing_timezone()).naive_local()), // 使用ctime作为pubtime
                 category: Set(2),                // 投稿视频的内容类型肯定是视频
                 valid: Set(true),
                 cid: Set(None), // 后续通过get_view_info填充
@@ -173,8 +173,8 @@ impl VideoInfo {
                     name: Set(intelligent_name.to_string()),
                     intro: Set(intro),
                     cover: Set(cover),
-                    pubtime: Set(pubtime.naive_utc()),
-                    favtime: Set(pubtime.naive_utc()),
+                    pubtime: Set(pubtime.with_timezone(&crate::utils::time_format::beijing_timezone()).naive_local()),
+                    favtime: Set(pubtime.with_timezone(&crate::utils::time_format::beijing_timezone()).naive_local()),
                     category: Set(1), // 番剧类型
                     valid: Set(true),
                     season_id: Set(Some(season_id)),
@@ -222,12 +222,12 @@ impl VideoInfo {
                 category: Set(2),
                 intro: Set(intro),
                 cover: Set(cover),
-                ctime: Set(ctime.naive_utc()),
-                pubtime: Set(pubtime.naive_utc()),
+                ctime: Set(ctime.with_timezone(&crate::utils::time_format::beijing_timezone()).naive_local()),
+                pubtime: Set(pubtime.with_timezone(&crate::utils::time_format::beijing_timezone()).naive_local()),
                 favtime: if base_model.favtime != NaiveDateTime::default() {
                     NotSet // 之前设置了 favtime，不覆盖
                 } else {
-                    Set(pubtime.naive_utc()) // 未设置过 favtime，使用 pubtime 填充
+                    Set(pubtime.with_timezone(&crate::utils::time_format::beijing_timezone()).naive_local()) // 未设置过 favtime，使用 pubtime 填充
                 },
                 download_status: Set(0),
                 valid: Set(state == 0),
