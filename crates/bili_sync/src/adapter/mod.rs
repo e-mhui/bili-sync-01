@@ -64,8 +64,11 @@ pub trait VideoSource {
     fn path(&self) -> &Path;
 
     // 判断是否应该继续拉取视频
-    fn should_take(&self, release_datetime: &chrono::DateTime<Utc>, latest_row_at: &chrono::DateTime<Utc>) -> bool {
-        release_datetime > latest_row_at
+    fn should_take(&self, release_datetime: &chrono::DateTime<Utc>, latest_row_at_string: &str) -> bool {
+        let beijing_tz = crate::utils::time_format::beijing_timezone();
+        let release_beijing = release_datetime.with_timezone(&beijing_tz);
+        let release_beijing_str = release_beijing.format("%Y-%m-%d %H:%M:%S").to_string();
+        release_beijing_str.as_str() > latest_row_at_string
     }
 
     /// 开始刷新视频

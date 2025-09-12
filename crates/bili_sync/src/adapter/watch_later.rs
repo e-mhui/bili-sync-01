@@ -38,7 +38,7 @@ impl VideoSource for watch_later::Model {
         })
     }
 
-    fn should_take(&self, _release_datetime: &chrono::DateTime<Utc>, _latest_row_at: &chrono::DateTime<Utc>) -> bool {
+    fn should_take(&self, _release_datetime: &chrono::DateTime<Utc>, _latest_row_at_string: &str) -> bool {
         // 修改稍后观看源，每次都全量拉取所有视频，不管时间戳
         true
     }

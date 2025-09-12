@@ -396,7 +396,7 @@ impl VideoSourceTrait for BangumiSource {
             .and(bili_sync_entity::video::Column::SourceType.eq(1))
     }
 
-    fn should_take(&self, _release_datetime: &DateTime<Utc>, _latest_row_at: &DateTime<Utc>) -> bool {
+    fn should_take(&self, _release_datetime: &DateTime<Utc>, _latest_row_at_string: &str) -> bool {
         true
     }
 
@@ -441,7 +441,7 @@ impl VideoSource for BangumiSource {
     }
 
     // 总是返回true，表示应该下载所有番剧内容，不管发布时间
-    fn should_take(&self, _release_datetime: &chrono::DateTime<Utc>, _latest_row_at: &chrono::DateTime<Utc>) -> bool {
+    fn should_take(&self, _release_datetime: &chrono::DateTime<Utc>, _latest_row_at_string: &str) -> bool {
         true
     }
 

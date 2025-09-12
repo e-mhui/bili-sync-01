@@ -40,7 +40,7 @@ impl VideoSource for favorite::Model {
         })
     }
 
-    fn should_take(&self, _release_datetime: &chrono::DateTime<Utc>, _latest_row_at: &chrono::DateTime<Utc>) -> bool {
+    fn should_take(&self, _release_datetime: &chrono::DateTime<Utc>, _latest_row_at_string: &str) -> bool {
         true
     }
 

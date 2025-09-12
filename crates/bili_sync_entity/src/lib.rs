@@ -19,7 +19,7 @@ pub trait VideoSourceTrait {
     fn update_latest_row_at(&self, latest_row_at: String) -> video_source::ActiveModel;
 
     // 判断是否应该继续拉取视频
-    fn should_take(&self, release_datetime: &DateTime<Utc>, latest_row_at: &DateTime<Utc>) -> bool;
+    fn should_take(&self, release_datetime: &DateTime<Utc>, latest_row_at_string: &str) -> bool;
 
     /// 开始刷新视频
     fn log_refresh_video_start(&self);

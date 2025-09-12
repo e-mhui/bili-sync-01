@@ -42,7 +42,7 @@ impl VideoSource for submission::Model {
         })
     }
 
-    fn should_take(&self, release_datetime: &chrono::DateTime<Utc>, latest_row_at: &chrono::DateTime<Utc>) -> bool {
+    fn should_take(&self, release_datetime: &chrono::DateTime<Utc>, latest_row_at_string: &str) -> bool {
         // 对于选择性下载，我们需要获取所有视频信息，然后在 create_videos 中进行过滤
         // 所以这里保持原有的时间判断逻辑，但总是获取视频信息以便后续处理
 
@@ -70,26 +70,26 @@ impl VideoSource for submission::Model {
         let current_config = crate::config::reload_config();
         if current_config.submission_risk_control.enable_incremental_fetch {
             // 增量模式：只获取比上次扫描时间更新的视频
-            // 将两个时间都转换为北京时间进行比较，避免时区混乱
+            // 将UTC时间转换为北京时间字符串，然后直接比较字符串
             let beijing_tz = crate::utils::time_format::beijing_timezone();
             let release_beijing = release_datetime.with_timezone(&beijing_tz);
-            let latest_beijing = latest_row_at.with_timezone(&beijing_tz);
+            let release_beijing_str = release_beijing.format("%Y-%m-%d %H:%M:%S").to_string();
 
-            let should_take = release_beijing > latest_beijing;
+            let should_take = release_beijing_str.as_str() > latest_row_at_string;
 
             if should_take {
                 debug!(
                     "UP主「{}」增量获取：视频发布时间 {} > 上次扫描时间 {}",
                     self.upper_name,
-                    release_beijing.format("%Y-%m-%d %H:%M:%S"),
-                    latest_beijing.format("%Y-%m-%d %H:%M:%S")
+                    release_beijing_str,
+                    latest_row_at_string
                 );
             } else {
                 debug!(
                     "UP主「{}」增量跳过：视频发布时间 {} <= 上次扫描时间 {}",
                     self.upper_name,
-                    release_beijing.format("%Y-%m-%d %H:%M:%S"),
-                    latest_beijing.format("%Y-%m-%d %H:%M:%S")
+                    release_beijing_str,
+                    latest_row_at_string
                 );
             }
 
