@@ -42,6 +42,11 @@ async fn main() -> Result<()> {
         warn!("数据库配置系统初始化失败: {}, 继续使用TOML配置", e);
     }
 
+    // 恢复断点信息到内存
+    if let Err(e) = crate::utils::submission_checkpoint::restore_checkpoints_from_db(&connection).await {
+        warn!("恢复断点信息失败: {:#}", e);
+    }
+    
     // 恢复待处理的任务到内存队列
     if let Err(e) = crate::task::recover_pending_tasks(connection.as_ref()).await {
         warn!("恢复待处理任务失败: {:#}", e);
@@ -160,6 +165,16 @@ async fn handle_shutdown(tracker: TaskTracker, token: CancellationToken) {
             info!("接收到终止信号，正在终止任务..");
             // 立即刷新日志以确保不丢失
             file_logger::flush_file_logger();
+            
+            // 在取消任务前先保存断点信息
+            if let Some(db) = crate::database::get_global_db() {
+                if let Err(e) = crate::utils::submission_checkpoint::save_checkpoints_to_db(&db).await {
+                    warn!("终止时保存断点信息失败: {:#}", e);
+                } else {
+                    info!("终止时成功保存断点信息到数据库");
+                }
+            }
+            
             token.cancel();
             tracker.wait().await;
             info!("所有任务均已终止，程序退出");
@@ -170,6 +185,13 @@ async fn handle_shutdown(tracker: TaskTracker, token: CancellationToken) {
 
 /// 完成全局系统清理
 async fn finalize_global_systems() {
+    // 最后一次保存断点信息（双重保险）
+    if let Some(db) = crate::database::get_global_db() {
+        if let Err(e) = crate::utils::submission_checkpoint::save_checkpoints_to_db(&db).await {
+            warn!("最终保存断点信息失败: {:#}", e);
+        }
+    }
+    
     // SQLite会自动处理mmap的清理，不需要额外的finalize操作
 
     // 关闭文件日志系统

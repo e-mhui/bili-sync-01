@@ -11,6 +11,7 @@ pub mod scan_collector;
 pub mod scan_id_tracker;
 pub mod signal;
 pub mod status;
+pub mod submission_checkpoint;
 pub mod task_notifier;
 pub mod time_format;
 

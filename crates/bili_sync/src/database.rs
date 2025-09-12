@@ -1,9 +1,13 @@
 use anyhow::Result;
 use bili_sync_migration::{Migrator, MigratorTrait};
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
+use std::sync::Arc;
+use tokio::sync::OnceCell;
 use tracing::debug;
 
 use crate::config::CONFIG_DIR;
+
+static GLOBAL_DB: OnceCell<Arc<DatabaseConnection>> = OnceCell::const_new();
 
 fn database_url() -> String {
     // 确保配置目录存在
@@ -128,5 +132,14 @@ pub async fn setup_database() -> DatabaseConnection {
         tracing::warn!("数据库预热失败: {}", e);
     }
 
+    // 设置全局数据库引用
+    let connection_arc = Arc::new(connection.clone());
+    let _ = GLOBAL_DB.set(connection_arc);
+
     connection
+}
+
+/// 获取全局数据库连接
+pub fn get_global_db() -> Option<Arc<DatabaseConnection>> {
+    GLOBAL_DB.get().cloned()
 }

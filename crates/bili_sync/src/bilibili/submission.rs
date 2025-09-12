@@ -14,6 +14,8 @@ use crate::bilibili::credential::encoded_query;
 use crate::bilibili::favorite_list::Upper;
 use crate::bilibili::{BiliClient, Validate, VideoInfo, MIXIN_KEY};
 use crate::config::SubmissionRiskControlConfig;
+use crate::utils::submission_checkpoint;
+use crate::database::get_global_db;
 
 /// 全局提交源页码跟踪器，用于断点续传
 /// 存储格式: (页码, 该页已处理的视频索引)
@@ -252,6 +254,11 @@ impl<'a> Submission<'a> {
                     yield video_info;
                 }
 
+                // 每页处理完成后保存断点
+                if let Err(e) = self.save_last_processed_checkpoint(page + 1, 0).await {
+                    warn!("保存页面完成断点失败: {}", e);
+                }
+
                 let count = &videos["data"]["page"]["count"];
                 if let Some(v) = count.as_i64() {
                     if v > (page * 30) as i64 {
@@ -307,8 +314,17 @@ impl<'a> Submission<'a> {
     
     /// 保存当前处理的检查点
     async fn save_last_processed_checkpoint(&self, page: usize, video_index: usize) -> anyhow::Result<()> {
-        let mut tracker = SUBMISSION_PAGE_TRACKER.write().unwrap();
-        tracker.insert(self.upper_id.clone(), (page, video_index));
+        // 保存到内存
+        {
+            let mut tracker = SUBMISSION_PAGE_TRACKER.write().unwrap();
+            tracker.insert(self.upper_id.clone(), (page, video_index));
+        }
+        
+        // 持久化到数据库
+        if let Some(db) = get_global_db() {
+            submission_checkpoint::save_checkpoints_to_db(&db).await?;
+        }
+        
         if video_index > 0 {
             info!("保存UP主 {} 的断点: 第{}页第{}个视频", self.upper_id, page, video_index);
         } else {
@@ -319,10 +335,19 @@ impl<'a> Submission<'a> {
     
     /// 清除保存的检查点（完整扫描完成后）
     async fn clear_last_processed_checkpoint(&self) -> anyhow::Result<()> {
-        let mut tracker = SUBMISSION_PAGE_TRACKER.write().unwrap();
-        if tracker.remove(&self.upper_id).is_some() {
-            info!("清除UP主 {} 的断点（扫描完成）", self.upper_id);
+        // 从内存清除
+        {
+            let mut tracker = SUBMISSION_PAGE_TRACKER.write().unwrap();
+            if tracker.remove(&self.upper_id).is_some() {
+                info!("清除UP主 {} 的断点（扫描完成）", self.upper_id);
+            }
         }
+        
+        // 持久化到数据库（清除该UP主的断点）
+        if let Some(db) = get_global_db() {
+            submission_checkpoint::save_checkpoints_to_db(&db).await?;
+        }
+        
         Ok(())
     }
 
