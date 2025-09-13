@@ -5100,6 +5100,7 @@ pub async fn update_config_internal(
         // 将 updated_fields 映射到实际的配置项更新
         for field in &updated_fields {
             let result = match field.as_ref() {
+                // 处理文件命名设置
                 "video_name" => manager.update_config_item("video_name", serde_json::to_value(&config.video_name)?).await,
                 "page_name" => manager.update_config_item("page_name", serde_json::to_value(&config.page_name)?).await,
                 "multi_page_name" => manager.update_config_item("multi_page_name", serde_json::to_value(&config.multi_page_name)?).await,
@@ -5120,14 +5121,47 @@ pub async fn update_config_internal(
                 "aria2_health_check_interval" => manager.update_config_item("aria2_health_check_interval", serde_json::to_value(&config.aria2_health_check_interval)?).await,
                 "submission_risk_control" => manager.update_config_item("submission_risk_control", serde_json::to_value(&config.submission_risk_control)?).await,
                 // 对于复合字段，使用特殊处理
-                "rate_limit" | "rate_duration" | "parallel_download_enabled" | "parallel_download_threads" => 
+                "rate_limit" | "rate_duration" | "parallel_download_enabled" | "parallel_download_threads" |
+                "concurrent_video" | "concurrent_page" =>
                     manager.update_config_item("concurrent_limit", serde_json::to_value(&config.concurrent_limit)?).await,
-                "large_submission_threshold" | "base_request_delay" | "large_submission_delay_multiplier" => 
+                "large_submission_threshold" | "base_request_delay" | "large_submission_delay_multiplier" |
+                "enable_progressive_delay" | "max_delay_multiplier" | "enable_incremental_fetch" |
+                "incremental_fallback_to_full" | "enable_batch_processing" | "batch_size" |
+                "batch_delay_seconds" | "enable_auto_backoff" | "auto_backoff_base_seconds" |
+                "auto_backoff_max_multiplier" | "source_delay_seconds" | "submission_source_delay_seconds" =>
                     manager.update_config_item("submission_risk_control", serde_json::to_value(&config.submission_risk_control)?).await,
                 // 处理视频质量相关字段
                 "video_max_quality" | "video_min_quality" | "audio_max_quality" | "audio_min_quality" | 
                 "codecs" | "no_dolby_video" | "no_dolby_audio" | "no_hdr" | "no_hires" =>
                     manager.update_config_item("filter_option", serde_json::to_value(&config.filter_option)?).await,
+                // 处理弹幕相关字段
+                "danmaku_duration" | "danmaku_font" | "danmaku_font_size" | "danmaku_width_ratio" | "danmaku_horizontal_gap" |
+                "danmaku_lane_size" | "danmaku_float_percentage" | "danmaku_bottom_percentage" | "danmaku_opacity" |
+                "danmaku_bold" | "danmaku_outline" | "danmaku_time_offset" =>
+                    manager.update_config_item("danmaku_option", serde_json::to_value(&config.danmaku_option)?).await,
+                // NFO配置字段
+                "nfo_config" => manager.update_config_item("nfo_config", serde_json::to_value(&config.nfo_config)?).await,
+                // 跳过番剧预告片
+                "skip_bangumi_preview" => manager.update_config_item("skip_bangumi_preview", serde_json::to_value(&config.skip_bangumi_preview)?).await,
+                // Season结构配置字段  
+                "multi_page_use_season_structure" => manager.update_config_item("multi_page_use_season_structure", serde_json::to_value(&config.multi_page_use_season_structure)?).await,
+                "collection_use_season_structure" => manager.update_config_item("collection_use_season_structure", serde_json::to_value(&config.collection_use_season_structure)?).await,
+                "bangumi_use_season_structure" => manager.update_config_item("bangumi_use_season_structure", serde_json::to_value(&config.bangumi_use_season_structure)?).await,
+                // 通知配置字段
+                "serverchan_key" | "enable_scan_notifications" | "notification_min_videos" | "notification_timeout" | "notification_retry_count" =>
+                    manager.update_config_item("notification", serde_json::to_value(&config.notification)?).await,
+                // 风控配置字段
+                "risk_control.enabled" | "risk_control.mode" | "risk_control.timeout" | 
+                "risk_control.auto_solve.service" | "risk_control.auto_solve.api_key" | 
+                "risk_control.auto_solve.max_retries" | "risk_control.auto_solve.solve_timeout" =>
+                    manager.update_config_item("risk_control", serde_json::to_value(&config.risk_control)?).await,
+                // 启动时配置字段
+                "enable_startup_data_fix" => manager.update_config_item("enable_startup_data_fix", serde_json::to_value(&config.enable_startup_data_fix)?).await,
+                "enable_cid_population" => manager.update_config_item("enable_cid_population", serde_json::to_value(&config.enable_cid_population)?).await,
+                // API Token
+                "auth_token" => manager.update_config_item("auth_token", serde_json::to_value(&config.auth_token)?).await,
+                // actors字段初始化状态
+                "actors_field_initialized" => manager.update_config_item("actors_field_initialized", serde_json::to_value(&config.actors_field_initialized)?).await,
                 _ => {
                     warn!("未知的配置字段: {}", field);
                     Ok(())
@@ -10062,66 +10096,60 @@ pub async fn update_notification_config(
 
     let config_manager = ConfigManager::new(db.as_ref().clone());
 
+    // 先获取当前的notification配置
+    let current_config = crate::config::reload_config();
+    let mut notification_config = current_config.notification.clone();
+    let mut updated = false;
+
     // 更新配置字段
     if let Some(ref key) = request.serverchan_key {
-        let value = if key.trim().is_empty() {
-            serde_json::Value::Null
+        if key.trim().is_empty() {
+            notification_config.serverchan_key = None;
         } else {
-            serde_json::Value::String(key.trim().to_string())
-        };
-        config_manager
-            .update_config_item("notification.serverchan_key", value)
-            .await
-            .map_err(|e| ApiError::from(anyhow!("更新Server酱密钥失败: {}", e)))?;
+            notification_config.serverchan_key = Some(key.trim().to_string());
+        }
+        updated = true;
     }
 
     if let Some(enabled) = request.enable_scan_notifications {
-        config_manager
-            .update_config_item(
-                "notification.enable_scan_notifications",
-                serde_json::Value::Bool(enabled),
-            )
-            .await
-            .map_err(|e| ApiError::from(anyhow!("更新推送启用状态失败: {}", e)))?;
+        notification_config.enable_scan_notifications = enabled;
+        updated = true;
     }
 
     if let Some(min_videos) = request.notification_min_videos {
         if !(1..=100).contains(&min_videos) {
             return Err(ApiError::from(anyhow!("推送阈值必须在1-100之间")));
         }
-        config_manager
-            .update_config_item(
-                "notification.notification_min_videos",
-                serde_json::Value::Number(min_videos.into()),
-            )
-            .await
-            .map_err(|e| ApiError::from(anyhow!("更新推送阈值失败: {}", e)))?;
+        notification_config.notification_min_videos = min_videos;
+        updated = true;
     }
 
     if let Some(timeout) = request.notification_timeout {
         if !(5..=60).contains(&timeout) {
             return Err(ApiError::from(anyhow!("超时时间必须在5-60秒之间")));
         }
-        config_manager
-            .update_config_item(
-                "notification.notification_timeout",
-                serde_json::Value::Number(timeout.into()),
-            )
-            .await
-            .map_err(|e| ApiError::from(anyhow!("更新超时时间失败: {}", e)))?;
+        notification_config.notification_timeout = timeout;
+        updated = true;
     }
 
     if let Some(retry_count) = request.notification_retry_count {
         if !(1..=5).contains(&retry_count) {
             return Err(ApiError::from(anyhow!("重试次数必须在1-5次之间")));
         }
+        notification_config.notification_retry_count = retry_count;
+        updated = true;
+    }
+
+    // 如果有更新，保存整个notification对象
+    if updated {
         config_manager
             .update_config_item(
-                "notification.notification_retry_count",
-                serde_json::Value::Number(retry_count.into()),
+                "notification",
+                serde_json::to_value(&notification_config)
+                    .map_err(|e| ApiError::from(anyhow!("序列化通知配置失败: {}", e)))?,
             )
             .await
-            .map_err(|e| ApiError::from(anyhow!("更新重试次数失败: {}", e)))?;
+            .map_err(|e| ApiError::from(anyhow!("更新通知配置失败: {}", e)))?;
     }
 
     // 重新加载配置

@@ -220,6 +220,12 @@ impl ConfigManager {
 
     /// 更新单个配置项
     pub async fn update_config_item(&self, key: &str, value: Value) -> Result<()> {
+        // 防止写入嵌套的notification字段
+        if key.starts_with("notification.") {
+            warn!("拒绝写入嵌套的notification字段: {}，请使用完整的notification对象", key);
+            return Ok(()); // 静默忽略，不返回错误
+        }
+        
         let value_json = serde_json::to_string(&value)?;
 
         // 查找现有配置项
@@ -363,14 +369,80 @@ impl ConfigManager {
         
         for prefix in potential_conflicts {
             let has_complete_object = config_map.contains_key(prefix);
-            let has_nested_fields = config_map.keys().any(|key| key.starts_with(&format!("{}.", prefix)));
+            let nested_keys: Vec<String> = config_map
+                .keys()
+                .filter(|key| key.starts_with(&format!("{}.", prefix)))
+                .cloned()
+                .collect();
+            let has_nested_fields = !nested_keys.is_empty();
             
             if has_complete_object && has_nested_fields {
-                warn!("检测到配置冲突：既有完整的 {} 对象又有嵌套字段，移除完整对象以解决冲突", prefix);
-                config_map.remove(prefix);
+                if prefix == "notification" {
+                    // 对于notification，删除嵌套字段，保留完整对象
+                    warn!("检测到配置冲突：既有完整的 {} 对象又有嵌套字段，删除嵌套字段并从数据库永久移除", prefix);
+                    
+                    // 从内存中移除嵌套字段
+                    for nested_key in &nested_keys {
+                        config_map.remove(nested_key);
+                    }
+                    
+                    // 从数据库中永久删除嵌套字段
+                    if let Err(e) = self.delete_nested_fields_from_db(prefix, &nested_keys) {
+                        warn!("删除数据库中的嵌套字段失败: {}", e);
+                    }
+                } else {
+                    // 对于其他配置，保持原有逻辑：移除完整对象，保留嵌套字段
+                    warn!("检测到配置冲突：既有完整的 {} 对象又有嵌套字段，移除完整对象以解决冲突", prefix);
+                    config_map.remove(prefix);
+                }
             }
         }
         
         Ok(())
+    }
+
+    /// 从数据库中删除嵌套字段
+    fn delete_nested_fields_from_db(&self, prefix: &str, nested_keys: &[String]) -> Result<()> {
+        use tokio::runtime::Handle;
+        
+        // 创建异步任务来删除数据库记录
+        let db = self.db.clone();
+        let keys = nested_keys.to_vec();
+        let prefix = prefix.to_string();
+        
+        // 如果在异步上下文中，直接执行；否则创建新的运行时
+        if let Ok(handle) = Handle::try_current() {
+            handle.spawn(async move {
+                Self::delete_config_keys_async(db, keys).await;
+            });
+        } else {
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async {
+                    Self::delete_config_keys_async(db, keys).await;
+                });
+            });
+        }
+        
+        info!("已标记删除 {} 的嵌套配置字段", prefix);
+        Ok(())
+    }
+
+    /// 异步删除配置键
+    async fn delete_config_keys_async(db: sea_orm::DatabaseConnection, keys: Vec<String>) {
+        use sea_orm::*;
+        use bili_sync_entity::entities::config_item;
+
+        for key in keys {
+            if let Err(e) = config_item::Entity::delete_many()
+                .filter(config_item::Column::KeyName.eq(&key))
+                .exec(&db)
+                .await 
+            {
+                warn!("删除配置键 {} 失败: {}", key, e);
+            } else {
+                info!("成功从数据库删除配置键: {}", key);
+            }
+        }
     }
 }
