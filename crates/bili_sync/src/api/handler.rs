@@ -4106,7 +4106,11 @@ where
     // 移除配置文件保存 - 配置现在完全基于数据库
     // config.save()?;
 
-    // 保存配置到数据库
+    // 注意：此函数已废弃，不应使用 save_config
+    // 如果真的需要使用，应该根据具体情况只更新特定的配置项
+    warn!("update_config_file 函数已废弃，不应使用完整的 save_config 操作");
+    
+    // 保存配置到数据库（已废弃的完整配置保存）
     if let Some(manager) = crate::config::get_config_manager() {
         if let Err(e) =
             tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(manager.save_config(&config)))
@@ -5088,15 +5092,56 @@ pub async fn update_config_internal(
     // 移除配置文件保存 - 配置现在完全基于数据库
     // config.save()?;
 
-    // 保存配置到数据库
-    {
+    // 根据 updated_fields 只更新被修改的配置项
+    if !updated_fields.is_empty() {
         use crate::config::ConfigManager;
         let manager = ConfigManager::new(db.as_ref().clone());
-        if let Err(e) = manager.save_config(&config).await {
-            warn!("保存配置到数据库失败: {}", e);
-        } else {
-            info!("配置已保存到数据库");
+        
+        // 将 updated_fields 映射到实际的配置项更新
+        for field in &updated_fields {
+            let result = match field.as_ref() {
+                "video_name" => manager.update_config_item("video_name", serde_json::to_value(&config.video_name)?).await,
+                "page_name" => manager.update_config_item("page_name", serde_json::to_value(&config.page_name)?).await,
+                "multi_page_name" => manager.update_config_item("multi_page_name", serde_json::to_value(&config.multi_page_name)?).await,
+                "bangumi_name" => manager.update_config_item("bangumi_name", serde_json::to_value(&config.bangumi_name)?).await,
+                "folder_structure" => manager.update_config_item("folder_structure", serde_json::to_value(&config.folder_structure)?).await,
+                "bangumi_folder_name" => manager.update_config_item("bangumi_folder_name", serde_json::to_value(&config.bangumi_folder_name)?).await,
+                "collection_folder_mode" => manager.update_config_item("collection_folder_mode", serde_json::to_value(&config.collection_folder_mode)?).await,
+                "time_format" => manager.update_config_item("time_format", serde_json::to_value(&config.time_format)?).await,
+                "interval" => manager.update_config_item("interval", serde_json::to_value(&config.interval)?).await,
+                "nfo_time_type" => manager.update_config_item("nfo_time_type", serde_json::to_value(&config.nfo_time_type)?).await,
+                "upper_path" => manager.update_config_item("upper_path", serde_json::to_value(&config.upper_path)?).await,
+                "bind_address" => manager.update_config_item("bind_address", serde_json::to_value(&config.bind_address)?).await,
+                "concurrent_limit" => manager.update_config_item("concurrent_limit", serde_json::to_value(&config.concurrent_limit)?).await,
+                "cdn_sorting" => manager.update_config_item("cdn_sorting", serde_json::to_value(&config.cdn_sorting)?).await,
+                "scan_deleted_videos" => manager.update_config_item("scan_deleted_videos", serde_json::to_value(&config.scan_deleted_videos)?).await,
+                "enable_aria2_health_check" => manager.update_config_item("enable_aria2_health_check", serde_json::to_value(&config.enable_aria2_health_check)?).await,
+                "enable_aria2_auto_restart" => manager.update_config_item("enable_aria2_auto_restart", serde_json::to_value(&config.enable_aria2_auto_restart)?).await,
+                "aria2_health_check_interval" => manager.update_config_item("aria2_health_check_interval", serde_json::to_value(&config.aria2_health_check_interval)?).await,
+                "submission_risk_control" => manager.update_config_item("submission_risk_control", serde_json::to_value(&config.submission_risk_control)?).await,
+                // 对于复合字段，使用特殊处理
+                "rate_limit" | "rate_duration" | "parallel_download_enabled" | "parallel_download_threads" => 
+                    manager.update_config_item("concurrent_limit", serde_json::to_value(&config.concurrent_limit)?).await,
+                "large_submission_threshold" | "base_request_delay" | "large_submission_delay_multiplier" => 
+                    manager.update_config_item("submission_risk_control", serde_json::to_value(&config.submission_risk_control)?).await,
+                // 处理视频质量相关字段
+                "video_max_quality" | "video_min_quality" | "audio_max_quality" | "audio_min_quality" | 
+                "codecs" | "no_dolby_video" | "no_dolby_audio" | "no_hdr" | "no_hires" =>
+                    manager.update_config_item("filter_option", serde_json::to_value(&config.filter_option)?).await,
+                _ => {
+                    warn!("未知的配置字段: {}", field);
+                    Ok(())
+                }
+            };
+            
+            if let Err(e) = result {
+                warn!("更新配置项 {} 失败: {}", field, e);
+            }
         }
+        
+        info!("已更新 {} 个配置项: {:?}", updated_fields.len(), updated_fields);
+    } else {
+        info!("没有配置项需要更新");
     }
 
     // 重新加载全局配置包（从数据库）
@@ -7437,13 +7482,22 @@ pub async fn setup_auth_token(
         crate::task::enqueue_reload_task(reload_task, &db).await?;
         info!("检测到正在扫描，API Token保存任务已加入队列");
     } else {
-        // 直接保存配置到数据库
+        // 只更新 API Token 配置项，避免覆盖其他配置
         use crate::config::ConfigManager;
         let manager = ConfigManager::new(db.as_ref().clone());
-        if let Err(e) = manager.save_config(&config).await {
-            warn!("保存配置到数据库失败: {}", e);
-        } else {
-            info!("API Token已保存到数据库");
+        
+        let auth_token_json = serde_json::to_value(&config.auth_token)
+            .map_err(|e| {
+                warn!("序列化API Token失败: {}", e);
+                e
+            });
+        
+        if let Ok(token_value) = auth_token_json {
+            if let Err(e) = manager.update_config_item("auth_token", token_value).await {
+                warn!("更新API Token配置失败: {}", e);
+            } else {
+                info!("API Token已保存到数据库");
+            }
         }
 
         // 重新加载全局配置包（从数据库）
@@ -7487,15 +7541,35 @@ pub async fn update_credential(
     }
 
     // 创建新的凭证
-    let new_credential = crate::bilibili::Credential {
+    let mut new_credential = crate::bilibili::Credential {
         sessdata: params.sessdata.trim().to_string(),
         bili_jct: params.bili_jct.trim().to_string(),
         buvid3: params.buvid3.trim().to_string(),
         dedeuserid: params.dedeuserid.trim().to_string(),
         ac_time_value: params.ac_time_value.unwrap_or_default().trim().to_string(),
-        buvid4: params.buvid3.trim().to_string(), // 暂时使用buvid3作为buvid4
+        buvid4: None, // 将通过 spi 接口获取
         dedeuserid_ckmd5: None,
     };
+
+    // 尝试通过 spi 接口获取 buvid4
+    if let Ok(client) = reqwest::Client::new()
+        .get("https://api.bilibili.com/x/frontend/finger/spi")
+        .header("Referer", "https://www.bilibili.com")
+        .header("Origin", "https://www.bilibili.com")
+        .send()
+        .await
+    {
+        if let Ok(data) = client.json::<serde_json::Value>().await {
+            if data["code"].as_i64() == Some(0) {
+                if let Some(buvid4) = data["data"]["b_4"].as_str() {
+                    new_credential.buvid4 = Some(buvid4.to_string());
+                    tracing::info!("通过 spi 接口获取到 buvid4: {}", buvid4);
+                } else {
+                    tracing::warn!("spi 接口未返回 buvid4");
+                }
+            }
+        }
+    }
 
     // 更新配置中的凭证
     let config = crate::config::reload_config();
@@ -7514,13 +7588,22 @@ pub async fn update_credential(
         crate::task::enqueue_reload_task(reload_task, &db).await?;
         info!("检测到正在扫描，凭证保存任务已加入队列");
     } else {
-        // 直接保存配置到数据库
+        // 只更新凭据配置项，避免覆盖其他配置
         use crate::config::ConfigManager;
         let manager = ConfigManager::new(db.as_ref().clone());
-        if let Err(e) = manager.save_config(&config).await {
-            warn!("保存配置到数据库失败: {}", e);
-        } else {
-            info!("凭证已保存到数据库");
+        
+        let credential_json = serde_json::to_value(&config.credential)
+            .map_err(|e| {
+                warn!("序列化凭据失败: {}", e);
+                e
+            });
+        
+        if let Ok(credential_value) = credential_json {
+            if let Err(e) = manager.update_config_item("credential", credential_value).await {
+                warn!("更新凭据配置失败: {}", e);
+            } else {
+                info!("凭证已保存到数据库");
+            }
         }
 
         // 重新加载全局配置包（从数据库）
@@ -7635,10 +7718,17 @@ pub async fn poll_qr_status(
                     .map_err(|e| ApiError::from(anyhow!("保存凭证失败: {}", e)))?;
                 info!("检测到正在扫描，凭证保存任务已加入队列");
             } else {
-                // 直接保存配置到数据库
+                // 只更新凭据配置项，避免覆盖其他配置
                 use crate::config::ConfigManager;
                 let manager = ConfigManager::new(db.as_ref().clone());
-                if let Err(e) = manager.save_config(&config).await {
+                
+                let credential_json = serde_json::to_value(&config.credential)
+                    .map_err(|e| {
+                        error!("序列化凭据失败: {}", e);
+                        ApiError::from(anyhow!("序列化凭据失败: {}", e))
+                    })?;
+                
+                if let Err(e) = manager.update_config_item("credential", credential_json).await {
                     error!("保存凭证到数据库失败: {}", e);
                     return Err(ApiError::from(anyhow!("保存凭证失败: {}", e)));
                 } else {
@@ -7757,7 +7847,7 @@ pub async fn clear_credential() -> Result<ApiResponse<UpdateCredentialResponse>,
         buvid3: String::new(),
         dedeuserid: String::new(),
         ac_time_value: String::new(),
-        buvid4: String::new(),
+        buvid4: None,
         dedeuserid_ckmd5: None,
     };
 
@@ -9973,7 +10063,7 @@ pub async fn update_notification_config(
     let config_manager = ConfigManager::new(db.as_ref().clone());
 
     // 更新配置字段
-    if let Some(key) = request.serverchan_key {
+    if let Some(ref key) = request.serverchan_key {
         let value = if key.trim().is_empty() {
             serde_json::Value::Null
         } else {

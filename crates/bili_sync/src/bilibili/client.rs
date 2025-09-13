@@ -121,10 +121,13 @@ impl Client {
                 format!("SESSDATA={}", credential.sessdata),
                 format!("bili_jct={}", credential.bili_jct),
                 format!("buvid3={}", credential.buvid3),
-                format!("buvid4={}", credential.buvid4),
                 format!("DedeUserID={}", credential.dedeuserid),
                 format!("ac_time_value={}", credential.ac_time_value),
             ];
+
+            if let Some(buvid4) = &credential.buvid4 {
+                cookie_parts.push(format!("buvid4={}", buvid4));
+            }
 
             if let Some(ckmd5) = &credential.dedeuserid_ckmd5 {
                 cookie_parts.push(format!("DedeUserID__ckMd5={}", ckmd5));

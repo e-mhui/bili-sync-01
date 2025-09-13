@@ -26,7 +26,7 @@ pub struct Credential {
     pub buvid3: String,
     pub dedeuserid: String,
     pub ac_time_value: String,
-    pub buvid4: String,
+    pub buvid4: Option<String>,
     pub dedeuserid_ckmd5: Option<String>,
 }
 

@@ -183,33 +183,57 @@ impl QRLoginService {
                 // 登录成功，提取凭证
                 let cookies = self.extract_cookies_from_headers(&headers)?;
 
-                // 如果响应头中没有 buvid3，尝试从用户信息接口获取
+                // 从登录响应中提取 buvid3 和 buvid4
                 let mut buvid3 = cookies.get("buvid3").cloned().unwrap_or_default();
+                let mut buvid4 = cookies.get("buvid4").cloned();
 
                 let user_info = self.get_user_info(&cookies).await?;
 
-                // 如果还是没有 buvid3，尝试从之前访问主页时获取的cookie中查找
-                if buvid3.is_empty() {
-                    tracing::warn!("登录响应中未找到 buvid3");
+                // 如果还是没有 buvid3 或 buvid4，尝试从之前访问主页时获取的cookie中查找
+                if buvid3.is_empty() || buvid4.is_none() {
+                    if buvid3.is_empty() {
+                        tracing::warn!("登录响应中未找到 buvid3");
+                    }
+                    if buvid4.is_none() {
+                        tracing::warn!("登录响应中未找到 buvid4");
+                    }
+                    
                     // 从当前配置中获取（如果有的话）
                     let current_config = crate::config::reload_config();
                     if let Some(current_cred) = current_config.credential.load().as_ref() {
-                        if !current_cred.buvid3.is_empty() {
+                        if buvid3.is_empty() && !current_cred.buvid3.is_empty() {
                             buvid3 = current_cred.buvid3.clone();
                             tracing::info!("使用现有配置中的 buvid3");
                         }
+                        if buvid4.is_none() {
+                            if let Some(ref existing_buvid4) = current_cred.buvid4 {
+                                if !existing_buvid4.is_empty() {
+                                    buvid4 = Some(existing_buvid4.clone());
+                                    tracing::info!("使用现有配置中的 buvid4");
+                                }
+                            }
+                        }
                     }
 
-                    // 如果还是没有，尝试生成一个新的 buvid3
-                    if buvid3.is_empty() {
-                        // 访问 B站的 buvid3 生成接口
-                        match self.generate_buvid3().await {
-                            Ok(new_buvid3) => {
-                                buvid3 = new_buvid3;
-                                tracing::info!("成功生成新的 buvid3");
+                    // 如果还是没有，尝试生成新的 buvid3 和 buvid4
+                    if buvid3.is_empty() || buvid4.is_none() {
+                        match self.generate_buvids().await {
+                            Ok((new_buvid3, new_buvid4)) => {
+                                if buvid3.is_empty() {
+                                    buvid3 = new_buvid3;
+                                    tracing::info!("成功生成新的 buvid3");
+                                }
+                                if buvid4.is_none() {
+                                    buvid4 = new_buvid4;
+                                    if let Some(ref b4) = buvid4 {
+                                        tracing::info!("成功生成新的 buvid4: {}", b4);
+                                    } else {
+                                        tracing::warn!("未能获取 buvid4");
+                                    }
+                                }
                             }
                             Err(e) => {
-                                tracing::warn!("生成 buvid3 失败: {}，将使用空值", e);
+                                tracing::warn!("生成 buvids 失败: {}，将使用现有值", e);
                             }
                         }
                     }
@@ -221,7 +245,7 @@ impl QRLoginService {
                     buvid3: buvid3.clone(),
                     dedeuserid: cookies.get("DedeUserID").unwrap().clone(),
                     ac_time_value: data["data"]["refresh_token"].as_str().unwrap_or("").to_string(),
-                    buvid4: buvid3, // 暂时使用buvid3作为buvid4
+                    buvid4: buvid4,
                     dedeuserid_ckmd5: cookies.get("DedeUserID__ckMd5").cloned(),
                 };
 
@@ -251,7 +275,7 @@ impl QRLoginService {
                         let key = key.trim();
                         let value = value.trim();
 
-                        if ["SESSDATA", "bili_jct", "DedeUserID", "DedeUserID__ckMd5", "buvid3"].contains(&key) {
+                        if ["SESSDATA", "bili_jct", "DedeUserID", "DedeUserID__ckMd5", "buvid3", "buvid4"].contains(&key) {
                             cookies.insert(key.to_string(), value.to_string());
                         }
                     }
@@ -312,11 +336,11 @@ impl QRLoginService {
         });
     }
 
-    /// 生成 buvid3
-    async fn generate_buvid3(&self) -> Result<String> {
-        tracing::info!("尝试生成 buvid3...");
+    /// 生成 buvid3 和 buvid4
+    async fn generate_buvids(&self) -> Result<(String, Option<String>)> {
+        tracing::info!("尝试生成 buvid3 和 buvid4...");
 
-        // 方法1：访问 B站的 buvid3 生成接口
+        // 方法1：访问 B站的 buvid3/buvid4 生成接口
         let response = self
             .client
             .get("https://api.bilibili.com/x/frontend/finger/spi")
@@ -328,9 +352,18 @@ impl QRLoginService {
         let data: serde_json::Value = response.json().await?;
 
         if data["code"].as_i64() == Some(0) {
-            if let Some(buvid3) = data["data"]["b_3"].as_str() {
+            let buvid3 = data["data"]["b_3"].as_str();
+            let buvid4 = data["data"]["b_4"].as_str();
+            
+            if let Some(buvid3) = buvid3 {
                 tracing::info!("从 spi 接口获取到 buvid3: {}", buvid3);
-                return Ok(buvid3.to_string());
+                if let Some(buvid4) = buvid4 {
+                    tracing::info!("从 spi 接口获取到 buvid4: {}", buvid4);
+                    return Ok((buvid3.to_string(), Some(buvid4.to_string())));
+                } else {
+                    tracing::warn!("spi 接口未返回 buvid4");
+                    return Ok((buvid3.to_string(), None));
+                }
             }
         }
 
@@ -347,7 +380,8 @@ impl QRLoginService {
             .collect();
 
         tracing::info!("生成随机 buvid3: {}", buvid3);
-        Ok(buvid3)
+        tracing::warn!("无法获取 buvid4，将使用空值");
+        Ok((buvid3, None))
     }
 }
 

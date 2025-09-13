@@ -100,7 +100,10 @@ impl ConfigManager {
     }
 
     /// 从配置映射构建Config对象
-    fn build_config_from_map(&self, config_map: HashMap<String, Value>) -> Result<Config> {
+    fn build_config_from_map(&self, mut config_map: HashMap<String, Value>) -> Result<Config> {
+        // 检测并解决配置冲突：当既有完整对象又有嵌套字段时，优先使用嵌套字段
+        self.resolve_config_conflicts(&mut config_map)?;
+        
         // 将扁平化的配置映射转换为嵌套结构
         let mut nested_map = serde_json::Map::new();
 
@@ -119,7 +122,15 @@ impl ConfigManager {
 
         // 将嵌套映射转换为配置对象
         let config_json = Value::Object(nested_map);
-        let config: Config = serde_json::from_value(config_json).context("从数据库数据构建配置对象失败")?;
+        
+        // 添加详细的反序列化错误信息
+        debug!("尝试反序列化配置JSON: {}", serde_json::to_string_pretty(&config_json).unwrap_or_else(|_| "无法格式化JSON".to_string()));
+        
+        let config: Config = serde_json::from_value(config_json.clone()).map_err(|e| {
+            error!("配置反序列化详细错误: {}", e);
+            error!("配置JSON内容: {}", serde_json::to_string_pretty(&config_json).unwrap_or_else(|_| "无法格式化JSON".to_string()));
+            anyhow!("从数据库数据构建配置对象失败: {}", e)
+        })?;
 
         Ok(config)
     }
@@ -343,5 +354,23 @@ impl ConfigManager {
         }
 
         Ok(changes)
+    }
+
+    /// 解决配置冲突：当既有完整对象又有嵌套字段时，优先使用嵌套字段
+    fn resolve_config_conflicts(&self, config_map: &mut HashMap<String, Value>) -> Result<()> {
+        // 检测可能冲突的配置前缀
+        let potential_conflicts = ["notification", "concurrent_limit", "submission_risk_control"];
+        
+        for prefix in potential_conflicts {
+            let has_complete_object = config_map.contains_key(prefix);
+            let has_nested_fields = config_map.keys().any(|key| key.starts_with(&format!("{}.", prefix)));
+            
+            if has_complete_object && has_nested_fields {
+                warn!("检测到配置冲突：既有完整的 {} 对象又有嵌套字段，移除完整对象以解决冲突", prefix);
+                config_map.remove(prefix);
+            }
+        }
+        
+        Ok(())
     }
 }
