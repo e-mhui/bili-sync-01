@@ -245,7 +245,7 @@ impl QRLoginService {
                     buvid3: buvid3.clone(),
                     dedeuserid: cookies.get("DedeUserID").unwrap().clone(),
                     ac_time_value: data["data"]["refresh_token"].as_str().unwrap_or("").to_string(),
-                    buvid4: buvid4,
+                    buvid4,
                     dedeuserid_ckmd5: cookies.get("DedeUserID__ckMd5").cloned(),
                 };
 

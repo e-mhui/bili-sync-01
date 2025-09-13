@@ -5101,7 +5101,7 @@ pub async fn update_config_internal(
 
         // 将 updated_fields 映射到实际的配置项更新
         for field in &updated_fields {
-            let result = match field.as_ref() {
+            let result = match *field {
                 // 处理文件命名设置
                 "video_name" => {
                     manager
@@ -5151,7 +5151,7 @@ pub async fn update_config_internal(
                 }
                 "interval" => {
                     manager
-                        .update_config_item("interval", serde_json::to_value(&config.interval)?)
+                        .update_config_item("interval", serde_json::to_value(config.interval)?)
                         .await
                 }
                 "nfo_time_type" => {
@@ -5176,14 +5176,14 @@ pub async fn update_config_internal(
                 }
                 "cdn_sorting" => {
                     manager
-                        .update_config_item("cdn_sorting", serde_json::to_value(&config.cdn_sorting)?)
+                        .update_config_item("cdn_sorting", serde_json::to_value(config.cdn_sorting)?)
                         .await
                 }
                 "scan_deleted_videos" => {
                     manager
                         .update_config_item(
                             "scan_deleted_videos",
-                            serde_json::to_value(&config.scan_deleted_videos)?,
+                            serde_json::to_value(config.scan_deleted_videos)?,
                         )
                         .await
                 }
@@ -5191,7 +5191,7 @@ pub async fn update_config_internal(
                     manager
                         .update_config_item(
                             "enable_aria2_health_check",
-                            serde_json::to_value(&config.enable_aria2_health_check)?,
+                            serde_json::to_value(config.enable_aria2_health_check)?,
                         )
                         .await
                 }
@@ -5199,7 +5199,7 @@ pub async fn update_config_internal(
                     manager
                         .update_config_item(
                             "enable_aria2_auto_restart",
-                            serde_json::to_value(&config.enable_aria2_auto_restart)?,
+                            serde_json::to_value(config.enable_aria2_auto_restart)?,
                         )
                         .await
                 }
@@ -5207,7 +5207,7 @@ pub async fn update_config_internal(
                     manager
                         .update_config_item(
                             "aria2_health_check_interval",
-                            serde_json::to_value(&config.aria2_health_check_interval)?,
+                            serde_json::to_value(config.aria2_health_check_interval)?,
                         )
                         .await
                 }
@@ -5287,7 +5287,7 @@ pub async fn update_config_internal(
                     manager
                         .update_config_item(
                             "skip_bangumi_preview",
-                            serde_json::to_value(&config.skip_bangumi_preview)?,
+                            serde_json::to_value(config.skip_bangumi_preview)?,
                         )
                         .await
                 }
@@ -5296,7 +5296,7 @@ pub async fn update_config_internal(
                     manager
                         .update_config_item(
                             "multi_page_use_season_structure",
-                            serde_json::to_value(&config.multi_page_use_season_structure)?,
+                            serde_json::to_value(config.multi_page_use_season_structure)?,
                         )
                         .await
                 }
@@ -5304,7 +5304,7 @@ pub async fn update_config_internal(
                     manager
                         .update_config_item(
                             "collection_use_season_structure",
-                            serde_json::to_value(&config.collection_use_season_structure)?,
+                            serde_json::to_value(config.collection_use_season_structure)?,
                         )
                         .await
                 }
@@ -5312,7 +5312,7 @@ pub async fn update_config_internal(
                     manager
                         .update_config_item(
                             "bangumi_use_season_structure",
-                            serde_json::to_value(&config.bangumi_use_season_structure)?,
+                            serde_json::to_value(config.bangumi_use_season_structure)?,
                         )
                         .await
                 }
@@ -5343,7 +5343,7 @@ pub async fn update_config_internal(
                     manager
                         .update_config_item(
                             "enable_startup_data_fix",
-                            serde_json::to_value(&config.enable_startup_data_fix)?,
+                            serde_json::to_value(config.enable_startup_data_fix)?,
                         )
                         .await
                 }
@@ -5351,7 +5351,7 @@ pub async fn update_config_internal(
                     manager
                         .update_config_item(
                             "enable_cid_population",
-                            serde_json::to_value(&config.enable_cid_population)?,
+                            serde_json::to_value(config.enable_cid_population)?,
                         )
                         .await
                 }
@@ -5366,7 +5366,7 @@ pub async fn update_config_internal(
                     manager
                         .update_config_item(
                             "actors_field_initialized",
-                            serde_json::to_value(&config.actors_field_initialized)?,
+                            serde_json::to_value(config.actors_field_initialized)?,
                         )
                         .await
                 }
