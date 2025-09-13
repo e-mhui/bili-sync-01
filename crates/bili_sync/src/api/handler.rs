@@ -4109,7 +4109,7 @@ where
     // 注意：此函数已废弃，不应使用 save_config
     // 如果真的需要使用，应该根据具体情况只更新特定的配置项
     warn!("update_config_file 函数已废弃，不应使用完整的 save_config 操作");
-    
+
     // 保存配置到数据库（已废弃的完整配置保存）
     if let Some(manager) = crate::config::get_config_manager() {
         if let Err(e) =
@@ -4251,6 +4251,8 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
                 buvid3: cred.buvid3.clone(),
                 dedeuserid: cred.dedeuserid.clone(),
                 ac_time_value: cred.ac_time_value.clone(),
+                buvid4: cred.buvid4.clone(),
+                dedeuserid_ckmd5: cred.dedeuserid_ckmd5.clone(),
             })
         },
         // 推送通知配置
@@ -5096,83 +5098,289 @@ pub async fn update_config_internal(
     if !updated_fields.is_empty() {
         use crate::config::ConfigManager;
         let manager = ConfigManager::new(db.as_ref().clone());
-        
+
         // 将 updated_fields 映射到实际的配置项更新
         for field in &updated_fields {
             let result = match field.as_ref() {
                 // 处理文件命名设置
-                "video_name" => manager.update_config_item("video_name", serde_json::to_value(&config.video_name)?).await,
-                "page_name" => manager.update_config_item("page_name", serde_json::to_value(&config.page_name)?).await,
-                "multi_page_name" => manager.update_config_item("multi_page_name", serde_json::to_value(&config.multi_page_name)?).await,
-                "bangumi_name" => manager.update_config_item("bangumi_name", serde_json::to_value(&config.bangumi_name)?).await,
-                "folder_structure" => manager.update_config_item("folder_structure", serde_json::to_value(&config.folder_structure)?).await,
-                "bangumi_folder_name" => manager.update_config_item("bangumi_folder_name", serde_json::to_value(&config.bangumi_folder_name)?).await,
-                "collection_folder_mode" => manager.update_config_item("collection_folder_mode", serde_json::to_value(&config.collection_folder_mode)?).await,
-                "time_format" => manager.update_config_item("time_format", serde_json::to_value(&config.time_format)?).await,
-                "interval" => manager.update_config_item("interval", serde_json::to_value(&config.interval)?).await,
-                "nfo_time_type" => manager.update_config_item("nfo_time_type", serde_json::to_value(&config.nfo_time_type)?).await,
-                "upper_path" => manager.update_config_item("upper_path", serde_json::to_value(&config.upper_path)?).await,
-                "bind_address" => manager.update_config_item("bind_address", serde_json::to_value(&config.bind_address)?).await,
-                "concurrent_limit" => manager.update_config_item("concurrent_limit", serde_json::to_value(&config.concurrent_limit)?).await,
-                "cdn_sorting" => manager.update_config_item("cdn_sorting", serde_json::to_value(&config.cdn_sorting)?).await,
-                "scan_deleted_videos" => manager.update_config_item("scan_deleted_videos", serde_json::to_value(&config.scan_deleted_videos)?).await,
-                "enable_aria2_health_check" => manager.update_config_item("enable_aria2_health_check", serde_json::to_value(&config.enable_aria2_health_check)?).await,
-                "enable_aria2_auto_restart" => manager.update_config_item("enable_aria2_auto_restart", serde_json::to_value(&config.enable_aria2_auto_restart)?).await,
-                "aria2_health_check_interval" => manager.update_config_item("aria2_health_check_interval", serde_json::to_value(&config.aria2_health_check_interval)?).await,
-                "submission_risk_control" => manager.update_config_item("submission_risk_control", serde_json::to_value(&config.submission_risk_control)?).await,
+                "video_name" => {
+                    manager
+                        .update_config_item("video_name", serde_json::to_value(&config.video_name)?)
+                        .await
+                }
+                "page_name" => {
+                    manager
+                        .update_config_item("page_name", serde_json::to_value(&config.page_name)?)
+                        .await
+                }
+                "multi_page_name" => {
+                    manager
+                        .update_config_item("multi_page_name", serde_json::to_value(&config.multi_page_name)?)
+                        .await
+                }
+                "bangumi_name" => {
+                    manager
+                        .update_config_item("bangumi_name", serde_json::to_value(&config.bangumi_name)?)
+                        .await
+                }
+                "folder_structure" => {
+                    manager
+                        .update_config_item("folder_structure", serde_json::to_value(&config.folder_structure)?)
+                        .await
+                }
+                "bangumi_folder_name" => {
+                    manager
+                        .update_config_item(
+                            "bangumi_folder_name",
+                            serde_json::to_value(&config.bangumi_folder_name)?,
+                        )
+                        .await
+                }
+                "collection_folder_mode" => {
+                    manager
+                        .update_config_item(
+                            "collection_folder_mode",
+                            serde_json::to_value(&config.collection_folder_mode)?,
+                        )
+                        .await
+                }
+                "time_format" => {
+                    manager
+                        .update_config_item("time_format", serde_json::to_value(&config.time_format)?)
+                        .await
+                }
+                "interval" => {
+                    manager
+                        .update_config_item("interval", serde_json::to_value(&config.interval)?)
+                        .await
+                }
+                "nfo_time_type" => {
+                    manager
+                        .update_config_item("nfo_time_type", serde_json::to_value(&config.nfo_time_type)?)
+                        .await
+                }
+                "upper_path" => {
+                    manager
+                        .update_config_item("upper_path", serde_json::to_value(&config.upper_path)?)
+                        .await
+                }
+                "bind_address" => {
+                    manager
+                        .update_config_item("bind_address", serde_json::to_value(&config.bind_address)?)
+                        .await
+                }
+                "concurrent_limit" => {
+                    manager
+                        .update_config_item("concurrent_limit", serde_json::to_value(&config.concurrent_limit)?)
+                        .await
+                }
+                "cdn_sorting" => {
+                    manager
+                        .update_config_item("cdn_sorting", serde_json::to_value(&config.cdn_sorting)?)
+                        .await
+                }
+                "scan_deleted_videos" => {
+                    manager
+                        .update_config_item(
+                            "scan_deleted_videos",
+                            serde_json::to_value(&config.scan_deleted_videos)?,
+                        )
+                        .await
+                }
+                "enable_aria2_health_check" => {
+                    manager
+                        .update_config_item(
+                            "enable_aria2_health_check",
+                            serde_json::to_value(&config.enable_aria2_health_check)?,
+                        )
+                        .await
+                }
+                "enable_aria2_auto_restart" => {
+                    manager
+                        .update_config_item(
+                            "enable_aria2_auto_restart",
+                            serde_json::to_value(&config.enable_aria2_auto_restart)?,
+                        )
+                        .await
+                }
+                "aria2_health_check_interval" => {
+                    manager
+                        .update_config_item(
+                            "aria2_health_check_interval",
+                            serde_json::to_value(&config.aria2_health_check_interval)?,
+                        )
+                        .await
+                }
+                "submission_risk_control" => {
+                    manager
+                        .update_config_item(
+                            "submission_risk_control",
+                            serde_json::to_value(&config.submission_risk_control)?,
+                        )
+                        .await
+                }
                 // 对于复合字段，使用特殊处理
-                "rate_limit" | "rate_duration" | "parallel_download_enabled" | "parallel_download_threads" |
-                "concurrent_video" | "concurrent_page" =>
-                    manager.update_config_item("concurrent_limit", serde_json::to_value(&config.concurrent_limit)?).await,
-                "large_submission_threshold" | "base_request_delay" | "large_submission_delay_multiplier" |
-                "enable_progressive_delay" | "max_delay_multiplier" | "enable_incremental_fetch" |
-                "incremental_fallback_to_full" | "enable_batch_processing" | "batch_size" |
-                "batch_delay_seconds" | "enable_auto_backoff" | "auto_backoff_base_seconds" |
-                "auto_backoff_max_multiplier" | "source_delay_seconds" | "submission_source_delay_seconds" =>
-                    manager.update_config_item("submission_risk_control", serde_json::to_value(&config.submission_risk_control)?).await,
+                "rate_limit"
+                | "rate_duration"
+                | "parallel_download_enabled"
+                | "parallel_download_threads"
+                | "concurrent_video"
+                | "concurrent_page" => {
+                    manager
+                        .update_config_item("concurrent_limit", serde_json::to_value(&config.concurrent_limit)?)
+                        .await
+                }
+                "large_submission_threshold"
+                | "base_request_delay"
+                | "large_submission_delay_multiplier"
+                | "enable_progressive_delay"
+                | "max_delay_multiplier"
+                | "enable_incremental_fetch"
+                | "incremental_fallback_to_full"
+                | "enable_batch_processing"
+                | "batch_size"
+                | "batch_delay_seconds"
+                | "enable_auto_backoff"
+                | "auto_backoff_base_seconds"
+                | "auto_backoff_max_multiplier"
+                | "source_delay_seconds"
+                | "submission_source_delay_seconds" => {
+                    manager
+                        .update_config_item(
+                            "submission_risk_control",
+                            serde_json::to_value(&config.submission_risk_control)?,
+                        )
+                        .await
+                }
                 // 处理视频质量相关字段
-                "video_max_quality" | "video_min_quality" | "audio_max_quality" | "audio_min_quality" | 
-                "codecs" | "no_dolby_video" | "no_dolby_audio" | "no_hdr" | "no_hires" =>
-                    manager.update_config_item("filter_option", serde_json::to_value(&config.filter_option)?).await,
+                "video_max_quality" | "video_min_quality" | "audio_max_quality" | "audio_min_quality" | "codecs"
+                | "no_dolby_video" | "no_dolby_audio" | "no_hdr" | "no_hires" => {
+                    manager
+                        .update_config_item("filter_option", serde_json::to_value(&config.filter_option)?)
+                        .await
+                }
                 // 处理弹幕相关字段
-                "danmaku_duration" | "danmaku_font" | "danmaku_font_size" | "danmaku_width_ratio" | "danmaku_horizontal_gap" |
-                "danmaku_lane_size" | "danmaku_float_percentage" | "danmaku_bottom_percentage" | "danmaku_opacity" |
-                "danmaku_bold" | "danmaku_outline" | "danmaku_time_offset" =>
-                    manager.update_config_item("danmaku_option", serde_json::to_value(&config.danmaku_option)?).await,
+                "danmaku_duration"
+                | "danmaku_font"
+                | "danmaku_font_size"
+                | "danmaku_width_ratio"
+                | "danmaku_horizontal_gap"
+                | "danmaku_lane_size"
+                | "danmaku_float_percentage"
+                | "danmaku_bottom_percentage"
+                | "danmaku_opacity"
+                | "danmaku_bold"
+                | "danmaku_outline"
+                | "danmaku_time_offset" => {
+                    manager
+                        .update_config_item("danmaku_option", serde_json::to_value(&config.danmaku_option)?)
+                        .await
+                }
                 // NFO配置字段
-                "nfo_config" => manager.update_config_item("nfo_config", serde_json::to_value(&config.nfo_config)?).await,
+                "nfo_config" => {
+                    manager
+                        .update_config_item("nfo_config", serde_json::to_value(&config.nfo_config)?)
+                        .await
+                }
                 // 跳过番剧预告片
-                "skip_bangumi_preview" => manager.update_config_item("skip_bangumi_preview", serde_json::to_value(&config.skip_bangumi_preview)?).await,
-                // Season结构配置字段  
-                "multi_page_use_season_structure" => manager.update_config_item("multi_page_use_season_structure", serde_json::to_value(&config.multi_page_use_season_structure)?).await,
-                "collection_use_season_structure" => manager.update_config_item("collection_use_season_structure", serde_json::to_value(&config.collection_use_season_structure)?).await,
-                "bangumi_use_season_structure" => manager.update_config_item("bangumi_use_season_structure", serde_json::to_value(&config.bangumi_use_season_structure)?).await,
+                "skip_bangumi_preview" => {
+                    manager
+                        .update_config_item(
+                            "skip_bangumi_preview",
+                            serde_json::to_value(&config.skip_bangumi_preview)?,
+                        )
+                        .await
+                }
+                // Season结构配置字段
+                "multi_page_use_season_structure" => {
+                    manager
+                        .update_config_item(
+                            "multi_page_use_season_structure",
+                            serde_json::to_value(&config.multi_page_use_season_structure)?,
+                        )
+                        .await
+                }
+                "collection_use_season_structure" => {
+                    manager
+                        .update_config_item(
+                            "collection_use_season_structure",
+                            serde_json::to_value(&config.collection_use_season_structure)?,
+                        )
+                        .await
+                }
+                "bangumi_use_season_structure" => {
+                    manager
+                        .update_config_item(
+                            "bangumi_use_season_structure",
+                            serde_json::to_value(&config.bangumi_use_season_structure)?,
+                        )
+                        .await
+                }
                 // 通知配置字段
-                "serverchan_key" | "enable_scan_notifications" | "notification_min_videos" | "notification_timeout" | "notification_retry_count" =>
-                    manager.update_config_item("notification", serde_json::to_value(&config.notification)?).await,
+                "serverchan_key"
+                | "enable_scan_notifications"
+                | "notification_min_videos"
+                | "notification_timeout"
+                | "notification_retry_count" => {
+                    manager
+                        .update_config_item("notification", serde_json::to_value(&config.notification)?)
+                        .await
+                }
                 // 风控配置字段
-                "risk_control.enabled" | "risk_control.mode" | "risk_control.timeout" | 
-                "risk_control.auto_solve.service" | "risk_control.auto_solve.api_key" | 
-                "risk_control.auto_solve.max_retries" | "risk_control.auto_solve.solve_timeout" =>
-                    manager.update_config_item("risk_control", serde_json::to_value(&config.risk_control)?).await,
+                "risk_control.enabled"
+                | "risk_control.mode"
+                | "risk_control.timeout"
+                | "risk_control.auto_solve.service"
+                | "risk_control.auto_solve.api_key"
+                | "risk_control.auto_solve.max_retries"
+                | "risk_control.auto_solve.solve_timeout" => {
+                    manager
+                        .update_config_item("risk_control", serde_json::to_value(&config.risk_control)?)
+                        .await
+                }
                 // 启动时配置字段
-                "enable_startup_data_fix" => manager.update_config_item("enable_startup_data_fix", serde_json::to_value(&config.enable_startup_data_fix)?).await,
-                "enable_cid_population" => manager.update_config_item("enable_cid_population", serde_json::to_value(&config.enable_cid_population)?).await,
+                "enable_startup_data_fix" => {
+                    manager
+                        .update_config_item(
+                            "enable_startup_data_fix",
+                            serde_json::to_value(&config.enable_startup_data_fix)?,
+                        )
+                        .await
+                }
+                "enable_cid_population" => {
+                    manager
+                        .update_config_item(
+                            "enable_cid_population",
+                            serde_json::to_value(&config.enable_cid_population)?,
+                        )
+                        .await
+                }
                 // API Token
-                "auth_token" => manager.update_config_item("auth_token", serde_json::to_value(&config.auth_token)?).await,
+                "auth_token" => {
+                    manager
+                        .update_config_item("auth_token", serde_json::to_value(&config.auth_token)?)
+                        .await
+                }
                 // actors字段初始化状态
-                "actors_field_initialized" => manager.update_config_item("actors_field_initialized", serde_json::to_value(&config.actors_field_initialized)?).await,
+                "actors_field_initialized" => {
+                    manager
+                        .update_config_item(
+                            "actors_field_initialized",
+                            serde_json::to_value(&config.actors_field_initialized)?,
+                        )
+                        .await
+                }
                 _ => {
                     warn!("未知的配置字段: {}", field);
                     Ok(())
                 }
             };
-            
+
             if let Err(e) = result {
                 warn!("更新配置项 {} 失败: {}", field, e);
             }
         }
-        
+
         info!("已更新 {} 个配置项: {:?}", updated_fields.len(), updated_fields);
     } else {
         info!("没有配置项需要更新");
@@ -7519,13 +7727,12 @@ pub async fn setup_auth_token(
         // 只更新 API Token 配置项，避免覆盖其他配置
         use crate::config::ConfigManager;
         let manager = ConfigManager::new(db.as_ref().clone());
-        
-        let auth_token_json = serde_json::to_value(&config.auth_token)
-            .map_err(|e| {
-                warn!("序列化API Token失败: {}", e);
-                e
-            });
-        
+
+        let auth_token_json = serde_json::to_value(&config.auth_token).map_err(|e| {
+            warn!("序列化API Token失败: {}", e);
+            e
+        });
+
         if let Ok(token_value) = auth_token_json {
             if let Err(e) = manager.update_config_item("auth_token", token_value).await {
                 warn!("更新API Token配置失败: {}", e);
@@ -7581,28 +7788,45 @@ pub async fn update_credential(
         buvid3: params.buvid3.trim().to_string(),
         dedeuserid: params.dedeuserid.trim().to_string(),
         ac_time_value: params.ac_time_value.unwrap_or_default().trim().to_string(),
-        buvid4: None, // 将通过 spi 接口获取
-        dedeuserid_ckmd5: None,
+        buvid4: params
+            .buvid4
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+        dedeuserid_ckmd5: params
+            .dedeuserid_ckmd5
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
     };
 
-    // 尝试通过 spi 接口获取 buvid4
-    if let Ok(client) = reqwest::Client::new()
-        .get("https://api.bilibili.com/x/frontend/finger/spi")
-        .header("Referer", "https://www.bilibili.com")
-        .header("Origin", "https://www.bilibili.com")
-        .send()
-        .await
-    {
-        if let Ok(data) = client.json::<serde_json::Value>().await {
-            if data["code"].as_i64() == Some(0) {
-                if let Some(buvid4) = data["data"]["b_4"].as_str() {
-                    new_credential.buvid4 = Some(buvid4.to_string());
-                    tracing::info!("通过 spi 接口获取到 buvid4: {}", buvid4);
-                } else {
-                    tracing::warn!("spi 接口未返回 buvid4");
+    // 如果用户没有提供 buvid4，尝试通过 spi 接口获取
+    if new_credential.buvid4.is_none() {
+        if let Ok(client) = reqwest::Client::new()
+            .get("https://api.bilibili.com/x/frontend/finger/spi")
+            .header("Referer", "https://www.bilibili.com")
+            .header("Origin", "https://www.bilibili.com")
+            .send()
+            .await
+        {
+            if let Ok(data) = client.json::<serde_json::Value>().await {
+                if data["code"].as_i64() == Some(0) {
+                    if let Some(buvid4) = data["data"]["b_4"].as_str() {
+                        new_credential.buvid4 = Some(buvid4.to_string());
+                        tracing::info!("通过 spi 接口获取到 buvid4: {}", buvid4);
+                    } else {
+                        tracing::warn!("spi 接口未返回 buvid4");
+                    }
                 }
             }
         }
+    } else {
+        tracing::info!("使用用户提供的 buvid4");
+    }
+
+    // 记录 dedeuserid_ckmd5 的来源
+    if new_credential.dedeuserid_ckmd5.is_some() {
+        tracing::info!("使用用户提供的 DedeUserID__ckMd5");
     }
 
     // 更新配置中的凭证
@@ -7625,13 +7849,12 @@ pub async fn update_credential(
         // 只更新凭据配置项，避免覆盖其他配置
         use crate::config::ConfigManager;
         let manager = ConfigManager::new(db.as_ref().clone());
-        
-        let credential_json = serde_json::to_value(&config.credential)
-            .map_err(|e| {
-                warn!("序列化凭据失败: {}", e);
-                e
-            });
-        
+
+        let credential_json = serde_json::to_value(&config.credential).map_err(|e| {
+            warn!("序列化凭据失败: {}", e);
+            e
+        });
+
         if let Ok(credential_value) = credential_json {
             if let Err(e) = manager.update_config_item("credential", credential_value).await {
                 warn!("更新凭据配置失败: {}", e);
@@ -7755,13 +7978,12 @@ pub async fn poll_qr_status(
                 // 只更新凭据配置项，避免覆盖其他配置
                 use crate::config::ConfigManager;
                 let manager = ConfigManager::new(db.as_ref().clone());
-                
-                let credential_json = serde_json::to_value(&config.credential)
-                    .map_err(|e| {
-                        error!("序列化凭据失败: {}", e);
-                        ApiError::from(anyhow!("序列化凭据失败: {}", e))
-                    })?;
-                
+
+                let credential_json = serde_json::to_value(&config.credential).map_err(|e| {
+                    error!("序列化凭据失败: {}", e);
+                    ApiError::from(anyhow!("序列化凭据失败: {}", e))
+                })?;
+
                 if let Err(e) = manager.update_config_item("credential", credential_json).await {
                     error!("保存凭证到数据库失败: {}", e);
                     return Err(ApiError::from(anyhow!("保存凭证失败: {}", e)));

@@ -316,9 +316,6 @@ pub(super) async fn submission_from<'a>(
             .await?
             .context("submission not found")?
             .into(),
-        Box::pin(
-            submission_with_name
-                .into_video_stream(cancellation_token.unwrap_or_default()),
-        ),
+        Box::pin(submission_with_name.into_video_stream(cancellation_token.unwrap_or_default())),
     ))
 }

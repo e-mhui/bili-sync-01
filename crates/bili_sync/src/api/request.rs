@@ -313,6 +313,8 @@ pub struct UpdateCredentialRequest {
     pub buvid3: String,
     pub dedeuserid: String,
     pub ac_time_value: Option<String>,
+    pub buvid4: Option<String>,
+    pub dedeuserid_ckmd5: Option<String>,
 }
 
 // 扫码登录相关请求

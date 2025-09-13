@@ -197,7 +197,7 @@ impl QRLoginService {
                     if buvid4.is_none() {
                         tracing::warn!("登录响应中未找到 buvid4");
                     }
-                    
+
                     // 从当前配置中获取（如果有的话）
                     let current_config = crate::config::reload_config();
                     if let Some(current_cred) = current_config.credential.load().as_ref() {
@@ -275,7 +275,16 @@ impl QRLoginService {
                         let key = key.trim();
                         let value = value.trim();
 
-                        if ["SESSDATA", "bili_jct", "DedeUserID", "DedeUserID__ckMd5", "buvid3", "buvid4"].contains(&key) {
+                        if [
+                            "SESSDATA",
+                            "bili_jct",
+                            "DedeUserID",
+                            "DedeUserID__ckMd5",
+                            "buvid3",
+                            "buvid4",
+                        ]
+                        .contains(&key)
+                        {
                             cookies.insert(key.to_string(), value.to_string());
                         }
                     }
@@ -354,7 +363,7 @@ impl QRLoginService {
         if data["code"].as_i64() == Some(0) {
             let buvid3 = data["data"]["b_3"].as_str();
             let buvid4 = data["data"]["b_4"].as_str();
-            
+
             if let Some(buvid3) = buvid3 {
                 tracing::info!("从 spi 接口获取到 buvid3: {}", buvid3);
                 if let Some(buvid4) = buvid4 {

@@ -180,6 +180,8 @@
 	let buvid3 = '';
 	let dedeUserId = '';
 	let acTimeValue = '';
+	let buvid4 = '';
+	let dedeUserIdCkMd5 = '';
 	let credentialSaving = false;
 	let currentUser: { user_id: string; username: string; avatar_url: string } | null = null;
 
@@ -491,6 +493,8 @@
 			buvid3 = config.credential?.buvid3 || '';
 			dedeUserId = config.credential?.dedeuserid || '';
 			acTimeValue = config.credential?.ac_time_value || '';
+			buvid4 = config.credential?.buvid4 || '';
+			dedeUserIdCkMd5 = config.credential?.dedeuserid_ckmd5 || '';
 
 			// UP主投稿风控配置
 			largeSubmissionThreshold = config.large_submission_threshold || 100;
@@ -788,7 +792,9 @@
 				bili_jct: biliJct.trim(),
 				buvid3: buvid3.trim(),
 				dedeuserid: dedeUserId.trim(),
-				ac_time_value: acTimeValue.trim()
+				ac_time_value: acTimeValue.trim(),
+				buvid4: buvid4.trim() || undefined,
+				dedeuserid_ckmd5: dedeUserIdCkMd5.trim() || undefined
 			};
 
 			const response = await api.updateCredential(params);
@@ -2238,7 +2244,7 @@
 												<li>在请求头中找到Cookie字段，复制对应的值</li>
 											</ol>
 											<div class="mt-2 text-xs text-amber-600 dark:text-amber-400">
-												💡 提示：SESSDATA、bili_jct、buvid3、DedeUserID是必填项，ac_time_value可选
+												💡 提示：SESSDATA、bili_jct、buvid3、DedeUserID是必填项，ac_time_value、buvid4、DedeUserID__ckMd5可选
 											</div>
 										</div>
 									</div>
@@ -2286,6 +2292,24 @@
 												id="ac-time-value"
 												bind:value={acTimeValue}
 												placeholder="请输入ac_time_value（可选）"
+											/>
+										</div>
+
+										<div class="space-y-2">
+											<Label for="buvid4">buvid4 (可选)</Label>
+											<Input
+												id="buvid4"
+												bind:value={buvid4}
+												placeholder="请输入buvid4（可选）"
+											/>
+										</div>
+
+										<div class="space-y-2">
+											<Label for="dedeuserid-ckmd5">DedeUserID__ckMd5 (可选)</Label>
+											<Input
+												id="dedeuserid-ckmd5"
+												bind:value={dedeUserIdCkMd5}
+												placeholder="请输入DedeUserID__ckMd5（可选）"
 											/>
 										</div>
 									</div>

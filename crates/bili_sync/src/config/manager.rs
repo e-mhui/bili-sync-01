@@ -103,7 +103,7 @@ impl ConfigManager {
     fn build_config_from_map(&self, mut config_map: HashMap<String, Value>) -> Result<Config> {
         // 检测并解决配置冲突：当既有完整对象又有嵌套字段时，优先使用嵌套字段
         self.resolve_config_conflicts(&mut config_map)?;
-        
+
         // 将扁平化的配置映射转换为嵌套结构
         let mut nested_map = serde_json::Map::new();
 
@@ -122,13 +122,19 @@ impl ConfigManager {
 
         // 将嵌套映射转换为配置对象
         let config_json = Value::Object(nested_map);
-        
+
         // 添加详细的反序列化错误信息
-        debug!("尝试反序列化配置JSON: {}", serde_json::to_string_pretty(&config_json).unwrap_or_else(|_| "无法格式化JSON".to_string()));
-        
+        debug!(
+            "尝试反序列化配置JSON: {}",
+            serde_json::to_string_pretty(&config_json).unwrap_or_else(|_| "无法格式化JSON".to_string())
+        );
+
         let config: Config = serde_json::from_value(config_json.clone()).map_err(|e| {
             error!("配置反序列化详细错误: {}", e);
-            error!("配置JSON内容: {}", serde_json::to_string_pretty(&config_json).unwrap_or_else(|_| "无法格式化JSON".to_string()));
+            error!(
+                "配置JSON内容: {}",
+                serde_json::to_string_pretty(&config_json).unwrap_or_else(|_| "无法格式化JSON".to_string())
+            );
             anyhow!("从数据库数据构建配置对象失败: {}", e)
         })?;
 
@@ -225,7 +231,7 @@ impl ConfigManager {
             warn!("拒绝写入嵌套的notification字段: {}，请使用完整的notification对象", key);
             return Ok(()); // 静默忽略，不返回错误
         }
-        
+
         let value_json = serde_json::to_string(&value)?;
 
         // 查找现有配置项
@@ -366,7 +372,7 @@ impl ConfigManager {
     fn resolve_config_conflicts(&self, config_map: &mut HashMap<String, Value>) -> Result<()> {
         // 检测可能冲突的配置前缀
         let potential_conflicts = ["notification", "concurrent_limit", "submission_risk_control"];
-        
+
         for prefix in potential_conflicts {
             let has_complete_object = config_map.contains_key(prefix);
             let nested_keys: Vec<String> = config_map
@@ -375,41 +381,47 @@ impl ConfigManager {
                 .cloned()
                 .collect();
             let has_nested_fields = !nested_keys.is_empty();
-            
+
             if has_complete_object && has_nested_fields {
                 if prefix == "notification" {
                     // 对于notification，删除嵌套字段，保留完整对象
-                    warn!("检测到配置冲突：既有完整的 {} 对象又有嵌套字段，删除嵌套字段并从数据库永久移除", prefix);
-                    
+                    warn!(
+                        "检测到配置冲突：既有完整的 {} 对象又有嵌套字段，删除嵌套字段并从数据库永久移除",
+                        prefix
+                    );
+
                     // 从内存中移除嵌套字段
                     for nested_key in &nested_keys {
                         config_map.remove(nested_key);
                     }
-                    
+
                     // 从数据库中永久删除嵌套字段
                     if let Err(e) = self.delete_nested_fields_from_db(prefix, &nested_keys) {
                         warn!("删除数据库中的嵌套字段失败: {}", e);
                     }
                 } else {
                     // 对于其他配置，保持原有逻辑：移除完整对象，保留嵌套字段
-                    warn!("检测到配置冲突：既有完整的 {} 对象又有嵌套字段，移除完整对象以解决冲突", prefix);
+                    warn!(
+                        "检测到配置冲突：既有完整的 {} 对象又有嵌套字段，移除完整对象以解决冲突",
+                        prefix
+                    );
                     config_map.remove(prefix);
                 }
             }
         }
-        
+
         Ok(())
     }
 
     /// 从数据库中删除嵌套字段
     fn delete_nested_fields_from_db(&self, prefix: &str, nested_keys: &[String]) -> Result<()> {
         use tokio::runtime::Handle;
-        
+
         // 创建异步任务来删除数据库记录
         let db = self.db.clone();
         let keys = nested_keys.to_vec();
         let prefix = prefix.to_string();
-        
+
         // 如果在异步上下文中，直接执行；否则创建新的运行时
         if let Ok(handle) = Handle::try_current() {
             handle.spawn(async move {
@@ -423,21 +435,21 @@ impl ConfigManager {
                 });
             });
         }
-        
+
         info!("已标记删除 {} 的嵌套配置字段", prefix);
         Ok(())
     }
 
     /// 异步删除配置键
     async fn delete_config_keys_async(db: sea_orm::DatabaseConnection, keys: Vec<String>) {
-        use sea_orm::*;
         use bili_sync_entity::entities::config_item;
+        use sea_orm::*;
 
         for key in keys {
             if let Err(e) = config_item::Entity::delete_many()
                 .filter(config_item::Column::KeyName.eq(&key))
                 .exec(&db)
-                .await 
+                .await
             {
                 warn!("删除配置键 {} 失败: {}", key, e);
             } else {
