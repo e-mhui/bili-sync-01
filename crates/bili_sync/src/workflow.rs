@@ -404,13 +404,13 @@ pub async fn refresh_video_source<'a>(
         // 获取插入前的视频数量
         let before_count = get_video_count_for_source(video_source, connection).await?;
 
-        // 先收集需要的视频信息（包括集数信息）
+        // 先收集需要的视频信息（包括集数信息和ep_id）
         let mut temp_video_infos = Vec::new();
         for video_info in &videos_info {
-            let (title, bvid, upper_name, episode_num) = match video_info {
-                VideoInfo::Detail { title, bvid, upper, .. } => (title.clone(), bvid.clone(), upper.name.clone(), None),
+            let (title, bvid, upper_name, episode_num, ep_id) = match video_info {
+                VideoInfo::Detail { title, bvid, upper, .. } => (title.clone(), bvid.clone(), upper.name.clone(), None, None),
                 VideoInfo::Favorite { title, bvid, upper, .. } => {
-                    (title.clone(), bvid.clone(), upper.name.clone(), None)
+                    (title.clone(), bvid.clone(), upper.name.clone(), None, None)
                 }
                 VideoInfo::Collection { title, bvid, arc, .. } => {
                     // 从arc字段中提取upper信息
@@ -419,26 +419,27 @@ pub async fn refresh_video_source<'a>(
                         .and_then(|a| a["author"]["name"].as_str())
                         .unwrap_or("未知")
                         .to_string();
-                    (title.clone(), bvid.clone(), upper_name, None)
+                    (title.clone(), bvid.clone(), upper_name, None, None)
                 }
                 VideoInfo::WatchLater { title, bvid, upper, .. } => {
-                    (title.clone(), bvid.clone(), upper.name.clone(), None)
+                    (title.clone(), bvid.clone(), upper.name.clone(), None, None)
                 }
                 VideoInfo::Submission { title, bvid, .. } => {
                     // Submission 没有 upper 信息，使用默认值
-                    (title.clone(), bvid.clone(), "未知".to_string(), None)
+                    (title.clone(), bvid.clone(), "未知".to_string(), None, None)
                 }
                 VideoInfo::Bangumi {
                     title,
                     bvid,
                     episode_number,
+                    ep_id,
                     ..
                 } => {
-                    // Bangumi 没有 upper 信息，使用番剧名称
-                    (title.clone(), bvid.clone(), "番剧".to_string(), *episode_number)
+                    // Bangumi 包含 ep_id 信息，用于唯一标识
+                    (title.clone(), bvid.clone(), "番剧".to_string(), *episode_number, Some(ep_id.clone()))
                 }
             };
-            temp_video_infos.push((title, bvid, upper_name, episode_num));
+            temp_video_infos.push((title, bvid, upper_name, episode_num, ep_id));
         }
 
         // 获取所有视频的BVID，用于后续判断哪些是新增的
@@ -478,12 +479,22 @@ pub async fn refresh_video_source<'a>(
 
             // 为每个新插入的视频创建通知信息
             for new_video in newly_inserted {
-                // 查找对应的视频信息
-                if let Some(idx) = temp_video_infos
-                    .iter()
-                    .position(|(_, bvid, _, _)| bvid == &new_video.bvid)
-                {
-                    let (title, _, upper_name, bangumi_episode) = &temp_video_infos[idx];
+                // 查找对应的视频信息，对番剧使用ep_id进行精确匹配
+                let video_info_idx = if new_video.source_type == Some(1) && new_video.ep_id.is_some() {
+                    // 番剧：使用ep_id匹配
+                    temp_video_infos
+                        .iter()
+                        .position(|(_, _, _, _, ep_id): &(String, String, String, Option<i32>, Option<String>)|
+                            ep_id.as_ref() == new_video.ep_id.as_ref())
+                } else {
+                    // 其他类型：使用bvid匹配
+                    temp_video_infos
+                        .iter()
+                        .position(|(_, bvid, _, _, _)| bvid == &new_video.bvid)
+                };
+
+                if let Some(idx) = video_info_idx {
+                    let (title, _, upper_name, bangumi_episode, _) = &temp_video_infos[idx];
 
                     // 使用数据库中的发布时间（已经是北京时间）
                     let pubtime = new_video.pubtime.format("%Y-%m-%d %H:%M:%S").to_string();
