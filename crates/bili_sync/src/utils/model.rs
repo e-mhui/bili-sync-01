@@ -489,12 +489,41 @@ pub async fn create_videos(
             // 对于需要存储的视频，设置 auto_download 为 true
             model.auto_download = Set(true);
 
-            // 先尝试插入，如果失败说明记录已存在
-            let insert_result = video::Entity::insert(model.clone())
-                .on_conflict(OnConflict::new().do_nothing().to_owned())
-                .do_nothing()
-                .exec(connection)
-                .await;
+            // 检查是否是番剧类型（source_type = 1）且有 ep_id
+            let is_bangumi_with_ep_id = matches!(model.source_type, Set(Some(1))) && matches!(model.ep_id, Set(Some(_)));
+
+            // 对于番剧类型，先检查是否已存在相同 bvid + ep_id 的记录
+            let existing_check = if is_bangumi_with_ep_id {
+                debug!("番剧视频插入检查: bvid={}, ep_id={:?}",
+                    model.bvid.as_ref(), model.ep_id.as_ref());
+
+                let mut query = video::Entity::find()
+                    .filter(video::Column::Bvid.eq(model.bvid.as_ref()))
+                    .filter(video_source.filter_expr());
+
+                if let Set(Some(ep_id)) = &model.ep_id {
+                    query = query.filter(video::Column::EpId.eq(ep_id));
+                    debug!("查询番剧记录: bvid={}, ep_id={}", model.bvid.as_ref(), ep_id);
+                }
+
+                let result = query.one(connection).await?;
+                debug!("番剧查询结果: existing={}", result.is_some());
+                result
+            } else {
+                None
+            };
+
+            let insert_result = if existing_check.is_some() {
+                // 已存在相同记录，模拟冲突结果
+                Ok(sea_orm::TryInsertResult::Conflicted)
+            } else {
+                // 尝试插入新记录
+                video::Entity::insert(model.clone())
+                    .on_conflict(OnConflict::new().do_nothing().to_owned())
+                    .do_nothing()
+                    .exec(connection)
+                    .await
+            };
 
             // 如果插入没有影响任何行（即记录已存在），检查是否需要更新 share_copy
             if let Ok(insert_res) = insert_result {
@@ -506,11 +535,24 @@ pub async fn create_videos(
                 };
                 if !insert_success {
                     // 记录已存在，检查是否需要更新字段
-                    let existing_video = video::Entity::find()
-                        .filter(video::Column::Bvid.eq(model.bvid.as_ref()))
-                        .filter(video_source.filter_expr())
-                        .one(connection)
-                        .await?;
+                    let existing_video = if let Some(existing) = existing_check {
+                        // 如果之前的检查中已经找到了记录，直接使用
+                        Some(existing)
+                    } else {
+                        // 否则重新查询（适用于非番剧类型或其他情况）
+                        let mut query = video::Entity::find()
+                            .filter(video::Column::Bvid.eq(model.bvid.as_ref()))
+                            .filter(video_source.filter_expr());
+
+                        // 对于番剧类型，还需要通过 ep_id 来精确查找
+                        if is_bangumi_with_ep_id {
+                            if let Set(Some(ep_id)) = &model.ep_id {
+                                query = query.filter(video::Column::EpId.eq(ep_id));
+                            }
+                        }
+
+                        query.one(connection).await?
+                    };
 
                     if let Some(existing) = existing_video {
                         let mut needs_update = false;

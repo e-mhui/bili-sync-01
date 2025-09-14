@@ -8214,7 +8214,15 @@ pub async fn get_video_bvid(
     Ok(ApiResponse::ok(VideoBvidResponse {
         bvid: video_info.bvid.clone(),
         title: video_info.title.clone(),
-        bilibili_url: format!("https://www.bilibili.com/video/{}", video_info.bvid),
+        bilibili_url:
+            // 根据视频类型生成正确的B站URL
+            if video_info.source_type == Some(1) && video_info.ep_id.is_some() {
+                // 番剧类型：使用 ep_id 生成番剧专用URL
+                format!("https://www.bilibili.com/bangumi/play/ep{}", video_info.ep_id.as_ref().unwrap())
+            } else {
+                // 普通视频：使用 bvid 生成视频URL
+                format!("https://www.bilibili.com/video/{}", video_info.bvid)
+            },
     }))
 }
 
@@ -8400,7 +8408,16 @@ pub async fn get_video_play_info(
         video_duration: Some(page_info.duration),
         video_quality_description: quality_desc,
         video_bvid: Some(video_info.bvid.clone()),
-        bilibili_url: Some(format!("https://www.bilibili.com/video/{}", video_info.bvid)),
+        bilibili_url: Some(
+            // 根据视频类型生成正确的B站URL
+            if video_info.source_type == Some(1) && video_info.ep_id.is_some() {
+                // 番剧类型：使用 ep_id 生成番剧专用URL
+                format!("https://www.bilibili.com/bangumi/play/ep{}", video_info.ep_id.as_ref().unwrap())
+            } else {
+                // 普通视频：使用 bvid 生成视频URL
+                format!("https://www.bilibili.com/video/{}", video_info.bvid)
+            }
+        ),
     }))
 }
 
