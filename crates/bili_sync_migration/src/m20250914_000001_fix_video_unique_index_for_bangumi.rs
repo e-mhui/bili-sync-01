@@ -52,6 +52,8 @@ impl MigrationTrait for Migration {
                     bvid
                 )"
             )
-            .await
+            .await?;
+
+        Ok(())
     }
 }
