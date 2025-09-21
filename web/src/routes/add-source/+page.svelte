@@ -28,6 +28,7 @@
 	let upId = '';
 	let name = '';
 	let path = '';
+	let cover = '';
 	let collectionType = 'season';
 	let downloadAllSeasons = false;
 	let loading = false;
@@ -399,6 +400,12 @@
 			if (sourceType === 'collection') {
 				params.up_id = upId;
 				params.collection_type = collectionType;
+				if (cover) {
+					params.cover = cover;
+					console.log('发送cover参数到后端:', cover);
+				} else {
+					console.log('cover变量为空，不发送cover参数');
+				}
 			}
 
 			if (sourceType === 'bangumi') {
@@ -673,8 +680,10 @@
 	function selectCollection(collection: UserCollectionItem) {
 		sourceId = collection.sid;
 		name = collection.name;
+		cover = collection.cover || '';
 		collectionType = collection.collection_type;
 		isManualInput = false; // 从列表选择，不是手动输入
+		console.log('选择合集 - cover:', collection.cover, '设置后的cover变量:', cover);
 		toast.success('已选择合集', {
 			description: `${collection.collection_type === 'season' ? '合集' : '系列'}：${collection.name}`
 		});
@@ -921,6 +930,7 @@
 	function selectSubscribedCollection(collection: UserCollectionInfo) {
 		sourceId = collection.sid;
 		name = collection.name;
+		cover = collection.cover || '';
 		upId = collection.up_mid.toString();
 		collectionType = collection.collection_type;
 		toast.success('已选择订阅合集', { description: collection.name });

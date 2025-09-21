@@ -1570,6 +1570,47 @@ pub async fn add_video_source_internal(
             };
 
             let collection_name = params.name.clone();
+
+            // 调试日志：显示前端传递的cover参数
+            match &params.cover {
+                Some(cover) => info!("前端传递的cover参数: \"{}\"", cover),
+                None => info!("前端未传递cover参数"),
+            }
+
+            // 如果前端没有传递封面URL，尝试从API获取
+            let cover_url = match &params.cover {
+                Some(cover) if !cover.is_empty() => {
+                    info!("使用前端提供的封面URL: {}", cover);
+                    params.cover.clone()
+                },
+                _ => {
+                    // 前端没有传递封面，尝试从API获取
+                    info!("前端未提供封面URL，尝试从API获取合集「{}」的封面", collection_name);
+                    // 创建BiliClient实例
+                    let config = crate::config::reload_config();
+                    let credential = config.credential.load();
+                    let cookie = credential.as_ref()
+                        .map(|cred| {
+                            format!(
+                                "SESSDATA={};bili_jct={};buvid3={};DedeUserID={};ac_time_value={}",
+                                cred.sessdata, cred.bili_jct, cred.buvid3, cred.dedeuserid, cred.ac_time_value
+                            )
+                        })
+                        .unwrap_or_default();
+                    let client = crate::bilibili::BiliClient::new(cookie);
+                    match get_collection_cover_from_api(up_id, s_id, &client).await {
+                        Ok(cover) => {
+                            info!("成功从API获取合集「{}」封面: {}", collection_name, cover);
+                            Some(cover)
+                        }
+                        Err(e) => {
+                            warn!("从API获取合集「{}」封面失败: {}", collection_name, e);
+                            None
+                        }
+                    }
+                }
+            };
+
             let collection = collection::ActiveModel {
                 id: sea_orm::ActiveValue::NotSet,
                 s_id: sea_orm::Set(s_id),
@@ -1581,6 +1622,7 @@ pub async fn add_video_source_internal(
                 latest_row_at: sea_orm::Set("1970-01-01 00:00:00".to_string()),
                 enabled: sea_orm::Set(true),
                 scan_deleted_videos: sea_orm::Set(false),
+                cover: sea_orm::Set(cover_url),
             };
 
             let insert_result = collection::Entity::insert(collection).exec(&txn).await?;
@@ -2507,8 +2549,8 @@ async fn delete_video_files_from_pages(db: Arc<DatabaseConnection>, video_id: i3
                             }
                         }
 
-                        // 删除封面文件 (-fanart.jpg, -poster.jpg等)
-                        for suffix in &["fanart", "poster"] {
+                        // 删除封面文件 (-fanart.jpg, -thumb.jpg等)
+                        for suffix in &["fanart", "thumb"] {
                             for ext in &["jpg", "jpeg", "png", "webp"] {
                                 let cover_path = parent_dir.join(format!("{}-{}.{}", file_stem_str, suffix, ext));
                                 if cover_path.exists() {
@@ -2607,7 +2649,7 @@ async fn delete_video_files_from_pages(db: Arc<DatabaseConnection>, video_id: i3
                             // 删除根目录的元数据文件
                             let metadata_files = [
                                 "tvshow.nfo".to_string(),
-                                format!("{}-poster.jpg", video_base_name),
+                                format!("{}-thumb.jpg", video_base_name),
                                 format!("{}-fanart.jpg", video_base_name),
                             ];
 
@@ -6045,8 +6087,8 @@ async fn rename_existing_files(
                 // 重命名视频级别的文件
                 let video_level_files = [
                     (
-                        format!("{}-poster.jpg", old_video_name),
-                        format!("{}-poster.jpg", new_video_name),
+                        format!("{}-thumb.jpg", old_video_name),
+                        format!("{}-thumb.jpg", new_video_name),
                     ),
                     (
                         format!("{}-fanart.jpg", old_video_name),
@@ -6054,7 +6096,7 @@ async fn rename_existing_files(
                     ),
                     (format!("{}.nfo", old_video_name), format!("{}.nfo", new_video_name)),
                     // 兼容旧的硬编码文件名
-                    ("poster.jpg".to_string(), format!("{}-poster.jpg", new_video_name)),
+                    ("poster.jpg".to_string(), format!("{}-thumb.jpg", new_video_name)),
                     ("fanart.jpg".to_string(), format!("{}-fanart.jpg", new_video_name)),
                     ("tvshow.nfo".to_string(), format!("{}.nfo", new_video_name)),
                 ];
@@ -9014,7 +9056,7 @@ async fn extract_video_files_by_database(
                             // 检查是否为视频级元数据文件
                             let is_video_metadata = file_name_str == "tvshow.nfo"
                                 || file_name_str.ends_with("-fanart.jpg")
-                                || file_name_str.ends_with("-poster.jpg")
+                                || file_name_str.ends_with("-thumb.jpg")
                                 || file_name_str.ends_with(".nfo");
 
                             if is_video_metadata {
@@ -9752,12 +9794,12 @@ fn parse_and_rename_bangumi_file(old_file_name: &str, video: &video::Model, page
     }
 
     // 2. 媒体文件 (不需要重新生成)
-    if matches!(old_file_name, "poster.jpg" | "fanart.jpg") {
+    if matches!(old_file_name, "thumb.jpg" | "fanart.jpg") {
         return Some(old_file_name.to_string()); // 这些文件不需要重命名
     }
 
     // 3. 分页相关文件模式匹配
-    // 支持的格式：S01E01-中配.mp4, S01E01-中配-poster.jpg, 第1集-日配-fanart.jpg 等
+    // 支持的格式：S01E01-中配.mp4, S01E01-中配-thumb.jpg, 第1集-日配-fanart.jpg 等
     if let Some((episode_part, suffix)) = parse_episode_file_name(old_file_name) {
         // 重新生成集数格式
         if let Some(new_episode_format) = generate_new_episode_format(video, pages, &episode_part) {
@@ -10479,4 +10521,27 @@ fn extract_bangumi_season_title(full_title: &str) -> String {
     }
 
     full_title.to_string()
+}
+
+/// 从API获取合集封面URL
+async fn get_collection_cover_from_api(
+    up_id: i64,
+    collection_id: i64,
+    client: &crate::bilibili::BiliClient,
+) -> Result<String, anyhow::Error> {
+    // 调用get_user_collections API获取指定UP主的合集列表
+    let collections_response = client.get_user_collections(up_id, 1, 50).await?;
+
+    // 查找目标合集
+    for collection in collections_response.collections {
+        if collection.sid.parse::<i64>().unwrap_or(0) == collection_id {
+            if !collection.cover.is_empty() {
+                return Ok(collection.cover);
+            } else {
+                return Err(anyhow!("合集封面URL为空"));
+            }
+        }
+    }
+
+    Err(anyhow!("未找到合集ID {} (UP主: {})", collection_id, up_id))
 }

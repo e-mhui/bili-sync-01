@@ -711,8 +711,8 @@ async fn delete_video_files_from_pages_task(
                             }
                         }
 
-                        // 删除封面文件 (-fanart.jpg, -poster.jpg等)
-                        for suffix in &["fanart", "poster"] {
+                        // 删除封面文件 (-fanart.jpg, -thumb.jpg等)
+                        for suffix in &["fanart", "thumb"] {
                             for ext in &["jpg", "jpeg", "png", "webp"] {
                                 let cover_path = parent_dir.join(format!("{}-{}.{}", file_stem_str, suffix, ext));
                                 if cover_path.exists() {
@@ -811,7 +811,7 @@ async fn delete_video_files_from_pages_task(
                             // 删除根目录的元数据文件
                             let metadata_files = [
                                 "tvshow.nfo".to_string(),
-                                format!("{}-poster.jpg", video_base_name),
+                                format!("{}-thumb.jpg", video_base_name),
                                 format!("{}-fanart.jpg", video_base_name),
                             ];
 
@@ -988,6 +988,7 @@ impl AddTaskQueue {
                 download_all_seasons: task.download_all_seasons,
                 selected_seasons: task.selected_seasons.clone(),
                 selected_videos: None, // 任务队列中暂时不支持选择性视频
+                cover: None, // 任务队列中暂时不支持封面，等前端传递
             };
 
             match add_video_source_internal(db.clone(), request).await {

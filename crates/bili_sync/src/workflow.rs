@@ -1707,8 +1707,8 @@ pub async fn download_video_pages(
             // 计算封面文件路径（与下载逻辑保持一致）
             let poster_path = base_path
                 .parent()
-                .map(|parent| parent.join(format!("{}-poster.jpg", video_base_name)))
-                .unwrap_or_else(|| base_path.join(format!("{}-poster.jpg", video_base_name)));
+                .map(|parent| parent.join(format!("{}-thumb.jpg", video_base_name)))
+                .unwrap_or_else(|| base_path.join(format!("{}-thumb.jpg", video_base_name)));
             let fanart_path = base_path
                 .parent()
                 .map(|parent| parent.join(format!("{}-fanart.jpg", video_base_name)))
@@ -1720,7 +1720,30 @@ pub async fn download_video_pages(
                 "{}「{}」封面检查: poster_path={:?}, fanart_path={:?}, exists={}",
                 video_type, video_model.name, poster_path, fanart_path, poster_exists
             );
-            !poster_exists
+
+            // 对于合集，只有第一个视频才下载合集封面
+            if is_collection && !poster_exists {
+                if let VideoSourceEnum::Collection(collection_source) = video_source {
+                    match get_collection_video_episode_number(connection, collection_source.id, &video_model.bvid).await {
+                        Ok(episode_number) => {
+                            let is_first_episode = episode_number == 1;
+                            info!(
+                                "合集「{}」视频「{}」集数检查: episode={}, is_first={}",
+                                collection_source.name, video_model.name, episode_number, is_first_episode
+                            );
+                            is_first_episode
+                        }
+                        Err(e) => {
+                            warn!("获取合集视频集数失败: {}, 跳过合集封面下载", e);
+                            false
+                        }
+                    }
+                } else {
+                    false
+                }
+            } else {
+                !poster_exists
+            }
         } else {
             true // 未启用Season结构时不进行检查
         }
@@ -1885,6 +1908,44 @@ pub async fn download_video_pages(
         Ok(ExecutionStatus::Skipped)
     };
 
+    // 预先获取合集封面URL（如果需要）
+    let collection_cover_url = if is_collection && should_download_season_poster {
+        if let VideoSourceEnum::Collection(collection_source) = video_source {
+            match get_collection_video_episode_number(connection, collection_source.id, &video_model.bvid).await {
+                Ok(episode_number) if episode_number == 1 => {
+                    // 第一个视频时从数据库重新获取最新的合集信息
+                    match collection::Entity::find_by_id(collection_source.id).one(connection).await {
+                        Ok(Some(fresh_collection)) => {
+                            match fresh_collection.cover.as_ref() {
+                                Some(cover_url) if !cover_url.is_empty() => {
+                                    info!("合集「{}」使用数据库保存的封面: {}", fresh_collection.name, cover_url);
+                                    Some(cover_url.clone())
+                                }
+                                _ => {
+                                    info!("合集「{}」数据库中无封面URL，使用视频封面", fresh_collection.name);
+                                    None
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            warn!("合集ID {} 在数据库中不存在", collection_source.id);
+                            None
+                        }
+                        Err(e) => {
+                            warn!("查询合集信息失败: {}", e);
+                            None
+                        }
+                    }
+                }
+                _ => None // 非第一个视频或获取集数失败
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     let (res_1, res_3, res_4, res_5) = tokio::join!(
         // 下载视频封面（番剧和普通视频采用不同策略）
         fetch_video_poster(
@@ -1915,11 +1976,11 @@ pub async fn download_video_pages(
                     // 需要从base_path（Season文件夹）回到父目录（视频根目录）
                     base_path
                         .parent()
-                        .map(|parent| parent.join(format!("{}-poster.jpg", video_base_name)))
-                        .unwrap_or_else(|| base_path.join(format!("{}-poster.jpg", video_base_name)))
+                        .map(|parent| parent.join(format!("{}-thumb.jpg", video_base_name)))
+                        .unwrap_or_else(|| base_path.join(format!("{}-thumb.jpg", video_base_name)))
                 } else {
                     // 普通视频封面放在视频文件夹
-                    base_path.join(format!("{}-poster.jpg", video_base_name))
+                    base_path.join(format!("{}-thumb.jpg", video_base_name))
                 }
             },
             if is_bangumi && bangumi_folder_path.is_some() {
@@ -1945,9 +2006,11 @@ pub async fn download_video_pages(
                 }
             },
             token.clone(),
-            // 番剧使用季度封面，普通视频使用默认封面
+            // 封面URL选择逻辑：番剧使用季度封面，合集使用API获取的封面，普通视频使用默认封面
             if is_bangumi && season_info.is_some() {
                 season_info.as_ref().unwrap().cover.as_deref()
+            } else if let Some(ref cover_url) = collection_cover_url {
+                Some(cover_url.as_str())
             } else {
                 None
             },
@@ -2444,7 +2507,7 @@ pub async fn download_page(
 
     let (poster_path, video_path, nfo_path, danmaku_path, fanart_path, subtitle_path) = if is_single_page {
         (
-            base_path.join(format!("{}-poster.jpg", &base_name)),
+            base_path.join(format!("{}-thumb.jpg", &base_name)),
             base_path.join(format!("{}.mp4", &base_name)),
             base_path.join(format!("{}.nfo", &base_name)),
             base_path.join(format!("{}.zh-CN.default.ass", &base_name)),
@@ -2454,7 +2517,7 @@ pub async fn download_page(
     } else if is_bangumi {
         // 番剧直接使用基础路径，不创建子文件夹结构
         (
-            base_path.join(format!("{}-poster.jpg", &base_name)),
+            base_path.join(format!("{}-thumb.jpg", &base_name)),
             base_path.join(format!("{}.mp4", &base_name)),
             base_path.join(format!("{}.nfo", &base_name)),
             base_path.join(format!("{}.zh-CN.default.ass", &base_name)),
@@ -2464,7 +2527,7 @@ pub async fn download_page(
     } else {
         // 非番剧的多P视频直接使用基础路径，不创建子文件夹
         (
-            base_path.join(format!("{}-poster.jpg", &base_name)),
+            base_path.join(format!("{}-thumb.jpg", &base_name)),
             base_path.join(format!("{}.mp4", &base_name)),
             base_path.join(format!("{}.nfo", &base_name)),
             base_path.join(format!("{}.zh-CN.default.ass", &base_name)),
@@ -3119,8 +3182,8 @@ pub async fn generate_page_nfo(
     let nfo = match video_model.single_page {
         Some(single_page) => {
             if single_page {
-                if is_bangumi {
-                    // 番剧单页也应使用Episode格式，符合Emby标准
+                if is_bangumi || video_model.collection_id.is_some() {
+                    // 番剧单页或合集视频应使用Episode格式，符合Emby标准
                     use crate::utils::nfo::Episode;
                     NFO::Episode(Episode::from_video_and_page(video_model, page_model))
                 } else {
@@ -4150,6 +4213,7 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
 
     Ok(())
 }
+
 
 /// 获取合集中视频的集数序号
 /// 根据视频在合集中的发布时间顺序确定集数

@@ -615,12 +615,16 @@ impl BiliClient {
             if let Some(seasons_list) = seasons_response["data"]["items_lists"]["seasons_list"].as_array() {
                 for season in seasons_list {
                     if let Some(season_obj) = season.as_object() {
-                        // 从不同的可能位置尝试获取封面
+                        // 从不同的可能位置尝试获取封面，优先从根级cover字段获取
                         let cover = season_obj
-                            .get("meta")
-                            .and_then(|meta| meta.get("cover"))
+                            .get("cover")
                             .and_then(|v| v.as_str())
-                            .or_else(|| season_obj.get("cover").and_then(|v| v.as_str()))
+                            .or_else(|| {
+                                season_obj
+                                    .get("meta")
+                                    .and_then(|meta| meta.get("cover"))
+                                    .and_then(|v| v.as_str())
+                            })
                             .or_else(|| {
                                 season_obj
                                     .get("meta")
@@ -676,12 +680,16 @@ impl BiliClient {
             if let Some(series_list) = seasons_response["data"]["items_lists"]["series_list"].as_array() {
                 for series in series_list {
                     if let Some(series_obj) = series.as_object() {
-                        // 从不同的可能位置尝试获取封面
+                        // 从不同的可能位置尝试获取封面，优先从根级cover字段获取
                         let cover = series_obj
-                            .get("meta")
-                            .and_then(|meta| meta.get("cover"))
+                            .get("cover")
                             .and_then(|v| v.as_str())
-                            .or_else(|| series_obj.get("cover").and_then(|v| v.as_str()))
+                            .or_else(|| {
+                                series_obj
+                                    .get("meta")
+                                    .and_then(|meta| meta.get("cover"))
+                                    .and_then(|v| v.as_str())
+                            })
                             .or_else(|| {
                                 series_obj
                                     .get("meta")

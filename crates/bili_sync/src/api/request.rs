@@ -49,6 +49,8 @@ pub struct AddVideoSourceRequest {
     pub selected_seasons: Option<Vec<String>>,
     // 选中的视频ID列表，仅当source_type为"submission"时有效，用于选择性下载历史投稿
     pub selected_videos: Option<Vec<String>>,
+    // 封面URL，仅当source_type为"collection"时有效
+    pub cover: Option<String>,
 }
 
 // 删除视频源的请求结构体
