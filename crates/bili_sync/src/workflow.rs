@@ -1764,15 +1764,84 @@ pub async fn download_video_pages(
         .await
     } else {
         // 普通视频或番剧无API数据：使用原有逻辑
-        generate_video_nfo(
-            if is_bangumi {
-                // 番剧：只有在文件不存在时才生成，放在番剧文件夹根目录
-                separate_status[2] && bangumi_folder_path.is_some() && should_download_bangumi_nfo
+        // 对于合集，只在第一个视频时生成tvshow.nfo，避免重复生成
+        let should_generate_nfo = if is_bangumi {
+            // 番剧：只有在文件不存在时才生成，放在番剧文件夹根目录
+            separate_status[2] && bangumi_folder_path.is_some() && should_download_bangumi_nfo
+        } else if is_collection {
+            // 合集：只有第一个视频时生成tvshow.nfo
+            let config = crate::config::reload_config();
+            if separate_status[2] && config.collection_use_season_structure {
+                // 检查是否为第一个视频
+                if let VideoSourceEnum::Collection(collection_source) = video_source {
+                    match get_collection_video_episode_number(connection, collection_source.id, &video_model.bvid).await {
+                        Ok(episode_number) => episode_number == 1,
+                        Err(_) => false,
+                    }
+                } else {
+                    false
+                }
             } else {
-                // 普通视频：为多P视频或启用Season结构的合集生成nfo
-                let config = crate::config::reload_config();
-                separate_status[2] && (!is_single_page || (is_collection && config.collection_use_season_structure))
-            },
+                false
+            }
+        } else {
+            // 普通视频：为多P视频生成nfo
+            separate_status[2] && !is_single_page
+        };
+
+        if should_generate_nfo && is_collection {
+            // 合集：使用带合集信息的NFO生成（第一个视频时）
+            if let VideoSourceEnum::Collection(collection_source) = video_source {
+                // 先获取合集封面信息
+                let collection_cover = match collection::Entity::find_by_id(collection_source.id).one(connection).await {
+                    Ok(Some(fresh_collection)) => fresh_collection.cover.clone(),
+                    _ => None,
+                };
+
+                generate_collection_video_nfo(
+                    true,
+                    &video_model,
+                    Some(&collection_source.name),
+                    collection_cover.as_deref(),
+                    if let Some(ref bangumi_path) = bangumi_folder_path {
+                        // 多P视频或合集使用Season结构时，tvshow.nfo放在视频根目录
+                        let config = crate::config::reload_config();
+                        if ((!is_single_page && config.multi_page_use_season_structure)
+                            || (is_collection && config.collection_use_season_structure))
+                            && season_folder.is_some()
+                        {
+                            bangumi_path.join("tvshow.nfo")
+                        } else {
+                            // 不使用Season结构时，保持原有逻辑
+                            base_path.join(format!("{}.nfo", video_base_name))
+                        }
+                    } else {
+                        // 多P视频或合集使用Season结构时，tvshow.nfo放在视频根目录
+                        let config = crate::config::reload_config();
+                        if ((!is_single_page && config.multi_page_use_season_structure)
+                            || (is_collection && config.collection_use_season_structure))
+                            && season_folder.is_some()
+                        {
+                            // 需要从base_path（Season文件夹）回到父目录（视频根目录）
+                            base_path
+                                .parent()
+                                .map(|parent| parent.join("tvshow.nfo"))
+                                .unwrap_or_else(|| base_path.join("tvshow.nfo"))
+                        } else {
+                            // 普通视频nfo放在视频文件夹
+                            base_path.join(format!("{}.nfo", video_base_name))
+                        }
+                    },
+                )
+                .await
+            } else {
+                // 不应该到这里
+                Ok(ExecutionStatus::Skipped)
+            }
+        } else {
+            // 普通视频或番剧：使用原有逻辑
+            generate_video_nfo(
+                should_generate_nfo,
             &video_model,
             if let Some(ref bangumi_path) = bangumi_folder_path {
                 if is_bangumi {
@@ -1808,8 +1877,50 @@ pub async fn download_video_pages(
                     base_path.join(format!("{}.nfo", video_base_name))
                 }
             },
-        )
-        .await
+            )
+            .await
+        }
+    };
+
+    // 预先获取合集封面URL（如果需要）
+    let collection_cover_url = if is_collection && should_download_season_poster {
+        if let VideoSourceEnum::Collection(collection_source) = video_source {
+            match get_collection_video_episode_number(connection, collection_source.id, &video_model.bvid).await {
+                Ok(episode_number) if episode_number == 1 => {
+                    // 第一个视频时从数据库重新获取最新的合集信息
+                    match collection::Entity::find_by_id(collection_source.id).one(connection).await {
+                        Ok(Some(fresh_collection)) => {
+                            match fresh_collection.cover.as_ref() {
+                                Some(cover_url) if !cover_url.is_empty() => {
+                                    info!("合集「{}」使用数据库保存的封面: {}", fresh_collection.name, cover_url);
+                                    Some(cover_url.clone())
+                                }
+                                _ => {
+                                    info!("合集「{}」数据库中无封面URL，使用视频封面", fresh_collection.name);
+                                    None
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            warn!("合集ID {} 在数据库中不存在", collection_source.id);
+                            None
+                        }
+                        Err(e) => {
+                            warn!("查询合集信息失败: {}", e);
+                            None
+                        }
+                    }
+                }
+                _ => {
+                    // 非第一个视频，不需要重复获取
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
     };
 
     // 为启用Season结构的番剧生成season.nfo
@@ -1908,43 +2019,6 @@ pub async fn download_video_pages(
         Ok(ExecutionStatus::Skipped)
     };
 
-    // 预先获取合集封面URL（如果需要）
-    let collection_cover_url = if is_collection && should_download_season_poster {
-        if let VideoSourceEnum::Collection(collection_source) = video_source {
-            match get_collection_video_episode_number(connection, collection_source.id, &video_model.bvid).await {
-                Ok(episode_number) if episode_number == 1 => {
-                    // 第一个视频时从数据库重新获取最新的合集信息
-                    match collection::Entity::find_by_id(collection_source.id).one(connection).await {
-                        Ok(Some(fresh_collection)) => {
-                            match fresh_collection.cover.as_ref() {
-                                Some(cover_url) if !cover_url.is_empty() => {
-                                    info!("合集「{}」使用数据库保存的封面: {}", fresh_collection.name, cover_url);
-                                    Some(cover_url.clone())
-                                }
-                                _ => {
-                                    info!("合集「{}」数据库中无封面URL，使用视频封面", fresh_collection.name);
-                                    None
-                                }
-                            }
-                        }
-                        Ok(None) => {
-                            warn!("合集ID {} 在数据库中不存在", collection_source.id);
-                            None
-                        }
-                        Err(e) => {
-                            warn!("查询合集信息失败: {}", e);
-                            None
-                        }
-                    }
-                }
-                _ => None // 非第一个视频或获取集数失败
-            }
-        } else {
-            None
-        }
-    } else {
-        None
-    };
 
     let (res_1, res_3, res_4, res_5) = tokio::join!(
         // 下载视频封面（番剧和普通视频采用不同策略）
@@ -3314,6 +3388,23 @@ pub async fn generate_video_nfo(
         return Ok(ExecutionStatus::Skipped);
     }
     generate_nfo(NFO::TVShow(video_model.into()), nfo_path).await?;
+    Ok(ExecutionStatus::Succeeded)
+}
+
+/// 为合集生成带有合集信息的TVShow NFO
+pub async fn generate_collection_video_nfo(
+    should_run: bool,
+    video_model: &video::Model,
+    collection_name: Option<&str>,
+    collection_cover: Option<&str>,
+    nfo_path: PathBuf,
+) -> Result<ExecutionStatus> {
+    if !should_run {
+        return Ok(ExecutionStatus::Skipped);
+    }
+    use crate::utils::nfo::TVShow;
+    let tvshow = TVShow::from_video_with_collection(video_model, collection_name, collection_cover);
+    generate_nfo(NFO::TVShow(tvshow), nfo_path).await?;
     Ok(ExecutionStatus::Succeeded)
 }
 

@@ -1666,6 +1666,31 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
     }
 }
 
+impl<'a> TVShow<'a> {
+    /// 从视频模型和合集信息创建TVShow，优先使用合集名称和封面
+    pub fn from_video_with_collection(
+        video: &'a video::Model,
+        collection_name: Option<&'a str>,
+        collection_cover: Option<&'a str>,
+    ) -> Self {
+        // 首先获取基础的TVShow
+        let mut tvshow = TVShow::from(video);
+
+        // 如果提供了合集信息，优先使用合集名称和封面
+        if let Some(name) = collection_name {
+            tvshow.name = name;
+            tvshow.original_title = name;
+            tvshow.sorttitle = Some(name.to_string());
+        }
+
+        if let Some(cover) = collection_cover {
+            tvshow.cover_url = cover;
+        }
+
+        tvshow
+    }
+}
+
 // 带页面数据的转换实现，用于计算总时长
 impl<'a> Movie<'a> {
     /// 从视频模型和页面数据创建Movie，包含计算得出的总时长
