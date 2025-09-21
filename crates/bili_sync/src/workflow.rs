@@ -1685,7 +1685,7 @@ pub async fn download_video_pages(
     // 为番剧检查元数据文件是否已存在，避免重复下载
     let (should_download_bangumi_poster, should_download_bangumi_nfo) = if is_bangumi && bangumi_folder_path.is_some() {
         let bangumi_path = bangumi_folder_path.as_ref().unwrap();
-        let poster_path = bangumi_path.join(format!("{}-poster.jpg", bangumi_base_name));
+        let poster_path = bangumi_path.join(format!("{}-thumb.jpg", bangumi_base_name));
         let fanart_path = bangumi_path.join(format!("{}-fanart.jpg", bangumi_base_name));
         let nfo_path = bangumi_path.join("tvshow.nfo");
 
@@ -1972,7 +1972,7 @@ pub async fn download_video_pages(
 
             // 季度级图片应该放在系列根目录，使用标准命名
             let series_root = bangumi_folder_path.as_ref().unwrap();
-            let poster_path = series_root.join(format!("Season{:02}-poster.jpg", season_number));
+            let poster_path = series_root.join(format!("Season{:02}-thumb.jpg", season_number));
             let fanart_path = series_root.join(format!("Season{:02}-fanart.jpg", season_number));
 
             // 独立检查季度级图片文件是否存在
@@ -2040,7 +2040,7 @@ pub async fn download_video_pages(
                 bangumi_folder_path
                     .as_ref()
                     .unwrap()
-                    .join(format!("{}-poster.jpg", bangumi_base_name))
+                    .join(format!("{}-thumb.jpg", bangumi_base_name))
             } else {
                 // 多P视频或合集使用Season结构时，封面放在视频根目录
                 let config = crate::config::reload_config();

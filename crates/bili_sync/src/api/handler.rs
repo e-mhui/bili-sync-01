@@ -10529,17 +10529,31 @@ async fn get_collection_cover_from_api(
     collection_id: i64,
     client: &crate::bilibili::BiliClient,
 ) -> Result<String, anyhow::Error> {
-    // 调用get_user_collections API获取指定UP主的合集列表
-    let collections_response = client.get_user_collections(up_id, 1, 50).await?;
+    // 分页获取所有合集，避免遗漏
+    let mut page = 1;
+    loop {
+        let collections_response = client.get_user_collections(up_id, page, 50).await?;
 
-    // 查找目标合集
-    for collection in collections_response.collections {
-        if collection.sid.parse::<i64>().unwrap_or(0) == collection_id {
-            if !collection.cover.is_empty() {
-                return Ok(collection.cover);
-            } else {
-                return Err(anyhow!("合集封面URL为空"));
+        // 查找目标合集
+        for collection in &collections_response.collections {
+            if collection.sid.parse::<i64>().unwrap_or(0) == collection_id {
+                if !collection.cover.is_empty() {
+                    return Ok(collection.cover.clone());
+                } else {
+                    return Err(anyhow!("合集封面URL为空"));
+                }
             }
+        }
+
+        // 检查是否还有更多页
+        if collections_response.collections.len() < 50 {
+            break; // 已经是最后一页
+        }
+        page += 1;
+
+        // 安全限制，避免无限循环
+        if page > 20 {
+            return Err(anyhow!("搜索合集时达到最大页数限制 (20页)"));
         }
     }
 
