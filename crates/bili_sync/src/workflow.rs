@@ -3278,7 +3278,16 @@ pub async fn generate_page_nfo(
                 if is_bangumi || video_model.collection_id.is_some() {
                     // 番剧单页或合集视频应使用Episode格式，符合Emby标准
                     use crate::utils::nfo::Episode;
-                    NFO::Episode(Episode::from_video_and_page(video_model, page_model))
+                    let mut episode = Episode::from_video_and_page(video_model, page_model);
+                    // 对于合集视频，如果数据库中尚未带有 episode_number，按合集顺序编号
+                    if video_model.collection_id.is_some() && video_model.episode_number.is_none() {
+                        if let Some(col_id) = video_model.collection_id {
+                            if let Ok(ep_no) = get_collection_video_episode_number(_connection, col_id, &video_model.bvid).await {
+                                episode.episode_number = ep_no;
+                            }
+                        }
+                    }
+                    NFO::Episode(episode)
                 } else {
                     // 普通单页视频生成Movie
                     use crate::utils::nfo::Movie;
@@ -3286,12 +3295,24 @@ pub async fn generate_page_nfo(
                 }
             } else {
                 use crate::utils::nfo::Episode;
-                NFO::Episode(Episode::from_video_and_page(video_model, page_model))
+                let episode = Episode::from_video_and_page(video_model, page_model);
+                NFO::Episode(episode)
             }
         }
         None => {
             use crate::utils::nfo::Episode;
-            NFO::Episode(Episode::from_video_and_page(video_model, page_model))
+            let mut episode = Episode::from_video_and_page(video_model, page_model);
+            // 非番剧但属于合集的视频：按合集顺序编号，避免固定为1
+            if video_model.category != 1 {
+                if let Some(col_id) = video_model.collection_id {
+                    if video_model.episode_number.is_none() {
+                        if let Ok(ep_no) = get_collection_video_episode_number(_connection, col_id, &video_model.bvid).await {
+                            episode.episode_number = ep_no;
+                        }
+                    }
+                }
+            }
+            NFO::Episode(episode)
         }
     };
     generate_nfo(nfo, nfo_path).await?;
