@@ -1683,7 +1683,8 @@ pub async fn download_video_pages(
     }
 
     // 为番剧检查元数据文件是否已存在，避免重复下载
-    let (should_download_bangumi_poster, should_download_bangumi_nfo) = if is_bangumi && bangumi_folder_path.is_some() {
+    // 只有第一个集（should_download_upper=true）才负责下载Series级别图片
+    let (should_download_bangumi_poster, should_download_bangumi_nfo) = if is_bangumi && bangumi_folder_path.is_some() && should_download_upper {
         let bangumi_path = bangumi_folder_path.as_ref().unwrap();
         let poster_path = bangumi_path.join(format!("{}-thumb.jpg", bangumi_base_name));
         let fanart_path = bangumi_path.join(format!("{}-fanart.jpg", bangumi_base_name));
@@ -1961,7 +1962,8 @@ pub async fn download_video_pages(
     };
 
     // 为启用Season结构的番剧下载季度级图片
-    let season_images_result = if is_bangumi && season_info.is_some() {
+    // 只有第一个集（should_download_upper=true）才负责下载Season级别图片
+    let season_images_result = if is_bangumi && season_info.is_some() && should_download_upper {
         let config = crate::config::reload_config();
         if config.bangumi_use_season_structure {
             // 获取季度编号用于生成正确的文件名
