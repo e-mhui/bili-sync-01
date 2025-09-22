@@ -82,7 +82,9 @@
 				删除视频源
 			</AlertDialog.Title>
 			<AlertDialog.Description class="space-y-3">
-				<div class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950">
+				<div
+					class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950"
+				>
 					<p class="text-sm font-medium text-red-800 dark:text-red-200">⚠️ 危险操作警告</p>
 					<p class="mt-1 text-xs text-red-700 dark:text-red-300">
 						此操作将永久删除视频源及其所有相关数据，且不可撤销！
@@ -92,7 +94,9 @@
 				<div class="space-y-2">
 					<div class="flex items-center gap-2 text-sm">
 						<span class="font-medium">类型：</span>
-						<span class="rounded bg-blue-100 px-2 py-1 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+						<span
+							class="rounded bg-blue-100 px-2 py-1 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+						>
 							{getSourceTypeLabel(sourceType)}
 						</span>
 					</div>
@@ -102,7 +106,9 @@
 					</div>
 				</div>
 
-				<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-3 dark:border-yellow-800 dark:bg-yellow-950">
+				<div
+					class="rounded-lg border border-yellow-200 bg-yellow-50 p-3 dark:border-yellow-800 dark:bg-yellow-950"
+				>
 					<div class="flex items-start gap-2">
 						<svg
 							class="mt-0.5 h-4 w-4 flex-shrink-0 text-yellow-600"
@@ -160,7 +166,9 @@
 					</div>
 
 					{#if deleteLocalFiles}
-						<div class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950">
+						<div
+							class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950"
+						>
 							<p class="text-xs font-medium text-red-800 dark:text-red-200">⚠️ 文件删除警告</p>
 							<p class="mt-1 text-xs text-red-700 dark:text-red-300">
 								选择删除本地文件后，该视频源下载的所有视频文件都将被永久删除，
@@ -172,14 +180,16 @@
 
 				<div class="space-y-2">
 					<label for="confirm-input" class="text-sm font-medium text-gray-700 dark:text-gray-300">
-						确认删除：请输入视频源名称 "<span class="font-mono text-red-600 dark:text-red-400">{sourceName}</span>"
+						确认删除：请输入视频源名称 "<span class="font-mono text-red-600 dark:text-red-400"
+							>{sourceName}</span
+						>"
 					</label>
 					<input
 						id="confirm-input"
 						type="text"
 						bind:value={confirmText}
 						placeholder="输入视频源名称以确认删除"
-						class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-foreground dark:text-foreground focus:border-red-500 focus:ring-2 focus:ring-red-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:placeholder-gray-400 dark:focus:border-red-400 dark:focus:ring-red-400"
+						class="text-foreground dark:text-foreground w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:placeholder-gray-400 dark:focus:border-red-400 dark:focus:ring-red-400"
 						disabled={isDeleting}
 					/>
 				</div>

@@ -17,7 +17,7 @@
 	import QrLogin from '$lib/components/qr-login.svelte';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
 	import type { ConfigResponse, VideoInfo, UserInfo } from '$lib/types';
-		import {
+	import {
 		DownloadIcon,
 		FileTextIcon,
 		KeyIcon,
@@ -189,13 +189,13 @@
 	let largeSubmissionThreshold = 100;
 	let baseRequestDelay = 200;
 	let largeSubmissionDelayMultiplier = 2;
-	
+
 	// 风控验证配置
 	let riskControlEnabled = false;
 	let riskControlMode = 'manual';
 	let riskControlTimeout = 300;
 	let isSaving = false;
-	
+
 	// 自动验证配置
 	let autoSolveService = '2captcha';
 	let autoSolveApiKey = '';
@@ -517,7 +517,7 @@
 			riskControlEnabled = config.risk_control?.enabled ?? false;
 			riskControlMode = config.risk_control?.mode || 'manual';
 			riskControlTimeout = config.risk_control?.timeout || 300;
-			
+
 			// 自动验证配置
 			autoSolveService = config.risk_control?.auto_solve?.service || '2captcha';
 			autoSolveApiKey = config.risk_control?.auto_solve?.api_key || '';
@@ -594,7 +594,7 @@
 				bindAddressValid = false;
 				return false;
 			}
-			
+
 			const port = parseInt(parts[1]);
 			if (isNaN(port) || port < 1 || port > 65535) {
 				bindAddressError = '端口号必须是1-65535之间的数字';
@@ -610,7 +610,7 @@
 				return false;
 			}
 		}
-		
+
 		bindAddressError = '';
 		bindAddressValid = true;
 		return true;
@@ -765,7 +765,7 @@
 			if (response.data.success) {
 				// 检查是否修改了bind_address，如果是则提醒需要重启
 				if (params.bind_address && params.bind_address !== config?.bind_address) {
-					toast.success('保存成功', { 
+					toast.success('保存成功', {
 						description: '端口配置已更新，请重启程序使配置生效',
 						duration: 8000 // 延长显示时间
 					});
@@ -2244,7 +2244,8 @@
 												<li>在请求头中找到Cookie字段，复制对应的值</li>
 											</ol>
 											<div class="mt-2 text-xs text-amber-600 dark:text-amber-400">
-												💡 提示：SESSDATA、bili_jct、buvid3、DedeUserID是必填项，ac_time_value、buvid4、DedeUserID__ckMd5可选
+												💡
+												提示：SESSDATA、bili_jct、buvid3、DedeUserID是必填项，ac_time_value、buvid4、DedeUserID__ckMd5可选
 											</div>
 										</div>
 									</div>
@@ -2297,11 +2298,7 @@
 
 										<div class="space-y-2">
 											<Label for="buvid4">buvid4 (可选)</Label>
-											<Input
-												id="buvid4"
-												bind:value={buvid4}
-												placeholder="请输入buvid4（可选）"
-											/>
+											<Input id="buvid4" bind:value={buvid4} placeholder="请输入buvid4（可选）" />
 										</div>
 
 										<div class="space-y-2">
@@ -2653,7 +2650,9 @@
 								⏱️ 视频源间延迟配置
 							</h3>
 							<div class="space-y-4">
-								<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
+								<div
+									class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}"
+								>
 									<div class="space-y-2">
 										<Label for="source-delay-seconds">通用视频源间延迟（秒）</Label>
 										<Input
@@ -2684,10 +2683,11 @@
 										</p>
 									</div>
 								</div>
-								
+
 								<div class="rounded-lg bg-indigo-100 p-3 dark:bg-indigo-900/20">
 									<p class="text-sm text-indigo-700 dark:text-indigo-300">
-										<strong>说明：</strong>在扫描多个视频源时，系统会在每个源之间自动添加延迟，避免连续请求触发风控。
+										<strong>说明：</strong
+										>在扫描多个视频源时，系统会在每个源之间自动添加延迟，避免连续请求触发风控。
 										UP主投稿通常需要更长的延迟，因为其视频数量可能较多。设置为0可禁用延迟。
 									</p>
 								</div>
@@ -3158,7 +3158,9 @@
 								{#if bindAddressError}
 									<p class="text-sm text-red-500">{bindAddressError}</p>
 								{:else}
-									<p class="text-muted-foreground text-sm">服务器监听地址和端口（修改后需要重启程序生效）</p>
+									<p class="text-muted-foreground text-sm">
+										服务器监听地址和端口（修改后需要重启程序生效）
+									</p>
 								{/if}
 							</div>
 
@@ -3195,20 +3197,25 @@
 								<p class="text-muted-foreground text-sm">UP主头像和person.nfo文件的保存目录路径</p>
 							</div>
 
-
 							<div
 								class="rounded-lg border border-orange-200 bg-orange-50 p-3 dark:border-orange-800 dark:bg-orange-950/20"
 							>
 								<h5 class="mb-2 font-medium text-orange-800 dark:text-orange-200">其他设置说明</h5>
 								<div class="space-y-1 text-sm text-orange-700 dark:text-orange-300">
 									<p><strong>扫描间隔：</strong>每次扫描下载的时间间隔（秒）</p>
-									<p><strong>内存映射优化：</strong>已自动启用，使用SQLite内存映射技术优化数据库性能，无需手动配置</p>
+									<p>
+										<strong>内存映射优化：</strong
+										>已自动启用，使用SQLite内存映射技术优化数据库性能，无需手动配置
+									</p>
 									<p><strong>CDN排序：</strong>启用后优先使用质量更高的CDN，可能提升下载速度</p>
 									<p>
 										<strong>显示已删除视频：</strong
 										>控制前端列表是否显示已删除的视频（注：与视频源的"扫描已删除视频"功能不同）
 									</p>
-									<p><strong>UP主头像路径：</strong>UP主头像和person.nfo文件的保存目录，用于媒体库显示</p>
+									<p>
+										<strong>UP主头像路径：</strong
+										>UP主头像和person.nfo文件的保存目录，用于媒体库显示
+									</p>
 								</div>
 							</div>
 						</div>
@@ -3517,7 +3524,9 @@
 									bind:checked={riskControlEnabled}
 									class="h-4 w-4"
 								/>
-								<p class="text-muted-foreground text-xs">启用后，遇到v_voucher风控时将进行验证码验证</p>
+								<p class="text-muted-foreground text-xs">
+									启用后，遇到v_voucher风控时将进行验证码验证
+								</p>
 							</div>
 
 							<div class="space-y-2">
@@ -3531,7 +3540,10 @@
 									<option value="auto">auto - 自动验证</option>
 									<option value="skip">skip - 跳过验证</option>
 								</select>
-								<p class="text-muted-foreground text-xs">manual: 弹出验证页面进行手动验证；auto: 使用第三方服务自动解决验证码；skip: 直接跳过风控验证</p>
+								<p class="text-muted-foreground text-xs">
+									manual: 弹出验证页面进行手动验证；auto: 使用第三方服务自动解决验证码；skip:
+									直接跳过风控验证
+								</p>
 							</div>
 
 							<div class="space-y-2">
@@ -3544,14 +3556,16 @@
 									max="3600"
 									placeholder="300"
 								/>
-								<p class="text-muted-foreground text-xs">用户完成验证码验证的最大等待时间，超时后将重新开始验证流程</p>
+								<p class="text-muted-foreground text-xs">
+									用户完成验证码验证的最大等待时间，超时后将重新开始验证流程
+								</p>
 							</div>
 
 							<!-- 自动验证配置 (仅在auto模式下显示) -->
 							{#if riskControlMode === 'auto'}
 								<div class="space-y-4 rounded-lg border bg-gray-50 p-4 dark:bg-gray-900/50">
 									<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">自动验证配置</h4>
-									
+
 									<div class="space-y-2">
 										<Label for="auto-solve-service">验证码服务</Label>
 										<select
@@ -3575,7 +3589,9 @@
 											bind:value={autoSolveApiKey}
 											placeholder="输入API密钥"
 										/>
-										<p class="text-muted-foreground text-xs">验证码服务的API密钥，请确保账户有足够余额</p>
+										<p class="text-muted-foreground text-xs">
+											验证码服务的API密钥，请确保账户有足够余额
+										</p>
 									</div>
 
 									<div class="grid grid-cols-2 gap-4">
@@ -3644,14 +3660,13 @@
 								</div>
 							</div>
 						</div>
-
 					</div>
-				<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
-					<Button type="submit" disabled={isSaving} class="w-full">
-						{isSaving ? '保存中...' : '保存设置'}
-					</Button>
-				</SheetFooter>
-			</form>
+					<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
+						<Button type="submit" disabled={isSaving} class="w-full">
+							{isSaving ? '保存中...' : '保存设置'}
+						</Button>
+					</SheetFooter>
+				</form>
 			</div>
 		</div>
 	</SheetContent>

@@ -98,7 +98,8 @@
 							<ResponsiveButton
 								size="sm"
 								variant="outline"
-								onclick={() => window.open('https://qq1582185982.github.io/bili-sync-01/', '_blank')}
+								onclick={() =>
+									window.open('https://qq1582185982.github.io/bili-sync-01/', '_blank')}
 								icon={BookOpen}
 								text="文档"
 								title="查看文档"

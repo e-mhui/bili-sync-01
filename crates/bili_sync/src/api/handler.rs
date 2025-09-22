@@ -1582,14 +1582,15 @@ pub async fn add_video_source_internal(
                 Some(cover) if !cover.is_empty() => {
                     info!("使用前端提供的封面URL: {}", cover);
                     params.cover.clone()
-                },
+                }
                 _ => {
                     // 前端没有传递封面，尝试从API获取
                     info!("前端未提供封面URL，尝试从API获取合集「{}」的封面", collection_name);
                     // 创建BiliClient实例
                     let config = crate::config::reload_config();
                     let credential = config.credential.load();
-                    let cookie = credential.as_ref()
+                    let cookie = credential
+                        .as_ref()
                         .map(|cred| {
                             format!(
                                 "SESSDATA={};bili_jct={};buvid3={};DedeUserID={};ac_time_value={}",
@@ -5223,10 +5224,7 @@ pub async fn update_config_internal(
                 }
                 "scan_deleted_videos" => {
                     manager
-                        .update_config_item(
-                            "scan_deleted_videos",
-                            serde_json::to_value(config.scan_deleted_videos)?,
-                        )
+                        .update_config_item("scan_deleted_videos", serde_json::to_value(config.scan_deleted_videos)?)
                         .await
                 }
                 "enable_aria2_health_check" => {
@@ -8454,11 +8452,14 @@ pub async fn get_video_play_info(
             // 根据视频类型生成正确的B站URL
             if video_info.source_type == Some(1) && video_info.ep_id.is_some() {
                 // 番剧类型：使用 ep_id 生成番剧专用URL
-                format!("https://www.bilibili.com/bangumi/play/ep{}", video_info.ep_id.as_ref().unwrap())
+                format!(
+                    "https://www.bilibili.com/bangumi/play/ep{}",
+                    video_info.ep_id.as_ref().unwrap()
+                )
             } else {
                 // 普通视频：使用 bvid 生成视频URL
                 format!("https://www.bilibili.com/video/{}", video_info.bvid)
-            }
+            },
         ),
     }))
 }

@@ -1,6 +1,6 @@
 declare module 'd3-shape' {
 	export interface CurveFactory {
-		(context: CanvasRenderingContext2D): any;
+		(context: CanvasRenderingContext2D): unknown;
 		lineStart(): void;
 		lineEnd(): void;
 		point(x: number, y: number): void;

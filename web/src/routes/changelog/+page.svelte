@@ -45,15 +45,13 @@
 <div class="space-y-6">
 	<div>
 		<h1 class="text-3xl font-bold tracking-tight">更新记录</h1>
-		<p class="text-muted-foreground mt-2">
-			查看 Bili Sync 的最新更新和改进记录
-		</p>
+		<p class="text-muted-foreground mt-2">查看 Bili Sync 的最新更新和改进记录</p>
 	</div>
 
 	<Card.Root class="h-[calc(100vh-250px)] min-h-[600px]">
 		<Card.Content class="relative h-full p-0">
 			{#if loading}
-				<div class="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-background">
+				<div class="bg-background absolute inset-0 flex flex-col items-center justify-center gap-4">
 					<Loader2 class="h-8 w-8 animate-spin" />
 					<div class="space-y-2 text-center">
 						<Skeleton class="h-4 w-48" />
@@ -64,15 +62,13 @@
 			{/if}
 
 			{#if error}
-				<div class="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-background">
-					<AlertTriangle class="h-16 w-16 text-destructive" />
-					<div class="text-center space-y-2">
+				<div class="bg-background absolute inset-0 flex flex-col items-center justify-center gap-4">
+					<AlertTriangle class="text-destructive h-16 w-16" />
+					<div class="space-y-2 text-center">
 						<h3 class="text-lg font-semibold">加载失败</h3>
-						<p class="text-muted-foreground text-sm">
-							无法加载更新记录内容，请检查网络连接
-						</p>
+						<p class="text-muted-foreground text-sm">无法加载更新记录内容，请检查网络连接</p>
 						<button
-							class="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+							class="bg-primary text-primary-foreground hover:bg-primary/90 mt-4 rounded-md px-4 py-2 transition-colors"
 							on:click={retryLoad}
 						>
 							重试
@@ -85,7 +81,7 @@
 				bind:this={iframeElement}
 				src="https://qq1582185982.github.io/bili-sync-01/changelog.html"
 				title="更新日志"
-				class="w-full h-full border-0 rounded-lg"
+				class="h-full w-full rounded-lg border-0"
 				class:opacity-0={loading || error}
 				class:opacity-100={!loading && !error}
 				frameborder="0"

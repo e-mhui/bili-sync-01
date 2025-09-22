@@ -25,7 +25,7 @@ impl MigrationTrait for Migration {
                     ifnull(source_id, -1),
                     bvid,
                     ifnull(ep_id, '')
-                )"
+                )",
             )
             .await?;
 
@@ -50,7 +50,7 @@ impl MigrationTrait for Migration {
                     ifnull(submission_id, -1),
                     ifnull(source_id, -1),
                     bvid
-                )"
+                )",
             )
             .await?;
 

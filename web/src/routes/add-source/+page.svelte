@@ -59,6 +59,7 @@
 
 	// UP主合集相关
 	let userCollections: UserCollectionItem[] = [];
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	let loadingCollections = false; // 合集加载状态
 	let upIdTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -111,6 +112,7 @@
 	// UP主投稿选择相关
 	let showSubmissionSelection = false;
 	let selectedVideos: string[] = [];
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	let selectedUpName = ''; // UP主名称，用于投稿选择
 
 	// 投稿选择详细状态
@@ -123,16 +125,17 @@
 	let filteredSubmissionVideos: SubmissionVideoInfo[] = [];
 
 	// 分页加载相关状态
-	let currentLoadedPage = 0;        // 当前加载到的页码
-	let isLoadingMore = false;        // 正在加载更多
-	let hasMoreVideos = true;         // 是否还有更多视频
-	let loadingProgress = '';         // 加载进度提示
-	let showLoadMoreButton = false;   // 是否显示加载更多按钮
+	let currentLoadedPage = 0; // 当前加载到的页码
+	let isLoadingMore = false; // 正在加载更多
+	let hasMoreVideos = true; // 是否还有更多视频
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	let loadingProgress = ''; // 加载进度提示
+	let showLoadMoreButton = false; // 是否显示加载更多按钮
 
 	const SUBMISSION_PAGE_SIZE = 20;
-	const INITIAL_LOAD_SIZE = 100;    // 初始加载100个视频
-	const LOAD_MORE_SIZE = 200;       // 每次加载更多200个视频
-	const PAGE_DELAY = 500;           // 页面间延迟500ms
+	const INITIAL_LOAD_SIZE = 100; // 初始加载100个视频
+	const LOAD_MORE_SIZE = 200; // 每次加载更多200个视频
+	const PAGE_DELAY = 500; // 页面间延迟500ms
 
 	// 滚动容器引用
 	let submissionScrollContainer: HTMLElement;
@@ -975,33 +978,36 @@
 	// 搜索相关状态
 	let searchTimeout: NodeJS.Timeout;
 	let isSearching = false;
-	
+
 	// 搜索过滤投稿 - 使用后端API搜索
+	// eslint-disable-next-line svelte/infinite-reactive-loop
 	$: {
 		if (submissionSearchQuery.trim()) {
 			// 清除之前的搜索定时器
 			if (searchTimeout) {
 				clearTimeout(searchTimeout);
 			}
-			
+
 			// 设置新的搜索定时器（防抖）
 			searchTimeout = setTimeout(() => {
+				// eslint-disable-next-line svelte/infinite-reactive-loop
 				performSearch();
 			}, 500); // 500ms防抖
 		} else {
 			filteredSubmissionVideos = submissionVideos;
 		}
 	}
-	
+
 	// 执行搜索
+	/* eslint-disable svelte/infinite-reactive-loop */
 	async function performSearch() {
 		if (!sourceId || !submissionSearchQuery.trim()) {
 			filteredSubmissionVideos = submissionVideos;
 			return;
 		}
-		
+
 		isSearching = true;
-		
+
 		try {
 			const response = await api.getSubmissionVideos({
 				up_id: sourceId,
@@ -1009,7 +1015,7 @@
 				page_size: 30, // 获取更多结果
 				keyword: submissionSearchQuery.trim()
 			});
-			
+
 			if (response.data && response.data.videos) {
 				filteredSubmissionVideos = response.data.videos;
 			} else {
@@ -1028,6 +1034,7 @@
 			isSearching = false;
 		}
 	}
+	/* eslint-enable svelte/infinite-reactive-loop */
 
 	// 加载UP主投稿列表（分页加载，初始100个）
 	async function loadSubmissionVideos() {
@@ -1052,16 +1059,19 @@
 	// 批量加载视频（串行请求，带延迟）
 	async function loadVideosInBatch(loadCount: number) {
 		const startPage = currentLoadedPage + 1;
-		const targetVideos = Math.min(submissionVideos.length + loadCount, submissionTotalCount || Infinity);
+		const targetVideos = Math.min(
+			submissionVideos.length + loadCount,
+			submissionTotalCount || Infinity
+		);
 		const neededPages = Math.ceil(targetVideos / SUBMISSION_PAGE_SIZE);
-		
+
 		for (let page = startPage; page <= neededPages; page++) {
 			// 更新进度
 			loadingProgress = `正在加载第 ${page} 页...`;
-			
+
 			// 延迟（除了第一页）
 			if (page > startPage) {
-				await new Promise(resolve => setTimeout(resolve, PAGE_DELAY));
+				await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY));
 			}
 
 			const response = await api.getSubmissionVideos({
@@ -1081,14 +1091,17 @@
 
 			// 添加新视频（去重）
 			const newVideos = response.data.videos || [];
-			const existingBvids = new Set(submissionVideos.map(v => v.bvid));
-			const uniqueNewVideos = newVideos.filter(video => !existingBvids.has(video.bvid));
-			
+			const existingBvids = new Set(submissionVideos.map((v) => v.bvid));
+			const uniqueNewVideos = newVideos.filter((video) => !existingBvids.has(video.bvid));
+
 			submissionVideos = [...submissionVideos, ...uniqueNewVideos];
 			currentLoadedPage = page;
 
 			// 检查是否达到目标数量或已加载全部
-			if (submissionVideos.length >= targetVideos || submissionVideos.length >= submissionTotalCount) {
+			if (
+				submissionVideos.length >= targetVideos ||
+				submissionVideos.length >= submissionTotalCount
+			) {
 				break;
 			}
 		}
@@ -1102,7 +1115,7 @@
 	// 加载更多投稿视频
 	async function loadMoreSubmissionVideos() {
 		if (!hasMoreVideos || isLoadingMore) return;
-		
+
 		isLoadingMore = true;
 		showLoadMoreButton = false; // 隐藏按钮
 		try {
@@ -1124,7 +1137,7 @@
 
 		const { scrollTop, scrollHeight, clientHeight } = container;
 		const threshold = 100; // 距离底部100px时显示按钮
-		
+
 		// 当滚动接近底部时显示加载更多按钮
 		if (scrollHeight - scrollTop - clientHeight < threshold) {
 			showLoadMoreButton = true;
@@ -2387,7 +2400,7 @@
 									<!-- 搜索和操作栏 -->
 									<div class="flex-shrink-0 space-y-3 p-3">
 										<div class="flex gap-2">
-											<div class="flex-1 relative">
+											<div class="relative flex-1">
 												<input
 													type="text"
 													bind:value={submissionSearchQuery}
@@ -2420,10 +2433,12 @@
 												{/if}
 											</div>
 										</div>
-										
+
 										{#if submissionSearchQuery.trim()}
-											<div class="text-xs text-blue-600 px-1">
-												{isSearching ? '搜索中...' : `搜索模式：在UP主所有视频中搜索 "${submissionSearchQuery}"`}
+											<div class="px-1 text-xs text-blue-600">
+												{isSearching
+													? '搜索中...'
+													: `搜索模式：在UP主所有视频中搜索 "${submissionSearchQuery}"`}
 											</div>
 										{/if}
 
@@ -2462,7 +2477,7 @@
 									</div>
 
 									<!-- 视频列表 -->
-									<div 
+									<div
 										class="min-h-0 flex-1 overflow-y-auto p-3 pt-0"
 										bind:this={submissionScrollContainer}
 										onscroll={handleSubmissionScroll}
@@ -2572,13 +2587,15 @@
 													<div class="py-4 text-center">
 														<button
 															type="button"
-															class="rounded-md border border-transparent bg-blue-600 px-6 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+															class="rounded-md border border-transparent bg-blue-600 px-6 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 															onclick={loadMoreSubmissionVideos}
 															disabled={isLoadingMore}
 														>
 															{#if isLoadingMore}
 																<div class="flex items-center gap-2">
-																	<div class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+																	<div
+																		class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+																	></div>
 																	<span>加载中...</span>
 																</div>
 															{:else}

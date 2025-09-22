@@ -490,12 +490,16 @@ pub async fn create_videos(
             model.auto_download = Set(true);
 
             // 检查是否是番剧类型（source_type = 1）且有 ep_id
-            let is_bangumi_with_ep_id = matches!(model.source_type, Set(Some(1))) && matches!(model.ep_id, Set(Some(_)));
+            let is_bangumi_with_ep_id =
+                matches!(model.source_type, Set(Some(1))) && matches!(model.ep_id, Set(Some(_)));
 
             // 对于番剧类型，先检查是否已存在相同 bvid + ep_id 的记录
             let existing_check = if is_bangumi_with_ep_id {
-                debug!("番剧视频插入检查: bvid={}, ep_id={:?}",
-                    model.bvid.as_ref(), model.ep_id.as_ref());
+                debug!(
+                    "番剧视频插入检查: bvid={}, ep_id={:?}",
+                    model.bvid.as_ref(),
+                    model.ep_id.as_ref()
+                );
 
                 let mut query = video::Entity::find()
                     .filter(video::Column::Bvid.eq(model.bvid.as_ref()))

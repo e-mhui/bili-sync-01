@@ -23,7 +23,13 @@
 <div class="flex w-full items-center space-x-2">
 	<div class="relative min-w-0 flex-1">
 		<SearchIcon class="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
-		<Input.Root type="text" {placeholder} bind:value onkeydown={handleKeydown} class="h-11 pl-10 text-foreground dark:text-foreground" />
+		<Input.Root
+			type="text"
+			{placeholder}
+			bind:value
+			onkeydown={handleKeydown}
+			class="text-foreground dark:text-foreground h-11 pl-10"
+		/>
 	</div>
 	<Button
 		onclick={handleSearch}

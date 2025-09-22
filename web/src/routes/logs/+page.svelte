@@ -347,7 +347,7 @@
 			isLoading = false;
 		}
 	}
-	
+
 	// 下载日志文件（从磁盘文件）
 	async function downloadLogFile() {
 		if (!isAuthenticated) return;
@@ -357,22 +357,22 @@
 			if (!token) {
 				throw new Error('未找到认证token');
 			}
-			
+
 			// 构建请求参数
 			const params = new URLSearchParams();
 			params.append('level', currentTab === 'all' ? 'all' : currentTab);
-			
+
 			// 直接下载文件
 			const response = await fetch(`/api/logs/download?${params.toString()}`, {
 				headers: {
 					Authorization: token
 				}
 			});
-			
+
 			if (!response.ok) {
 				throw new Error(`HTTP ${response.status}: 下载日志文件失败`);
 			}
-			
+
 			// 从响应头获取文件名
 			const contentDisposition = response.headers.get('content-disposition');
 			let fileName = `logs-${currentTab}-${new Date().toISOString().split('T')[0]}.csv`;
@@ -382,17 +382,17 @@
 					fileName = matches[1];
 				}
 			}
-			
+
 			// 下载文件
 			const blob = await response.blob();
 			const link = document.createElement('a');
 			link.href = URL.createObjectURL(blob);
 			link.download = fileName;
 			link.click();
-			
+
 			// 清理URL对象
 			URL.revokeObjectURL(link.href);
-			
+
 			toast.success(`成功下载完整日志文件`);
 		} catch (error: unknown) {
 			console.error('下载日志文件失败:', error);
@@ -495,7 +495,7 @@
 					<Download class="h-4 w-4" />
 					导出日志
 				</Button>
-				
+
 				<Button
 					variant="outline"
 					size="sm"

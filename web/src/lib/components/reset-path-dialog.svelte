@@ -90,7 +90,9 @@
 				重设视频源路径
 			</AlertDialog.Title>
 			<AlertDialog.Description class="space-y-4">
-				<div class="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950">
+				<div
+					class="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950"
+				>
 					<p class="text-sm font-medium text-blue-800 dark:text-blue-200">📁 路径重设说明</p>
 					<p class="mt-1 text-xs text-blue-700 dark:text-blue-300">
 						此操作将更改视频源的存储路径，并可选择移动现有文件到新位置。
@@ -100,7 +102,9 @@
 				<div class="space-y-2">
 					<div class="flex items-center gap-2 text-sm">
 						<span class="font-medium">类型：</span>
-						<span class="rounded bg-blue-100 px-2 py-1 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+						<span
+							class="rounded bg-blue-100 px-2 py-1 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+						>
 							{getSourceTypeLabel(sourceType)}
 						</span>
 					</div>
@@ -184,14 +188,18 @@
 										</svg>
 										清理空的原始文件夹
 									</label>
-									<p class="text-xs text-gray-600 dark:text-gray-400">移动文件后，删除原始路径中的空文件夹。</p>
+									<p class="text-xs text-gray-600 dark:text-gray-400">
+										移动文件后，删除原始路径中的空文件夹。
+									</p>
 								</div>
 							</div>
 						{/if}
 					</div>
 
 					{#if applyRenameRules}
-						<div class="rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-950">
+						<div
+							class="rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-950"
+						>
 							<div class="flex items-start gap-2">
 								<svg
 									class="mt-0.5 h-4 w-4 flex-shrink-0 text-green-600"
@@ -219,7 +227,9 @@
 							</div>
 						</div>
 					{:else}
-						<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-3 dark:border-yellow-800 dark:bg-yellow-950">
+						<div
+							class="rounded-lg border border-yellow-200 bg-yellow-50 p-3 dark:border-yellow-800 dark:bg-yellow-950"
+						>
 							<div class="flex items-start gap-2">
 								<svg
 									class="mt-0.5 h-4 w-4 flex-shrink-0 text-yellow-600"

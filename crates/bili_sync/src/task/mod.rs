@@ -988,7 +988,7 @@ impl AddTaskQueue {
                 download_all_seasons: task.download_all_seasons,
                 selected_seasons: task.selected_seasons.clone(),
                 selected_videos: None, // 任务队列中暂时不支持选择性视频
-                cover: None, // 任务队列中暂时不支持封面，等前端传递
+                cover: None,           // 任务队列中暂时不支持封面，等前端传递
             };
 
             match add_video_source_internal(db.clone(), request).await {

@@ -1,5 +1,13 @@
 <script lang="ts">
-	import { FileText, ListTodo, BarChart3, Video, Database, Settings, ScrollText } from '@lucide/svelte';
+	import {
+		FileText,
+		ListTodo,
+		BarChart3,
+		Video,
+		Database,
+		Settings,
+		ScrollText
+	} from '@lucide/svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 	import { clearAll } from '$lib/stores/filter';

@@ -309,10 +309,10 @@
 </svelte:head>
 
 {#if checkingSetup}
-	<div class="flex min-h-screen items-center justify-center bg-background">
+	<div class="bg-background flex min-h-screen items-center justify-center">
 		<div class="text-center">
-			<div class="mb-4 text-lg text-foreground">正在检查系统状态...</div>
-			<div class="text-sm text-muted-foreground">请稍候</div>
+			<div class="text-foreground mb-4 text-lg">正在检查系统状态...</div>
+			<div class="text-muted-foreground text-sm">请稍候</div>
 		</div>
 	</div>
 {:else if needsInitialSetup}
@@ -591,55 +591,55 @@
 						{#if memoryHistory.length > 0}
 							<div class="h-[150px] w-full overflow-hidden">
 								<Chart.Container config={memoryChartConfig} class="h-full w-full">
-								<AreaChart
-									data={memoryHistory}
-									x="time"
-									axis="x"
-									series={[
-										{
-											key: 'used',
-											label: memoryChartConfig.used.label,
-											color: memoryChartConfig.used.color
-										},
-										{
-											key: 'process',
-											label: memoryChartConfig.process.label,
-											color: memoryChartConfig.process.color
-										}
-									]}
-									props={{
-										area: {
-											curve: curveNatural,
-											line: { class: 'stroke-1' },
-											'fill-opacity': 0.4
-										},
-										xAxis: {
-											format: () => ''
-										},
-										yAxis: {
-											format: (v: number) => formatBytes(v)
-										}
-									}}
-								>
-									{#snippet tooltip()}
-										<MyChartTooltip
-											labelFormatter={(v: string | number) => {
-												const date = typeof v === 'string' ? new Date(v) : new Date(v);
-												return date.toLocaleString('en-US', {
-													hour: '2-digit',
-													minute: '2-digit',
-													second: '2-digit',
-													hour12: true
-												});
-											}}
-											valueFormatter={(v: string | number) => {
-												const num = typeof v === 'string' ? parseFloat(v) : v;
-												return formatBytes(num);
-											}}
-											indicator="line"
-										/>
-									{/snippet}
-								</AreaChart>
+									<AreaChart
+										data={memoryHistory}
+										x="time"
+										axis="x"
+										series={[
+											{
+												key: 'used',
+												label: memoryChartConfig.used.label,
+												color: memoryChartConfig.used.color
+											},
+											{
+												key: 'process',
+												label: memoryChartConfig.process.label,
+												color: memoryChartConfig.process.color
+											}
+										]}
+										props={{
+											area: {
+												curve: curveNatural,
+												line: { class: 'stroke-1' },
+												'fill-opacity': 0.4
+											},
+											xAxis: {
+												format: () => ''
+											},
+											yAxis: {
+												format: (v: number) => formatBytes(v)
+											}
+										}}
+									>
+										{#snippet tooltip()}
+											<MyChartTooltip
+												labelFormatter={(v: string | number) => {
+													const date = typeof v === 'string' ? new Date(v) : new Date(v);
+													return date.toLocaleString('en-US', {
+														hour: '2-digit',
+														minute: '2-digit',
+														second: '2-digit',
+														hour12: true
+													});
+												}}
+												valueFormatter={(v: string | number) => {
+													const num = typeof v === 'string' ? parseFloat(v) : v;
+													return formatBytes(num);
+												}}
+												indicator="line"
+											/>
+										{/snippet}
+									</AreaChart>
 								</Chart.Container>
 							</div>
 						{:else}
@@ -667,55 +667,55 @@
 						{#if cpuHistory.length > 0}
 							<div class="h-[150px] w-full overflow-hidden">
 								<Chart.Container config={cpuChartConfig} class="h-full w-full">
-								<AreaChart
-									data={cpuHistory}
-									x="time"
-									axis="x"
-									series={[
-										{
-											key: 'used',
-											label: cpuChartConfig.used.label,
-											color: cpuChartConfig.used.color
-										},
-										{
-											key: 'process',
-											label: cpuChartConfig.process.label,
-											color: cpuChartConfig.process.color
-										}
-									]}
-									props={{
-										area: {
-											curve: curveNatural,
-											line: { class: 'stroke-1' },
-											'fill-opacity': 0.4
-										},
-										xAxis: {
-											format: () => ''
-										},
-										yAxis: {
-											format: (v: number) => `${v}%`
-										}
-									}}
-								>
-									{#snippet tooltip()}
-										<MyChartTooltip
-											labelFormatter={(v: string | number) => {
-												const date = typeof v === 'string' ? new Date(v) : new Date(v);
-												return date.toLocaleString('en-US', {
-													hour: '2-digit',
-													minute: '2-digit',
-													second: '2-digit',
-													hour12: true
-												});
-											}}
-											valueFormatter={(v: string | number) => {
-												const num = typeof v === 'string' ? parseFloat(v) : v;
-												return formatCpu(num);
-											}}
-											indicator="line"
-										/>
-									{/snippet}
-								</AreaChart>
+									<AreaChart
+										data={cpuHistory}
+										x="time"
+										axis="x"
+										series={[
+											{
+												key: 'used',
+												label: cpuChartConfig.used.label,
+												color: cpuChartConfig.used.color
+											},
+											{
+												key: 'process',
+												label: cpuChartConfig.process.label,
+												color: cpuChartConfig.process.color
+											}
+										]}
+										props={{
+											area: {
+												curve: curveNatural,
+												line: { class: 'stroke-1' },
+												'fill-opacity': 0.4
+											},
+											xAxis: {
+												format: () => ''
+											},
+											yAxis: {
+												format: (v: number) => `${v}%`
+											}
+										}}
+									>
+										{#snippet tooltip()}
+											<MyChartTooltip
+												labelFormatter={(v: string | number) => {
+													const date = typeof v === 'string' ? new Date(v) : new Date(v);
+													return date.toLocaleString('en-US', {
+														hour: '2-digit',
+														minute: '2-digit',
+														second: '2-digit',
+														hour12: true
+													});
+												}}
+												valueFormatter={(v: string | number) => {
+													const num = typeof v === 'string' ? parseFloat(v) : v;
+													return formatCpu(num);
+												}}
+												indicator="line"
+											/>
+										{/snippet}
+									</AreaChart>
 								</Chart.Container>
 							</div>
 						{:else}

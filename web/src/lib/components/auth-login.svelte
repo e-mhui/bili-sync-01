@@ -55,16 +55,16 @@
 	}
 </script>
 
-<div class="flex min-h-screen items-center justify-center bg-background">
+<div class="bg-background flex min-h-screen items-center justify-center">
 	<div class="w-full max-w-md space-y-8">
 		<div class="text-center">
-			<h1 class="mb-2 text-3xl font-bold text-foreground">bili-sync 管理页</h1>
+			<h1 class="text-foreground mb-2 text-3xl font-bold">bili-sync 管理页</h1>
 			<p class="text-muted-foreground">请输入API Token以访问管理功能</p>
 		</div>
-		<div class="rounded-lg bg-card p-8 shadow-md">
+		<div class="bg-card rounded-lg p-8 shadow-md">
 			<div class="space-y-4">
 				<div>
-					<label for="token" class="mb-2 block text-sm font-medium text-foreground">
+					<label for="token" class="text-foreground mb-2 block text-sm font-medium">
 						API Token
 					</label>
 					<Input
@@ -77,14 +77,14 @@
 						disabled={isVerifying}
 					/>
 					{#if authError}
-						<p class="mt-2 text-sm text-destructive">{authError}</p>
+						<p class="text-destructive mt-2 text-sm">{authError}</p>
 					{/if}
 				</div>
 				<Button onclick={verifyToken} disabled={isVerifying || !authToken.trim()} class="w-full">
 					{isVerifying ? '验证中...' : '登录'}
 				</Button>
 			</div>
-			<div class="mt-6 text-sm text-muted-foreground">
+			<div class="text-muted-foreground mt-6 text-sm">
 				<p>提示：API Token 在配置文件的 auth_token 字段中设置</p>
 			</div>
 		</div>

@@ -211,13 +211,16 @@ class ApiClient {
 	 * @param params 可选的查询参数，用于筛选特定视频源的视频
 	 * @param force 是否强制重置（包括已完成的视频）
 	 */
-	async resetAllVideos(params?: {
-		collection?: number;
-		favorite?: number;
-		submission?: number;
-		bangumi?: number;
-		watch_later?: number;
-	}, force: boolean = false): Promise<ApiResponse<ResetAllVideosResponse>> {
+	async resetAllVideos(
+		params?: {
+			collection?: number;
+			favorite?: number;
+			submission?: number;
+			bangumi?: number;
+			watch_later?: number;
+		},
+		force: boolean = false
+	): Promise<ApiResponse<ResetAllVideosResponse>> {
 		const searchParams = new URLSearchParams();
 		if (params) {
 			Object.entries(params).forEach(([key, value]) => {
@@ -527,16 +530,19 @@ class ApiClient {
 	async getSubmissionVideos(
 		params: SubmissionVideosRequest
 	): Promise<ApiResponse<SubmissionVideosResponse>> {
-		const queryParams: Record<string, any> = {
-			page: params.page,
-			page_size: params.page_size
-		};
-		
+		const queryParams: Record<string, string | number> = {};
+		if (typeof params.page === 'number') {
+			queryParams.page = params.page;
+		}
+		if (typeof params.page_size === 'number') {
+			queryParams.page_size = params.page_size;
+		}
+
 		// 如果有关键词，添加到查询参数
 		if (params.keyword) {
 			queryParams.keyword = params.keyword;
 		}
-		
+
 		return this.get<SubmissionVideosResponse>(`/submission/${params.up_id}/videos`, queryParams);
 	}
 
@@ -652,13 +658,16 @@ export const api = {
 	/**
 	 * 批量重置所有视频下载状态
 	 */
-	resetAllVideos: (params?: {
-		collection?: number;
-		favorite?: number;
-		submission?: number;
-		bangumi?: number;
-		watch_later?: number;
-	}, force?: boolean) => apiClient.resetAllVideos(params, force),
+	resetAllVideos: (
+		params?: {
+			collection?: number;
+			favorite?: number;
+			submission?: number;
+			bangumi?: number;
+			watch_later?: number;
+		},
+		force?: boolean
+	) => apiClient.resetAllVideos(params, force),
 
 	/**
 	 * 删除视频（软删除）

@@ -127,7 +127,14 @@
 	}
 
 	async function handleSearchParamsChange(searchParams: URLSearchParams) {
-		const { query, videoSource, pageNum, showFailedOnly: showFailedOnlyParam, sortBy, sortOrder } = getApiParams(searchParams);
+		const {
+			query,
+			videoSource,
+			pageNum,
+			showFailedOnly: showFailedOnlyParam,
+			sortBy,
+			sortOrder
+		} = getApiParams(searchParams);
 		setAll(query, pageNum, videoSource, showFailedOnlyParam, sortBy, sortOrder);
 
 		// 同步筛选状态
@@ -153,7 +160,8 @@
 				toast.success('重置成功', {
 					description: `视频「${video.name}」已重置`
 				});
-				const { query, currentPage, videoSource, showFailedOnly, sortBy, sortOrder } = $appStateStore;
+				const { query, currentPage, videoSource, showFailedOnly, sortBy, sortOrder } =
+					$appStateStore;
 				await loadVideos(query, currentPage, videoSource, showFailedOnly, sortBy, sortOrder);
 			} else {
 				toast.info('重置无效', {
@@ -230,8 +238,22 @@
 				});
 				// 延迟重新加载视频列表，避免与toast提示冲突
 				setTimeout(async () => {
-					const { query, currentPage, videoSource: currentVideoSource, showFailedOnly, sortBy, sortOrder } = $appStateStore;
-					await loadVideos(query, currentPage, currentVideoSource, showFailedOnly, sortBy, sortOrder);
+					const {
+						query,
+						currentPage,
+						videoSource: currentVideoSource,
+						showFailedOnly,
+						sortBy,
+						sortOrder
+					} = $appStateStore;
+					await loadVideos(
+						query,
+						currentPage,
+						currentVideoSource,
+						showFailedOnly,
+						sortBy,
+						sortOrder
+					);
 				}, 100);
 			} else {
 				toast.info('没有需要重置的视频');
@@ -250,7 +272,14 @@
 	function handleSourceFilter(sourceType: string, sourceId: string) {
 		selectedSourceType = sourceType;
 		selectedSourceId = sourceId;
-		setAll('', 0, { type: sourceType, id: sourceId }, showFailedOnly, currentSortBy, currentSortOrder);
+		setAll(
+			'',
+			0,
+			{ type: sourceType, id: sourceId },
+			showFailedOnly,
+			currentSortBy,
+			currentSortOrder
+		);
 		goto(`/videos?${ToQuery($appStateStore)}`);
 	}
 
@@ -263,7 +292,7 @@
 		setAll('', 0, null, false, 'id', 'desc');
 		goto('/videos');
 	}
-	
+
 	function handleSortChange(sortBy: SortBy, sortOrder: SortOrder) {
 		currentSortBy = sortBy;
 		currentSortOrder = sortOrder;
@@ -331,8 +360,8 @@
 
 			<!-- 排序下拉框 - 在移动端占满宽度 -->
 			<div class="w-full sm:w-auto">
-				<select 
-					class="w-full sm:w-auto h-9 rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+				<select
+					class="border-input bg-background ring-offset-background focus:ring-ring h-9 w-full rounded-md border px-3 py-1 text-sm focus:ring-2 focus:ring-offset-2 focus:outline-none sm:w-auto"
 					value="{currentSortBy}_{currentSortOrder}"
 					onchange={(e) => {
 						const [sortBy, sortOrder] = e.currentTarget.value.split('_') as [SortBy, SortOrder];
@@ -352,7 +381,7 @@
 		</div>
 
 		<!-- 操作按钮栏 - 移动端使用网格布局 -->
-		<div class="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-2 sm:justify-end">
+		<div class="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-end sm:gap-2">
 			<!-- 筛选按钮 -->
 			<Button
 				variant={showFilters ? 'default' : 'outline'}
@@ -361,7 +390,7 @@
 				onclick={() => (showFilters = !showFilters)}
 			>
 				<FilterIcon class="mr-2 h-4 w-4" />
-				<span class="hidden xs:inline">筛选</span>
+				<span class="xs:inline hidden">筛选</span>
 				<span class="xs:hidden">筛选</span>
 			</Button>
 
@@ -385,12 +414,12 @@
 			<Button
 				variant="outline"
 				size="sm"
-				class="col-span-2 sm:col-span-1 w-full sm:w-auto"
+				class="col-span-2 w-full sm:col-span-1 sm:w-auto"
 				onclick={() => (resetAllDialogOpen = true)}
 				disabled={resettingAll || loading}
 			>
 				<RotateCcwIcon class="mr-2 h-4 w-4 {resettingAll ? 'animate-spin' : ''}" />
-				<span class="hidden xs:inline">批量重置</span>
+				<span class="xs:inline hidden">批量重置</span>
 				<span class="xs:hidden">重置</span>
 			</Button>
 		</div>
@@ -443,9 +472,9 @@
 
 	<!-- 当前筛选状态 -->
 	{#if (selectedSourceType && selectedSourceId && videoSources) || showFailedOnly}
-		<div class="flex items-center gap-2 flex-wrap">
+		<div class="flex flex-wrap items-center gap-2">
 			<span class="text-muted-foreground text-sm">当前筛选:</span>
-			
+
 			{#if selectedSourceType && selectedSourceId && videoSources}
 				{@const sourceConfig = Object.values(VIDEO_SOURCES).find(
 					(config) => config.type === selectedSourceType
@@ -463,17 +492,17 @@
 					</Badge>
 				{/if}
 			{/if}
-			
+
 			{#if showFailedOnly}
 				<Badge variant="destructive" class="flex items-center gap-1">
 					只显示错误视频
-					<button 
+					<button
 						onclick={() => {
 							showFailedOnly = false;
 							setShowFailedOnly(false);
 							resetCurrentPage();
 							goto(`/videos?${ToQuery($appStateStore)}`);
-						}} 
+						}}
 						class="hover:bg-muted-foreground/20 ml-1 rounded"
 					>
 						<span class="sr-only">清除错误视频筛选</span>
@@ -481,7 +510,7 @@
 					</button>
 				</Badge>
 			{/if}
-			
+
 			{#if (selectedSourceType && selectedSourceId) || showFailedOnly}
 				<Button variant="ghost" size="sm" onclick={clearFilters}>清除所有筛选</Button>
 			{/if}
@@ -649,7 +678,7 @@
 				<div class="mt-4 rounded-lg border border-yellow-200 bg-yellow-50 p-3">
 					<div class="text-sm text-yellow-800">
 						<strong>说明：</strong>
-						<ul class="list-disc list-inside mt-1">
+						<ul class="mt-1 list-inside list-disc">
 							<li>"只重置失败的任务"模式只会重置状态为失败的任务</li>
 							<li>"强制重置"模式会将所有选中的任务重置为"未开始"状态</li>
 							<li>选择特定任务类型时，会同时重置对应的分P下载状态</li>

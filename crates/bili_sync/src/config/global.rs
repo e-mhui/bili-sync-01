@@ -358,7 +358,7 @@ fn load_config_test() -> Config {
                 buvid3: buvid3.clone(),
                 dedeuserid,
                 ac_time_value,
-                buvid4: buvid3,
+                buvid4: Some(buvid3),
                 dedeuserid_ckmd5: None,
             }))
         }
