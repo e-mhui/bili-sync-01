@@ -166,8 +166,15 @@ pub async fn process_video_source(
         return Ok((new_video_count, new_videos));
     }
     if new_video_count == 0 {
-        info!("本轮未发现新视频，跳过详情与下载阶段");
-        return Ok((new_video_count, new_videos));
+        let has_unfilled = !filter_unfilled_videos(video_source.filter_expr(), connection).await?.is_empty();
+        let has_unhandled = !filter_unhandled_video_pages(video_source.filter_expr(), connection).await?.is_empty();
+        let has_failed = !get_failed_videos_in_current_cycle(video_source.filter_expr(), connection).await?.is_empty();
+        if !(has_unfilled || has_unhandled || has_failed) {
+            info!("本轮未发现新视频，且无待处理任务，跳过详情与下载阶段");
+            return Ok((new_video_count, new_videos));
+        } else {
+            info!("本轮未发现新视频，但存在待处理任务（重置/未完成/可重试），继续执行下载阶段");
+        }
     }
 
     // 单独请求视频详情接口，获取视频的详情信息与所有的分页，写入数据库

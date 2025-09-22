@@ -998,12 +998,13 @@ pub async fn reset_all_videos(
     if resetted {
         let txn = db.begin().await?;
 
-        // 批量更新视频状态
+        // 批量更新视频状态 + 开启自动下载
         if !resetted_videos_info.is_empty() {
             for video in &resetted_videos_info {
                 video::Entity::update(video::ActiveModel {
                     id: sea_orm::ActiveValue::Unchanged(video.id),
                     download_status: sea_orm::Set(VideoStatus::from(video.download_status).into()),
+                    auto_download: sea_orm::Set(true),
                     ..Default::default()
                 })
                 .exec(&txn)
@@ -1025,8 +1026,25 @@ pub async fn reset_all_videos(
         }
 
         txn.commit().await?;
+
+        // 开启这些视频的自动下载，避免被过滤（与 scan 流程对齐）
+        if !resetted_videos_info.is_empty() {
+            for video in &resetted_videos_info {
+                video::Entity::update(video::ActiveModel {
+                    id: sea_orm::ActiveValue::Unchanged(video.id),
+                    auto_download: sea_orm::Set(true),
+                    ..Default::default()
+                })
+                .exec(db.as_ref())
+                .await?;
+            }
+        }
     }
 
+    // 触发立即扫描（缩短等待）
+    crate::task::resume_scanning();
+    // 触发立即扫描（缩短等待）
+    if resetted { crate::task::resume_scanning(); }
     Ok(ApiResponse::ok(ResetAllVideosResponse {
         resetted,
         resetted_videos_count: resetted_videos_info.len(),
@@ -1442,6 +1460,7 @@ pub async fn update_video_status(
             video::Entity::update(video::ActiveModel {
                 id: sea_orm::ActiveValue::Unchanged(video_info.id),
                 download_status: sea_orm::Set(VideoStatus::from(video_info.download_status).into()),
+                auto_download: sea_orm::Set(true),
                 ..Default::default()
             })
             .exec(&txn)
@@ -1463,6 +1482,8 @@ pub async fn update_video_status(
         txn.commit().await?;
     }
 
+    // 触发立即扫描（缩短等待）
+    if has_video_updates || has_page_updates { crate::task::resume_scanning(); }
     Ok(ApiResponse::ok(UpdateVideoStatusResponse {
         success: has_video_updates || has_page_updates,
         video: video_info,

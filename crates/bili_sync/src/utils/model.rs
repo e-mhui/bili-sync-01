@@ -285,6 +285,14 @@ pub async fn create_videos(
                         ..Default::default()
                     };
                     update_model.save(connection).await?;
+                    // 恢复后确保参与自动下载流程
+                    video::Entity::update(video::ActiveModel {
+                        id: Unchanged(existing.id),
+                        auto_download: Set(true),
+                        ..Default::default()
+                    })
+                    .exec(connection)
+                    .await?;
 
                     // 删除该视频的所有旧page记录（如果存在的话）
                     // 因为视频信息可能已经变化，旧的page记录可能不准确
