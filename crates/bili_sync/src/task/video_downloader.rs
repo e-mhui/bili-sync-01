@@ -319,12 +319,15 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                 }
             }
 
-            // 创建共享的下载器实例，供所有视频源使用
-            let downloader = UnifiedDownloader::new_smart(bili_client.client.clone()).await;
-
-            // 设置下载器引用到TaskController中，以便暂停时能停止下载
-            let downloader_arc = std::sync::Arc::new(downloader);
-            TASK_CONTROLLER.set_downloader(Some(downloader_arc.clone())).await;
+            // 获取/创建共享的下载器实例，避免每轮扫描重复启动 aria2
+            let downloader_arc = if let Some(existing) = TASK_CONTROLLER.get_downloader().await {
+                existing
+            } else {
+                let downloader = UnifiedDownloader::new_smart(bili_client.client.clone()).await;
+                let arc = std::sync::Arc::new(downloader);
+                TASK_CONTROLLER.set_downloader(Some(arc.clone())).await;
+                arc
+            };
 
             // 获取最后扫描的ID记录
             let mut last_scanned_ids = match get_last_scanned_ids(&optimized_connection).await {

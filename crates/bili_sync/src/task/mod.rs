@@ -1570,6 +1570,12 @@ impl TaskController {
         *guard = downloader;
     }
 
+    /// 获取当前下载器的共享引用（如存在）
+    pub async fn get_downloader(&self) -> Option<Arc<crate::unified_downloader::UnifiedDownloader>> {
+        let guard = self.downloader.lock().await;
+        guard.clone()
+    }
+
     /// 暂停定时扫描任务
     pub async fn pause(&self) {
         self.is_paused.store(true, Ordering::SeqCst);
