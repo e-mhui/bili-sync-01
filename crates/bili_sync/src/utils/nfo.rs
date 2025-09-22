@@ -45,6 +45,7 @@ pub struct Movie<'a> {
     pub actors_info: Option<String>, // 演员信息字符串（从API获取）
     pub cover_url: &'a str,          // 封面图片URL
     pub fanart_url: Option<&'a str>, // 背景图片URL
+    pub upper_face_url: Option<&'a str>, // UP主头像URL（用于演员thumb）
 }
 
 pub struct TVShow<'a> {
@@ -75,12 +76,14 @@ pub struct TVShow<'a> {
     pub actors_info: Option<String>, // 演员信息字符串（从API获取）
     pub cover_url: &'a str,          // 封面图片URL
     pub fanart_url: Option<&'a str>, // 背景图片URL
+    pub upper_face_url: Option<&'a str>, // UP主头像URL（用于演员thumb）
     pub season_id: Option<String>,   // 番剧季度ID（从API获取）
     pub media_id: Option<i64>,       // 媒体ID（从API获取）
 }
 
 pub struct Upper {
     pub upper_id: String,
+    pub upper_name: String,
     pub pubtime: NaiveDateTime,
 }
 
@@ -135,6 +138,7 @@ pub struct Season<'a> {
     pub actors_info: Option<String>, // 演员信息字符串
     pub cover_url: &'a str,          // 封面图片URL
     pub fanart_url: Option<&'a str>, // 背景图片URL
+    pub upper_face_url: Option<&'a str>, // UP主头像URL（用于演员thumb）
     pub season_id: Option<String>,   // 番剧季度ID
     pub media_id: Option<i64>,       // 媒体ID
 }
@@ -392,6 +396,15 @@ impl NFO<'_> {
                                         .create_element("role")
                                         .write_text_content_async(BytesText::new(&role_name))
                                         .await?;
+                                    // 头像（如果有）
+                                    if let Some(thumb) = movie.upper_face_url {
+                                        if !thumb.is_empty() {
+                                            writer
+                                                .create_element("thumb")
+                                                .write_text_content_async(BytesText::new(thumb))
+                                                .await?;
+                                        }
+                                    }
                                     writer
                                         .create_element("order")
                                         .write_text_content_async(BytesText::new("1"))
@@ -693,6 +706,15 @@ impl NFO<'_> {
                                         .create_element("role")
                                         .write_text_content_async(BytesText::new(&role_name))
                                         .await?;
+                                    // 头像（如果有）
+                                    if let Some(thumb) = tvshow.upper_face_url {
+                                        if !thumb.is_empty() {
+                                            writer
+                                                .create_element("thumb")
+                                                .write_text_content_async(BytesText::new(thumb))
+                                                .await?;
+                                        }
+                                    }
                                     writer
                                         .create_element("order")
                                         .write_text_content_async(BytesText::new("1"))
@@ -752,7 +774,7 @@ impl NFO<'_> {
         Ok(())
     }
 
-    async fn write_upper_nfo(mut writer: Writer<&mut BufWriter<&mut Vec<u8>>>, upper: Upper) -> Result<()> {
+async fn write_upper_nfo(mut writer: Writer<&mut BufWriter<&mut Vec<u8>>>, upper: Upper) -> Result<()> {
         writer
             .create_element("person")
             .write_inner_content_async::<_, _, Error>(|writer| async move {
@@ -768,10 +790,17 @@ impl NFO<'_> {
                     .await?;
                 writer
                     .create_element("title")
-                    .write_text_content_async(BytesText::new(&upper.upper_id))
+                    .write_text_content_async(BytesText::new(&upper.upper_name))
                     .await?;
                 writer
                     .create_element("sorttitle")
+                    .write_text_content_async(BytesText::new(&upper.upper_name))
+                    .await?;
+                // 记录UP主的UID作为唯一标识
+                writer
+                    .create_element("uniqueid")
+                    .with_attribute(("type", "bilibili_uid"))
+                    .with_attribute(("default", "true"))
                     .write_text_content_async(BytesText::new(&upper.upper_id))
                     .await?;
                 Ok(writer)
@@ -1214,6 +1243,15 @@ impl NFO<'_> {
                                         .create_element("role")
                                         .write_text_content_async(BytesText::new(&role_name))
                                         .await?;
+                                    // 头像（如果有）
+                                    if let Some(thumb) = season.upper_face_url {
+                                        if !thumb.is_empty() {
+                                            writer
+                                                .create_element("thumb")
+                                                .write_text_content_async(BytesText::new(thumb))
+                                                .await?;
+                                        }
+                                    }
                                     writer
                                         .create_element("order")
                                         .write_text_content_async(BytesText::new("1"))
@@ -1415,36 +1453,40 @@ impl NFO<'_> {
     fn get_actor_info(upper_id: i64, upper_name: &str, config: &NFOConfig) -> Option<(String, String)> {
         let trimmed_name = upper_name.trim();
 
-        // 如果upper_id有效（大于0），使用UID作为演员名称，UP主名称作为角色
+        // 期望表现：
+        // - 演员 name 使用 UP 主昵称；
+        // - 角色 role 固定为 "UP主"；
+        // - 当昵称为空时按策略处理（占位/默认/跳过）。
+
         if upper_id > 0 {
-            let role_name = if !trimmed_name.is_empty() {
+            // 有效 UID 情况：优先使用昵称，缺省按策略补齐
+            let actor_name = if !trimmed_name.is_empty() {
                 trimmed_name.to_string()
             } else {
-                // UP主名称为空时，根据策略处理角色名称
                 match config.empty_upper_strategy {
                     EmptyUpperStrategy::Skip => return None,
                     EmptyUpperStrategy::Placeholder => config.empty_upper_placeholder.clone(),
                     EmptyUpperStrategy::Default => config.empty_upper_default_name.clone(),
                 }
             };
-            return Some((upper_id.to_string(), role_name));
+            return Some((actor_name, "UP主".to_string()));
         }
 
-        // UID无效时，使用UP主名称作为演员名称和角色名称
+        // 无效 UID 情况：同样使用昵称作为演员名，角色固定为 "UP主"
         if !trimmed_name.is_empty() {
-            return Some((trimmed_name.to_string(), trimmed_name.to_string()));
+            return Some((trimmed_name.to_string(), "UP主".to_string()));
         }
 
-        // UP主名称为空，根据策略处理
+        // 名称也为空，按策略处理
         match config.empty_upper_strategy {
             EmptyUpperStrategy::Skip => None,
             EmptyUpperStrategy::Placeholder => {
                 let name = config.empty_upper_placeholder.clone();
-                Some((name.clone(), name))
+                Some((name.clone(), "UP主".to_string()))
             }
             EmptyUpperStrategy::Default => {
                 let name = config.empty_upper_default_name.clone();
-                Some((name.clone(), name))
+                Some((name.clone(), "UP主".to_string()))
             }
         }
     }
@@ -1570,6 +1612,7 @@ impl<'a> From<&'a video::Model> for Movie<'a> {
             actors_info: video.actors.clone(),
             cover_url: &video.cover,
             fanart_url: None, // Movie暂不单独设置fanart URL
+            upper_face_url: if !video.upper_face.is_empty() { Some(&video.upper_face) } else { None },
         }
     }
 }
@@ -1660,6 +1703,7 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
             actors_info: video.actors.clone(),
             cover_url: &video.cover,
             fanart_url: None, // 普通视频没有单独的fanart URL
+            upper_face_url: if !video.upper_face.is_empty() { Some(&video.upper_face) } else { None },
             season_id: None,  // 普通视频没有season_id
             media_id: None,   // 普通视频没有media_id
         }
@@ -1823,6 +1867,7 @@ impl<'a> TVShow<'a> {
                 .or(season_info.horizontal_cover_169.as_deref())
                 .or(season_info.horizontal_cover_1610.as_deref())
                 .or(season_info.bkg_cover.as_deref()),
+            upper_face_url: if !video.upper_face.is_empty() { Some(&video.upper_face) } else { None },
             // 使用season_id和media_id作为额外的uniqueid（通过扩展字段传递）
             season_id: Some(season_info.season_id.clone()),
             media_id: season_info.media_id,
@@ -1834,6 +1879,7 @@ impl<'a> From<&'a video::Model> for Upper {
     fn from(video: &'a video::Model) -> Self {
         Self {
             upper_id: video.upper_id.to_string(),
+            upper_name: video.upper_name.clone(),
             pubtime: video.pubtime,
         }
     }
@@ -1981,6 +2027,7 @@ impl<'a> From<&'a video::Model> for Season<'a> {
             actors_info: video.actors.clone(),
             cover_url: &video.cover,
             fanart_url: None, // 普通视频没有单独的fanart URL
+            upper_face_url: if !video.upper_face.is_empty() { Some(&video.upper_face) } else { None },
             season_id: None,  // 普通视频没有season_id
             media_id: None,   // 普通视频没有media_id
         }
@@ -2073,6 +2120,7 @@ impl<'a> Season<'a> {
                 .or(season_info.horizontal_cover_169.as_deref())
                 .or(season_info.horizontal_cover_1610.as_deref())
                 .or(season_info.bkg_cover.as_deref()),
+            upper_face_url: if !video.upper_face.is_empty() { Some(&video.upper_face) } else { None },
             // 使用season_id和media_id作为额外的uniqueid
             season_id: Some(season_info.season_id.clone()),
             media_id: season_info.media_id,
@@ -2325,7 +2373,7 @@ mod tests {
         };
 
         let actor_info = NFO::get_actor_info(movie.upper_id, movie.upper_name, &config);
-        assert_eq!(actor_info, Some(("官方内容".to_string(), "官方内容".to_string())));
+        assert_eq!(actor_info, Some(("官方内容".to_string(), "UP主".to_string())));
 
         // 测试Default策略
         let config = NFOConfig {
@@ -2335,15 +2383,15 @@ mod tests {
         };
 
         let actor_info = NFO::get_actor_info(movie.upper_id, movie.upper_name, &config);
-        assert_eq!(actor_info, Some(("哔哩哔哩".to_string(), "哔哩哔哩".to_string())));
+        assert_eq!(actor_info, Some(("哔哩哔哩".to_string(), "UP主".to_string())));
 
         // 测试非空UP主名称（应该优先使用UID作为name，UP主名称作为role）
         let actor_info = NFO::get_actor_info(123456, "测试UP主", &config);
-        assert_eq!(actor_info, Some(("123456".to_string(), "测试UP主".to_string()))); // UID作为name，UP主名称作为role
+        assert_eq!(actor_info, Some(("测试UP主".to_string(), "UP主".to_string())));
 
         // 测试无效UID（0或负数）时使用昵称
         let actor_info = NFO::get_actor_info(0, "测试UP主", &config);
-        assert_eq!(actor_info, Some(("测试UP主".to_string(), "测试UP主".to_string()))); // UID无效，昵称同时作为name和role
+        assert_eq!(actor_info, Some(("测试UP主".to_string(), "UP主".to_string())));
 
         println!("空UP主处理策略测试通过");
     }
