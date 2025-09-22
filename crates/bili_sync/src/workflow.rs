@@ -1689,10 +1689,12 @@ pub async fn download_video_pages(
         let fanart_path = bangumi_path.join(format!("{}-fanart.jpg", bangumi_base_name));
         let nfo_path = bangumi_path.join("tvshow.nfo");
 
-        let poster_exists = poster_path.exists() && fanart_path.exists();
+        // 分别检查poster和fanart的存在性
+        // 只有当两个文件都存在时，才不需要下载
+        let both_images_exist = poster_path.exists() && fanart_path.exists();
         let nfo_exists = nfo_path.exists();
 
-        (!poster_exists, !nfo_exists)
+        (!both_images_exist, !nfo_exists)
     } else {
         (false, false)
     };
@@ -3300,41 +3302,81 @@ pub async fn fetch_video_poster(
     info!("  custom_cover_url: {:?}", custom_cover_url);
     info!("  custom_fanart_url: {:?}", custom_fanart_url);
 
-    // 下载poster封面
-    let cover_url = custom_cover_url.unwrap_or(video_model.cover.as_str());
-    let urls = vec![cover_url];
-    tokio::select! {
-        biased;
-        _ = token.cancelled() => return Ok(ExecutionStatus::Skipped),
-        res = downloader.fetch_with_fallback(&urls, &poster_path) => res,
-    }?;
+    // 检查文件是否已存在，避免重复下载
+    // 为了处理并发场景，在下载过程中再次检查
+    let poster_exists = poster_path.exists();
+    let fanart_exists = fanart_path.exists();
 
-    // 下载fanart背景图（可能使用不同的URL）
-    ensure_parent_dir_for_file(&fanart_path).await?;
-    if let Some(fanart_url) = custom_fanart_url {
-        // 如果有专门的fanart URL，独立下载
-        let fanart_urls = vec![fanart_url];
-        tokio::select! {
-            biased;
-            _ = token.cancelled() => return Ok(ExecutionStatus::Skipped),
-            res = downloader.fetch_with_fallback(&fanart_urls, &fanart_path) => {
-                match res {
-                    Ok(_) => {
-                        info!("✓ 成功下载fanart背景图: {}", fanart_url);
-                        return Ok(ExecutionStatus::Succeeded);
-                    },
-                    Err(e) => {
-                        warn!("✗ fanart背景图下载失败，URL: {}, 错误: {:#}", fanart_url, e);
-                        warn!("回退策略：复制poster作为fanart");
-                        // fanart下载失败，回退到复制poster
-                        fs::copy(&poster_path, &fanart_path).await?;
-                    }
-                }
-            },
+    if poster_exists && fanart_exists {
+        info!("  ✓ 封面和背景图文件已存在，跳过下载");
+        return Ok(ExecutionStatus::Skipped);
+    }
+
+    if poster_exists {
+        info!("  ✓ 封面文件已存在，跳过封面下载");
+    }
+
+    if fanart_exists {
+        info!("  ✓ 背景图文件已存在，跳过背景图下载");
+    }
+
+    // 下载poster封面（仅在文件不存在时）
+    if !poster_exists {
+        // 在并发环境下，下载前再次检查文件是否已被其他任务创建
+        if poster_path.exists() {
+            info!("  ✓ 封面文件在下载前检查时已存在，跳过下载");
+        } else {
+            let cover_url = custom_cover_url.unwrap_or(video_model.cover.as_str());
+            let urls = vec![cover_url];
+            tokio::select! {
+                biased;
+                _ = token.cancelled() => return Ok(ExecutionStatus::Skipped),
+                res = downloader.fetch_with_fallback(&urls, &poster_path) => res,
+            }?;
         }
-    } else {
-        // 没有专门的fanart URL，直接复制poster
-        fs::copy(&poster_path, &fanart_path).await?;
+    }
+
+    // 下载fanart背景图（仅在文件不存在时）
+    if !fanart_exists {
+        // 在并发环境下，下载前再次检查文件是否已被其他任务创建
+        if fanart_path.exists() {
+            info!("  ✓ 背景图文件在下载前检查时已存在，跳过下载");
+        } else {
+            ensure_parent_dir_for_file(&fanart_path).await?;
+            if let Some(fanart_url) = custom_fanart_url {
+                // 如果有专门的fanart URL，独立下载
+                let fanart_urls = vec![fanart_url];
+                tokio::select! {
+                    biased;
+                    _ = token.cancelled() => return Ok(ExecutionStatus::Skipped),
+                    res = downloader.fetch_with_fallback(&fanart_urls, &fanart_path) => {
+                        match res {
+                            Ok(_) => {
+                                info!("✓ 成功下载fanart背景图: {}", fanart_url);
+                                return Ok(ExecutionStatus::Succeeded);
+                            },
+                            Err(e) => {
+                                warn!("✗ fanart背景图下载失败，URL: {}, 错误: {:#}", fanart_url, e);
+                                warn!("回退策略：复制poster作为fanart");
+                                // fanart下载失败，回退到复制poster
+                                if poster_path.exists() {
+                                    fs::copy(&poster_path, &fanart_path).await?;
+                                } else {
+                                    warn!("poster文件不存在，无法复制作为fanart");
+                                }
+                            }
+                        }
+                    },
+                }
+            } else {
+                // 没有专门的fanart URL，直接复制poster
+                if poster_path.exists() {
+                    fs::copy(&poster_path, &fanart_path).await?;
+                } else {
+                    warn!("poster文件不存在，无法复制作为fanart");
+                }
+            }
+        }
     }
 
     Ok(ExecutionStatus::Succeeded)
