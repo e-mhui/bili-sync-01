@@ -1612,6 +1612,12 @@ impl TaskController {
         if let Ok(mut token) = self.cancellation_token.try_lock() {
             *token = CancellationToken::new();
         }
+
+        // 清理旧的downloader实例，强制下次扫描时创建新的
+        if let Ok(mut downloader_guard) = self.downloader.try_lock() {
+            *downloader_guard = None;
+        }
+
         info!("定时扫描任务已恢复，将立即开始新一轮扫描");
     }
 

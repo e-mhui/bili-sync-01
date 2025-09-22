@@ -1861,9 +1861,7 @@ impl Aria2Downloader {
 
 impl Drop for Aria2Downloader {
     fn drop(&mut self) {
-        // 在析构时尝试清理临时文件
-        if self.aria2_binary_path.exists() {
-            let _ = std::fs::remove_file(&self.aria2_binary_path);
-        }
+        // 保留aria2二进制文件，避免在暂停/重启扫描时被删除
+        // 如果后续需要清理，可在显式卸载/清理路径中处理，而不是在Drop中
     }
 }
