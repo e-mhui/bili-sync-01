@@ -234,7 +234,7 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
         // 验证码相关API
         .route("/captcha", get(serve_captcha_page))
         .route("/api/captcha/info", get(get_captcha_info))
-        .route("/api/captcha/submit", get(submit_captcha_result))
+        .route("/api/captcha/submit", post(submit_captcha_result))
         // 先应用认证中间件
         .layer(Extension(optimized_connection.clone()))
         .layer(middleware::from_fn(auth::auth))

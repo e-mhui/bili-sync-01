@@ -1,5 +1,4 @@
 use axum::{
-    extract::Query,
     response::{Html, IntoResponse},
     Json,
 };
@@ -56,7 +55,7 @@ pub async fn get_captcha_info() -> impl IntoResponse {
 }
 
 /// 提交验证结果API
-pub async fn submit_captcha_result(Query(params): Query<SubmitCaptchaParams>) -> impl IntoResponse {
+pub async fn submit_captcha_result(Json(params): Json<SubmitCaptchaParams>) -> impl IntoResponse {
     tracing::info!("收到验证码结果提交");
 
     // 获取验证码信息以构造完整的结果

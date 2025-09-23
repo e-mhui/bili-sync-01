@@ -299,11 +299,103 @@ impl CaptchaSolver {
     }
 
     /// 使用云码服务
-    async fn solve_with_yunma(&self, _geetest_info: &GeetestInfo, _captcha_token: &str, _page_url: &str) -> Result<CaptchaResult> {
+    async fn solve_with_yunma(&self, geetest_info: &GeetestInfo, captcha_token: &str, page_url: &str) -> Result<CaptchaResult> {
         tracing::info!("使用云码服务解决GeeTest验证码");
 
-        // 云码API实现，这里暂时返回错误
-        anyhow::bail!("云码服务暂未实现");
+        // 1. 提交验证码任务
+        let submit_data = json!({
+            "token": self.config.api_key,
+            "type": "10110",
+            "gt": geetest_info.gt,
+            "challenge": geetest_info.challenge,
+            "referer": page_url
+        });
+
+        let submit_response: serde_json::Value = self
+            .client
+            .post("http://api.jfbym.com/api/YmServer/customApi")
+            .json(&submit_data)
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        tracing::debug!("云码提交响应: {}", submit_response);
+
+        // 检查提交结果
+        let msg = submit_response["msg"].as_str().unwrap_or("未知状态");
+        if msg != "ok" {
+            anyhow::bail!("云码提交失败: {}", msg);
+        }
+
+        let task_id = submit_response["data"]["data"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("无法获取任务ID"))?;
+
+        tracing::info!("验证码任务已提交，ID: {}", task_id);
+
+        // 2. 等待并获取结果
+        let start_time = std::time::Instant::now();
+        let timeout = Duration::from_secs(self.config.solve_timeout);
+
+        loop {
+            if start_time.elapsed() > timeout {
+                anyhow::bail!("验证码识别超时");
+            }
+
+            tokio::time::sleep(Duration::from_secs(3)).await;
+
+            let query_data = json!({
+                "token": self.config.api_key,
+                "query": task_id
+            });
+
+            let result_response: serde_json::Value = self
+                .client
+                .post("http://api.jfbym.com/api/YmServer/customApi")
+                .json(&query_data)
+                .send()
+                .await?
+                .json()
+                .await?;
+
+            tracing::debug!("云码获取结果响应: {}", result_response);
+
+            let msg = result_response["msg"].as_str().unwrap_or("未知状态");
+
+            if msg == "ok" {
+                let result_data = result_response["data"]["data"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("无法获取验证结果"))?;
+
+                tracing::info!("云码返回结果: {}", result_data);
+
+                // 解析验证结果，云码返回格式通常为 "challenge,validate,seccode"
+                let parts: Vec<&str> = result_data.split(',').collect();
+                if parts.len() != 3 {
+                    anyhow::bail!("验证结果格式错误，期望 challenge,validate,seccode，实际: {}", result_data);
+                }
+
+                let result = CaptchaResult {
+                    challenge: parts[0].to_string(),
+                    validate: parts[1].to_string(),
+                    seccode: parts[2].to_string(),
+                    token: captcha_token.to_string(),
+                };
+
+                tracing::info!("构造CaptchaResult: challenge={}, validate={}, seccode={}, token={}",
+                    result.challenge, result.validate, result.seccode, result.token);
+
+                return Ok(result);
+            } else if msg == "202" {
+                // 任务还在处理中，继续等待
+                continue;
+            } else {
+                // 真正的错误
+                let error_detail = result_response["data"].as_str().unwrap_or("未知错误");
+                anyhow::bail!("云码识别失败: {} - {}", msg, error_detail);
+            }
+        }
     }
 }
 
