@@ -209,7 +209,7 @@
             }
 
             async fetchCaptchaInfo() {
-                const response = await fetch('/api/captcha-info');
+                const response = await fetch('/api/captcha/info');
                 if (!response.ok) {
                     throw new Error('获取验证码信息失败');
                 }
@@ -274,7 +274,7 @@
                     console.log('验证结果:', result);
                     
                     // v3版本的结果格式: {geetest_challenge, geetest_validate, geetest_seccode}
-                    const submitUrl = `/api/submit-result?geetest_challenge=${encodeURIComponent(result.geetest_challenge)}&geetest_validate=${encodeURIComponent(result.geetest_validate)}&geetest_seccode=${encodeURIComponent(result.geetest_seccode)}`;
+                    const submitUrl = `/api/captcha/submit?geetest_challenge=${encodeURIComponent(result.geetest_challenge)}&geetest_validate=${encodeURIComponent(result.geetest_validate)}&geetest_seccode=${encodeURIComponent(result.geetest_seccode)}`;
                     
                     const response = await fetch(submitUrl, { method: 'POST' });
                     const submitResult = await response.json();

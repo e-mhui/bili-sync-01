@@ -44,7 +44,7 @@ impl CaptchaSolver {
     }
 
     /// 解决极验验证码
-    pub async fn solve_geetest(&self, geetest_info: &GeetestInfo, page_url: &str) -> Result<CaptchaResult> {
+    pub async fn solve_geetest(&self, geetest_info: &GeetestInfo, captcha_token: &str, page_url: &str) -> Result<CaptchaResult> {
         let service = CaptchaService::from(self.config.service.as_str());
 
         let mut last_error = None;
@@ -53,10 +53,10 @@ impl CaptchaSolver {
             tracing::info!("验证码识别尝试 {}/{}", attempt, self.config.max_retries);
 
             let result = match service {
-                CaptchaService::TwoCaptcha => self.solve_with_2captcha(geetest_info, page_url).await,
-                CaptchaService::AntiCaptcha => self.solve_with_anticaptcha(geetest_info, page_url).await,
-                CaptchaService::CapSolver => self.solve_with_capsolver(geetest_info, page_url).await,
-                CaptchaService::YunMa => self.solve_with_yunma(geetest_info, page_url).await,
+                CaptchaService::TwoCaptcha => self.solve_with_2captcha(geetest_info, captcha_token, page_url).await,
+                CaptchaService::AntiCaptcha => self.solve_with_anticaptcha(geetest_info, captcha_token, page_url).await,
+                CaptchaService::CapSolver => self.solve_with_capsolver(geetest_info, captcha_token, page_url).await,
+                CaptchaService::YunMa => self.solve_with_yunma(geetest_info, captcha_token, page_url).await,
             };
 
             match result {
@@ -83,7 +83,7 @@ impl CaptchaSolver {
     }
 
     /// 使用2Captcha服务
-    async fn solve_with_2captcha(&self, geetest_info: &GeetestInfo, page_url: &str) -> Result<CaptchaResult> {
+    async fn solve_with_2captcha(&self, geetest_info: &GeetestInfo, captcha_token: &str, page_url: &str) -> Result<CaptchaResult> {
         tracing::info!("使用2Captcha服务解决GeeTest验证码");
 
         // 1. 提交验证码任务
@@ -104,6 +104,8 @@ impl CaptchaSolver {
             .await?
             .json()
             .await?;
+
+        tracing::debug!("2Captcha提交响应: {}", submit_response);
 
         if submit_response["status"].as_i64() != Some(1) {
             anyhow::bail!(
@@ -143,34 +145,71 @@ impl CaptchaSolver {
                 .json()
                 .await?;
 
+            tracing::debug!("2Captcha获取结果响应: {}", result_response);
+
             if result_response["status"].as_i64() == Some(1) {
-                let request = result_response["request"]
+                let request_value = &result_response["request"];
+
+                // 检查request是JSON对象还是字符串
+                let result = if request_value.is_object() {
+                    // 新格式：JSON对象 {"geetest_challenge": "...", "geetest_validate": "...", "geetest_seccode": "..."}
+                    tracing::info!("2Captcha返回JSON格式结果: {}", request_value);
+
+                    let challenge = request_value["geetest_challenge"]
+                        .as_str()
+                        .ok_or_else(|| anyhow::anyhow!("JSON结果缺少geetest_challenge字段"))?;
+                    let validate = request_value["geetest_validate"]
+                        .as_str()
+                        .ok_or_else(|| anyhow::anyhow!("JSON结果缺少geetest_validate字段"))?;
+                    let seccode = request_value["geetest_seccode"]
+                        .as_str()
+                        .ok_or_else(|| anyhow::anyhow!("JSON结果缺少geetest_seccode字段"))?;
+
+                    CaptchaResult {
+                        challenge: challenge.to_string(),
+                        validate: validate.to_string(),
+                        seccode: seccode.to_string(),
+                        token: captcha_token.to_string(),
+                    }
+                } else if let Some(request_str) = request_value.as_str() {
+                    // 旧格式：字符串 "challenge:validate:seccode"
+                    tracing::info!("2Captcha返回字符串格式结果: {}", request_str);
+                    let parts: Vec<&str> = request_str.split(':').collect();
+                    tracing::debug!("解析后的parts: {:?}, 长度: {}", parts, parts.len());
+                    if parts.len() != 3 {
+                        anyhow::bail!("验证结果格式错误，期望 challenge:validate:seccode，实际: {}", request_str);
+                    }
+
+                    CaptchaResult {
+                        challenge: parts[0].to_string(),
+                        validate: parts[1].to_string(),
+                        seccode: format!("{}|jordan", parts[1]), // seccode格式通常是 validate|jordan
+                        token: captcha_token.to_string(),
+                    }
+                } else {
+                    anyhow::bail!("无法解析验证结果，request字段既不是对象也不是字符串");
+                };
+
+                tracing::info!("构造CaptchaResult: challenge={}, validate={}, seccode={}, token={}",
+                    result.challenge, result.validate, result.seccode, result.token);
+
+                return Ok(result);
+            } else if result_response["request"].as_str() == Some("CAPCHA_NOT_READY") {
+                // 验证码还未准备好，继续等待
+                continue;
+            } else {
+                // 真正的错误
+                let error_msg = result_response["error_text"]
                     .as_str()
-                    .ok_or_else(|| anyhow::anyhow!("无法获取验证结果"))?;
-
-                // 解析结果：challenge:validate:seccode
-                let parts: Vec<&str> = request.split(':').collect();
-                if parts.len() != 3 {
-                    anyhow::bail!("验证结果格式错误");
-                }
-
-                return Ok(CaptchaResult {
-                    challenge: parts[0].to_string(),
-                    validate: parts[1].to_string(),
-                    seccode: format!("{}|jordan", parts[1]), // seccode格式通常是 validate|jordan
-                    token: geetest_info.challenge.clone(),
-                });
-            } else if result_response["error_text"].as_str() != Some("CAPCHA_NOT_READY") {
-                anyhow::bail!(
-                    "2Captcha识别失败: {}",
-                    result_response["error_text"].as_str().unwrap_or("未知错误")
-                );
+                    .or_else(|| result_response["request"].as_str())
+                    .unwrap_or("未知错误");
+                anyhow::bail!("2Captcha识别失败: {}", error_msg);
             }
         }
     }
 
     /// 使用AntiCaptcha服务
-    async fn solve_with_anticaptcha(&self, geetest_info: &GeetestInfo, page_url: &str) -> Result<CaptchaResult> {
+    async fn solve_with_anticaptcha(&self, geetest_info: &GeetestInfo, captcha_token: &str, page_url: &str) -> Result<CaptchaResult> {
         tracing::info!("使用AntiCaptcha服务解决GeeTest验证码");
 
         // 1. 创建任务
@@ -245,14 +284,14 @@ impl CaptchaSolver {
                     challenge: solution["challenge"].as_str().unwrap_or("").to_string(),
                     validate: solution["validate"].as_str().unwrap_or("").to_string(),
                     seccode: solution["seccode"].as_str().unwrap_or("").to_string(),
-                    token: geetest_info.challenge.clone(),
+                    token: captcha_token.to_string(),
                 });
             }
         }
     }
 
     /// 使用CapSolver服务
-    async fn solve_with_capsolver(&self, _geetest_info: &GeetestInfo, _page_url: &str) -> Result<CaptchaResult> {
+    async fn solve_with_capsolver(&self, _geetest_info: &GeetestInfo, _captcha_token: &str, _page_url: &str) -> Result<CaptchaResult> {
         tracing::info!("使用CapSolver服务解决GeeTest验证码");
 
         // CapSolver API实现类似，这里暂时返回错误
@@ -260,7 +299,7 @@ impl CaptchaSolver {
     }
 
     /// 使用云码服务
-    async fn solve_with_yunma(&self, _geetest_info: &GeetestInfo, _page_url: &str) -> Result<CaptchaResult> {
+    async fn solve_with_yunma(&self, _geetest_info: &GeetestInfo, _captcha_token: &str, _page_url: &str) -> Result<CaptchaResult> {
         tracing::info!("使用云码服务解决GeeTest验证码");
 
         // 云码API实现，这里暂时返回错误
