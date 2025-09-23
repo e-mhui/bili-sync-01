@@ -298,7 +298,7 @@ pub struct RiskControlConfig {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AutoSolveConfig {
-    /// 验证码识别服务: "2captcha", "anticaptcha", "capsolver", "yunma"
+    /// 验证码识别服务: "2captcha", "anticaptcha"
     #[serde(default = "default_captcha_service")]
     pub service: String,
     /// API密钥
@@ -368,11 +368,8 @@ impl RiskControlConfig {
 
 impl AutoSolveConfig {
     pub fn validate(&self) -> Result<(), String> {
-        if !matches!(
-            self.service.as_str(),
-            "2captcha" | "anticaptcha" | "capsolver" | "yunma"
-        ) {
-            return Err("验证码识别服务必须是 '2captcha', 'anticaptcha', 'capsolver' 或 'yunma'".to_string());
+        if !matches!(self.service.as_str(), "2captcha" | "anticaptcha") {
+            return Err("验证码识别服务必须是 '2captcha' 或 'anticaptcha'".to_string());
         }
 
         if self.api_key.is_empty() {
