@@ -5066,7 +5066,7 @@ pub async fn update_config_internal(
         if !service.trim().is_empty() {
             // 验证服务的有效性
             match service.as_str() {
-                "2captcha" | "anticaptcha" | "capsolver" | "yunma" => {
+                "2captcha" | "anticaptcha" => {
                     // 如果auto_solve配置不存在，创建一个新的
                     if config.risk_control.auto_solve.is_none() {
                         config.risk_control.auto_solve = Some(crate::config::AutoSolveConfig {
@@ -5083,7 +5083,7 @@ pub async fn update_config_internal(
                 }
                 _ => {
                     return Err(anyhow!(
-                        "无效的验证码识别服务，只支持 '2captcha', 'anticaptcha', 'capsolver' 或 'yunma'"
+                        "无效的验证码识别服务，只支持 '2captcha' 或 'anticaptcha'"
                     )
                     .into());
                 }

@@ -3575,8 +3575,6 @@
 										>
 											<option value="2captcha">2Captcha</option>
 											<option value="anticaptcha">AntiCaptcha</option>
-											<option value="capsolver">CapSolver (未实现)</option>
-											<option value="yunma">云码</option>
 										</select>
 										<p class="text-muted-foreground text-xs">选择验证码识别服务提供商</p>
 									</div>
