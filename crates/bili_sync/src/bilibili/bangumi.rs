@@ -731,7 +731,7 @@ impl Bangumi {
                 }
             }
 
-            // 第二步：对未覆盖的季度ID单独请求
+            // 第二步：对未覆盖的季度ID单独请求，并利用返回的相关季度信息
             for season_id_str in &selected_seasons {
                 if processed_season_ids.contains(season_id_str) {
                     continue; // 已经通过关联季度获取了
@@ -739,6 +739,33 @@ impl Bangumi {
 
                 debug!("单独获取季度信息: {}", season_id_str);
                 let season_bangumi = Bangumi::new(&client, None, Some(season_id_str.clone()), None);
+
+                // 先尝试获取相关季度，看看能否一次获取多个
+                match season_bangumi.get_all_seasons().await {
+                    Ok(related_seasons) => {
+                        debug!("通过季度 {} 获取到 {} 个相关季度", season_id_str, related_seasons.len());
+
+                        // 筛选出还需要的季度
+                        let mut found_any = false;
+                        for season in related_seasons {
+                            if selected_seasons.contains(&season.season_id) && !processed_season_ids.contains(&season.season_id) {
+                                debug!("从相关季度中找到: {} ({})", season.season_title, season.season_id);
+                                processed_season_ids.insert(season.season_id.clone());
+                                seasons.push(season);
+                                found_any = true;
+                            }
+                        }
+
+                        if found_any {
+                            continue; // 成功获取，跳过单独请求
+                        }
+                    }
+                    Err(e) => {
+                        debug!("获取季度 {} 的相关季度失败: {}，尝试单独获取", season_id_str, e);
+                    }
+                }
+
+                // 如果通过相关季度获取失败，回退到单独获取
                 match season_bangumi.get_season_info().await {
                     Ok(season_info) => {
                         let season_title = season_info["title"].as_str().unwrap_or("未知番剧").to_string();
@@ -760,7 +787,7 @@ impl Bangumi {
                 }
             }
 
-            debug!("最终获取了 {} 个季度信息（API请求优化：批量+补充）", seasons.len());
+            debug!("最终获取了 {} 个季度信息（API请求优化：批量获取+相关季度利用+单独补充）", seasons.len());
 
             let mut processed_seasons = 0;
             let mut total_episodes = 0;
