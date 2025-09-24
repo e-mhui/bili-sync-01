@@ -695,30 +695,63 @@ impl Bangumi {
         latest_row_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>> {
         let client = self.client.clone();
-        let season_id = self.season_id.clone();
         let media_id = self.media_id.clone();
         let ep_id = self.ep_id.clone();
 
         Box::pin(try_stream! {
             debug!("开始生成选中季度的番剧视频流");
 
-            // 直接为每个选中的季度ID创建季度信息，不依赖关联季度API
+            // 优化：先尝试通过关联季度批量获取，再补充单独请求
             let mut seasons: Vec<BangumiSeason> = Vec::new();
+            let mut processed_season_ids = std::collections::HashSet::new();
+
+            // 第一步：尝试通过第一个season_id获取所有相关季度
+            if !selected_seasons.is_empty() {
+                let first_season_id = &selected_seasons[0];
+                debug!("尝试通过季度 {} 批量获取相关季度", first_season_id);
+
+                let bangumi = Bangumi::new(&client, media_id.clone(), Some(first_season_id.clone()), ep_id.clone());
+                match bangumi.get_all_seasons().await {
+                    Ok(all_seasons) => {
+                        debug!("获取到 {} 个相关季度", all_seasons.len());
+
+                        // 过滤出在selected_seasons中的季度
+                        for season in all_seasons {
+                            if selected_seasons.contains(&season.season_id) {
+                                debug!("找到相关季度: {} ({})", season.season_title, season.season_id);
+                                processed_season_ids.insert(season.season_id.clone());
+                                seasons.push(season);
+                            }
+                        }
+                        debug!("通过相关季度获取到 {} 个匹配的季度", seasons.len());
+                    }
+                    Err(e) => {
+                        warn!("获取相关季度失败: {}，将逐个处理", e);
+                    }
+                }
+            }
+
+            // 第二步：对未覆盖的季度ID单独请求
             for season_id_str in &selected_seasons {
-                debug!("创建季度信息: {}", season_id_str);
+                if processed_season_ids.contains(season_id_str) {
+                    continue; // 已经通过关联季度获取了
+                }
+
+                debug!("单独获取季度信息: {}", season_id_str);
                 let season_bangumi = Bangumi::new(&client, None, Some(season_id_str.clone()), None);
                 match season_bangumi.get_season_info().await {
                     Ok(season_info) => {
                         let season_title = season_info["title"].as_str().unwrap_or("未知番剧").to_string();
                         let media_id_from_info = season_info["media_id"].as_i64().map(|id| id.to_string());
 
-                        debug!("成功创建季度信息: {} ({})", season_title, season_id_str);
+                        debug!("成功获取独立季度信息: {} ({})", season_title, season_id_str);
                         seasons.push(BangumiSeason {
                             season_id: season_id_str.clone(),
                             media_id: media_id_from_info,
                             season_title,
                             cover: season_info["cover"].as_str().unwrap_or_default().to_string(),
                         });
+                        processed_season_ids.insert(season_id_str.clone());
                     },
                     Err(e) => {
                         warn!("无法获取季度 {} 的信息，跳过: {}", season_id_str, e);
@@ -727,7 +760,7 @@ impl Bangumi {
                 }
             }
 
-            debug!("创建了 {} 个季度信息", seasons.len());
+            debug!("最终获取了 {} 个季度信息（API请求优化：批量+补充）", seasons.len());
 
             let mut processed_seasons = 0;
             let mut total_episodes = 0;
