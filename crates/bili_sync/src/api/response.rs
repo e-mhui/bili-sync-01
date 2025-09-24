@@ -132,6 +132,26 @@ pub struct ResetVideoSourcePathResponse {
     pub message: String,
 }
 
+/// 番剧源简化信息（用于合并选择）
+#[derive(Serialize, ToSchema, Debug)]
+pub struct BangumiSourceOption {
+    pub id: i32,
+    pub name: String,
+    pub path: String,
+    pub season_id: Option<String>,
+    pub media_id: Option<String>,
+    pub download_all_seasons: bool,
+    pub selected_seasons_count: usize,
+}
+
+/// 番剧源列表响应
+#[derive(Serialize, ToSchema)]
+pub struct BangumiSourceListResponse {
+    pub success: bool,
+    pub bangumi_sources: Vec<BangumiSourceOption>,
+    pub total_count: usize,
+}
+
 #[derive(FromQueryResult, Serialize, ToSchema, Debug)]
 pub struct VideoSource {
     pub id: i32,

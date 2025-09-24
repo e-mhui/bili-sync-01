@@ -51,6 +51,8 @@ pub struct AddVideoSourceRequest {
     pub selected_videos: Option<Vec<String>>,
     // 封面URL，仅当source_type为"collection"时有效
     pub cover: Option<String>,
+    // 合并到现有番剧源的ID，仅当source_type为"bangumi"时有效
+    pub merge_to_source_id: Option<i32>,
 }
 
 // 删除视频源的请求结构体

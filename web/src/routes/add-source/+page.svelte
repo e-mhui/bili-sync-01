@@ -13,6 +13,8 @@
 		UserCollectionItem,
 		UserFollowing,
 		BangumiSeasonInfo,
+		BangumiSourceOption,
+		BangumiSourceListResponse,
 		ValidateFavoriteResponse,
 		UserCollectionInfo,
 		AddVideoSourceRequest
@@ -72,6 +74,12 @@
 	let loadingSeasons = false;
 	let selectedSeasons: string[] = [];
 	let seasonIdTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	// 番剧合并相关
+	let existingBangumiSources: BangumiSourceOption[] = [];
+	let loadingBangumiSources = false;
+	let mergeToSourceId: number | null = null;
+	let showMergeOptions = false;
 
 	// 悬停详情相关
 	let hoveredItem: {
@@ -417,6 +425,10 @@
 				if (selectedSeasons.length > 0 && !downloadAllSeasons) {
 					params.selected_seasons = selectedSeasons;
 				}
+				// 如果选择了合并到现有番剧源，添加merge_to_source_id参数
+				if (mergeToSourceId) {
+					params.merge_to_source_id = mergeToSourceId;
+				}
 			}
 
 			if (sourceType === 'submission') {
@@ -442,6 +454,8 @@
 				selectedSeasons = [];
 				selectedVideos = [];
 				selectedUpName = '';
+				mergeToSourceId = null;
+				existingBangumiSources = [];
 				// 跳转到视频源管理页面
 				goto('/video-sources');
 			} else {
@@ -740,6 +754,24 @@
 		}
 	}
 
+	// 获取现有番剧源列表（用于合并选择）
+	async function fetchExistingBangumiSources() {
+		loadingBangumiSources = true;
+		try {
+			const result = await api.getBangumiSourcesForMerge();
+			if (result.data && result.data.success) {
+				existingBangumiSources = result.data.bangumi_sources;
+			} else {
+				existingBangumiSources = [];
+			}
+		} catch (error) {
+			console.error('获取现有番剧源失败:', error);
+			existingBangumiSources = [];
+		} finally {
+			loadingBangumiSources = false;
+		}
+	}
+
 	// 切换季度选择
 	function toggleSeasonSelection(seasonId: string) {
 		const index = selectedSeasons.indexOf(seasonId);
@@ -754,6 +786,13 @@
 	$: if (sourceType !== 'bangumi') {
 		bangumiSeasons = [];
 		selectedSeasons = [];
+		showMergeOptions = false;
+		mergeToSourceId = null;
+	}
+
+	// 当源类型改为番剧时，获取现有番剧源列表
+	$: if (sourceType === 'bangumi') {
+		fetchExistingBangumiSources();
 	}
 
 	// 监听sourceType变化，重置手动输入标志和清空所有缓存
@@ -1542,6 +1581,35 @@
 										</p>
 									{:else if bangumiSeasons.length === 1}
 										<p class="mt-1 ml-6 text-xs text-purple-600">该番剧只有当前一个季度</p>
+									{/if}
+
+									<!-- 合并到现有番剧源选项 -->
+									{#if existingBangumiSources.length > 0}
+										<div class="mt-3 space-y-2">
+											<Label class="text-sm font-medium">合并选项（可选）</Label>
+											<select
+												bind:value={mergeToSourceId}
+												class="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+											>
+												<option value={null}>作为新的独立番剧源添加</option>
+												{#each existingBangumiSources as source}
+													<option value={source.id}>
+														合并到：{source.name}
+														{#if source.season_id}(Season ID: {source.season_id}){/if}
+														{#if source.media_id}(Media ID: {source.media_id}){/if}
+													</option>
+												{/each}
+											</select>
+											{#if mergeToSourceId}
+												<p class="text-xs text-orange-600">
+													⚠️ 合并后，新番剧的内容将添加到选中的现有番剧源中，不会创建新的番剧源
+												</p>
+											{:else}
+												<p class="text-xs text-gray-500">
+													可以选择将新番剧合并到现有番剧源中，方便管理相关内容（如新季度、剧场版等）
+												</p>
+											{/if}
+										</div>
 									{/if}
 								{:else if sourceType === 'bangumi' && sourceId && loadingSeasons}
 									<p class="mt-3 text-xs text-purple-600">正在获取季度信息...</p>

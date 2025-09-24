@@ -163,6 +163,7 @@ export interface AddVideoSourceRequest {
 	download_all_seasons?: boolean;
 	selected_seasons?: string[];
 	selected_videos?: string[];
+	merge_to_source_id?: number;
 }
 
 // 添加视频源响应类型
@@ -461,6 +462,24 @@ export interface BangumiSeasonInfo {
 export interface BangumiSeasonsResponse {
 	success: boolean;
 	data: BangumiSeasonInfo[];
+}
+
+// 番剧源选项（用于合并选择）
+export interface BangumiSourceOption {
+	id: number;
+	name: string;
+	path: string;
+	season_id: string | null;
+	media_id: string | null;
+	download_all_seasons: boolean;
+	selected_seasons_count: number;
+}
+
+// 番剧源列表响应
+export interface BangumiSourceListResponse {
+	success: boolean;
+	bangumi_sources: BangumiSourceOption[];
+	total_count: number;
 }
 
 // 关注的UP主信息类型
