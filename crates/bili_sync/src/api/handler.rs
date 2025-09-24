@@ -10772,6 +10772,19 @@ async fn handle_bangumi_merge_to_existing(
             .exec(txn)
             .await?;
 
+        // 清除番剧缓存，强制重新扫描新合并的季度
+        let clear_cache_update = video_source::ActiveModel {
+            id: sea_orm::ActiveValue::Unchanged(target_source.id),
+            cached_episodes: sea_orm::Set(None),
+            cache_updated_at: sea_orm::Set(None),
+            ..Default::default()
+        };
+        if let Err(e) = video_source::Entity::update(clear_cache_update).exec(txn).await {
+            warn!("清除番剧缓存失败: {}", e);
+        } else {
+            info!("已清除番剧缓存，将在下次扫描时重新获取所有季度内容");
+        }
+
         info!(
             "番剧已成功合并到现有源: {} (ID: {}), 变更: {}",
             target_source.name, target_source.id, merge_message
