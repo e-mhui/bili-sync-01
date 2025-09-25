@@ -80,6 +80,10 @@
 	let loadingBangumiSources = false;
 	let mergeToSourceId: number | null = null;
 	let showMergeOptions = false;
+	let cachedNameBeforeMerge = '';
+	let cachedPathBeforeMerge = '';
+	let isUsingMergedSourceMeta = false;
+	let isMergingBangumi = false;
 
 	// 悬停详情相关
 	let hoveredItem: {
@@ -162,6 +166,27 @@
 		clearTimeout(seasonIdTimeout);
 		clearTimeout(favoriteValidationTimeout);
 	});
+
+	$: isMergingBangumi = sourceType === 'bangumi' && mergeToSourceId !== null;
+
+	$: {
+		if (isMergingBangumi) {
+			const targetSource = existingBangumiSources.find((source) => source.id === mergeToSourceId);
+			if (targetSource) {
+				if (!isUsingMergedSourceMeta) {
+					cachedNameBeforeMerge = name;
+					cachedPathBeforeMerge = path;
+				}
+				name = targetSource.name;
+				path = targetSource.path;
+				isUsingMergedSourceMeta = true;
+			}
+		} else if (isUsingMergedSourceMeta) {
+			name = cachedNameBeforeMerge;
+			path = cachedPathBeforeMerge;
+			isUsingMergedSourceMeta = false;
+		}
+	}
 
 	// 搜索B站内容
 	async function handleSearch(overrideSearchType?: string) {
@@ -1656,14 +1681,21 @@
 						<!-- 名称 -->
 						<div class="space-y-2">
 							<Label for="name">名称</Label>
-							<Input id="name" bind:value={name} placeholder="请输入视频源名称" required />
+							<Input id="name" bind:value={name} placeholder="请输入视频源名称" required disabled={isMergingBangumi} />
+							{#if isMergingBangumi}
+								<p class="text-xs text-purple-600">合并时自动沿用目标番剧源的名称</p>
+							{/if}
 						</div>
 
 						<!-- 保存路径 -->
 						<div class="space-y-2">
 							<Label for="path">保存路径</Label>
-							<Input id="path" bind:value={path} placeholder="例如：D:/Videos/Bilibili" required />
-							<p class="text-muted-foreground text-sm">请输入绝对路径</p>
+							<Input id="path" bind:value={path} placeholder="例如：D:/Videos/Bilibili" required disabled={isMergingBangumi} />
+							{#if isMergingBangumi}
+								<p class="text-xs text-purple-600">合并时自动沿用目标番剧源的保存路径</p>
+							{:else}
+								<p class="text-muted-foreground text-sm">请输入绝对路径</p>
+							{/if}
 						</div>
 
 						<!-- 提交按钮 -->
