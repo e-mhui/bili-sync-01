@@ -312,8 +312,11 @@
 													{:else if sourceConfig.type === 'submission' && source.upper_id}
 														UP主ID: {source.upper_id}
 													{:else if sourceConfig.type === 'bangumi'}
-														{#if source.season_id}Season ID: {source.season_id}{/if}
-														{#if source.media_id}{source.season_id ? ' | ' : ''}Media ID: {source.media_id}{/if}
+														{#if source.season_id}<span class="block">主季度 ID: {source.season_id}</span>{/if}
+														{#if source.selected_seasons?.length}
+															<span class="block">已选季度 ID: {JSON.stringify(source.selected_seasons)}</span>
+														{/if}
+														{#if source.media_id}<span class="block">Media ID: {source.media_id}</span>{/if}
 													{:else if sourceConfig.type === 'watch_later'}
 														稍后再看 (无特定ID)
 													{/if}

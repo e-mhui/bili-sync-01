@@ -152,7 +152,7 @@ pub struct BangumiSourceListResponse {
     pub total_count: usize,
 }
 
-#[derive(FromQueryResult, Serialize, ToSchema, Debug)]
+#[derive(Serialize, ToSchema, Debug)]
 pub struct VideoSource {
     pub id: i32,
     pub name: String,
@@ -166,6 +166,8 @@ pub struct VideoSource {
     pub upper_id: Option<i64>,     // UP主ID (用于投稿)
     pub season_id: Option<String>, // 番剧season_id
     pub media_id: Option<String>,  // 番剧media_id
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected_seasons: Option<Vec<String>>,
 }
 
 #[derive(Serialize, ToSchema)]

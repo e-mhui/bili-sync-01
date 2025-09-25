@@ -39,6 +39,7 @@ export interface VideoSource {
 	upper_id?: number; // UP主ID (用于投稿)
 	season_id?: string; // 番剧season_id
 	media_id?: string; // 番剧media_id
+	selected_seasons?: string[];
 }
 
 // 视频来源响应类型

@@ -179,6 +179,7 @@ pub async fn get_video_sources(
                     upper_id,
                     season_id,
                     media_id,
+                    selected_seasons: None,
                 }
             },
         )
@@ -229,6 +230,7 @@ pub async fn get_video_sources(
                     upper_id,
                     season_id,
                     media_id,
+                    selected_seasons: None,
                 }
             },
         )
@@ -279,6 +281,7 @@ pub async fn get_video_sources(
                     upper_id: Some(upper_id),
                     season_id,
                     media_id,
+                    selected_seasons: None,
                 }
             },
         )
@@ -329,6 +332,7 @@ pub async fn get_video_sources(
                     upper_id,
                     season_id,
                     media_id,
+                    selected_seasons: None,
                 }
             },
         )
@@ -346,6 +350,7 @@ pub async fn get_video_sources(
             video_source::Column::ScanDeletedVideos,
             video_source::Column::SeasonId,
             video_source::Column::MediaId,
+            video_source::Column::SelectedSeasons,
         ])
         .column_as(Expr::value(None::<i64>), "f_id")
         .column_as(Expr::value(None::<i64>), "s_id")
@@ -359,6 +364,7 @@ pub async fn get_video_sources(
             bool,
             Option<String>,
             Option<String>,
+            Option<String>,
             Option<i64>,
             Option<i64>,
             Option<i64>,
@@ -368,7 +374,30 @@ pub async fn get_video_sources(
         .await?
         .into_iter()
         .map(
-            |(id, name, enabled, path, scan_deleted_videos, season_id, media_id, f_id, s_id, m_id, upper_id)| {
+            |(
+                id,
+                name,
+                enabled,
+                path,
+                scan_deleted_videos,
+                season_id,
+                media_id,
+                selected_seasons_json,
+                f_id,
+                s_id,
+                m_id,
+                upper_id,
+            )| {
+                let selected_seasons = selected_seasons_json.as_ref().and_then(|json| {
+                    match serde_json::from_str::<Vec<String>>(json) {
+                        Ok(seasons) if !seasons.is_empty() => Some(seasons),
+                        Ok(_) => None,
+                        Err(err) => {                    warn!("Failed to parse selected_seasons for bangumi source {}: {}", id, err);
+                            None
+                        }
+                    }
+                });
+
                 VideoSource {
                     id,
                     name,
@@ -381,6 +410,7 @@ pub async fn get_video_sources(
                     upper_id,
                     season_id,
                     media_id,
+                    selected_seasons,
                 }
             },
         )
