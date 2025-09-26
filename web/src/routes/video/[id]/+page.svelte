@@ -737,7 +737,7 @@
 							确定要删除视频 "<span class="font-medium">{videoData?.video.name}</span>" 吗？
 						</p>
 						<p class="text-muted-foreground text-sm">
-							此操作将把视频标记为已删除状态，不会删除实际文件。在视频源设置中开启"扫描已删除视频"后可重新下载。
+							删除当前视频后，在视频源设置中开启"扫描已删除视频"后可重新下载。
 						</p>
 					</div>
 					<div class="flex justify-end gap-2">

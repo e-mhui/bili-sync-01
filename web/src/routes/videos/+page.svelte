@@ -9,6 +9,7 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import FilterIcon from '@lucide/svelte/icons/filter';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
 	import { toast } from 'svelte-sonner';
@@ -55,6 +56,12 @@
 	let showFailedOnly = false;
 	let currentSortBy: SortBy = 'id';
 	let currentSortOrder: SortOrder = 'desc';
+
+	// 批量选择状态
+	let selectionMode = false;
+	let selectedVideos: Set<number> = new Set();
+	let batchDeleting = false;
+	let batchDeleteDialogOpen = false;
 
 	function getApiParams(searchParams: URLSearchParams) {
 		let videoSource = null;
@@ -324,6 +331,86 @@
 		}
 	}
 
+	// 批量选择相关函数
+	function toggleSelectionMode() {
+		selectionMode = !selectionMode;
+		selectedVideos.clear();
+		selectedVideos = selectedVideos; // 触发反应式更新
+	}
+
+	function handleVideoSelection(videoId: number, selected: boolean) {
+		if (selected) {
+			selectedVideos.add(videoId);
+		} else {
+			selectedVideos.delete(videoId);
+		}
+		selectedVideos = selectedVideos; // 触发反应式更新
+	}
+
+	function selectAllVideos() {
+		if (videosData?.videos) {
+			videosData.videos.forEach((video) => selectedVideos.add(video.id));
+			selectedVideos = selectedVideos;
+		}
+	}
+
+	function clearSelection() {
+		selectedVideos.clear();
+		selectedVideos = selectedVideos;
+	}
+
+	async function handleBatchDelete() {
+		if (selectedVideos.size === 0) return;
+
+		batchDeleting = true;
+		let successCount = 0;
+		let failedCount = 0;
+		const selectedVideoIds = Array.from(selectedVideos);
+
+		try {
+			for (let i = 0; i < selectedVideoIds.length; i++) {
+				const videoId = selectedVideoIds[i];
+				try {
+					const result = await api.deleteVideo(videoId);
+					if (result.data.success) {
+						successCount++;
+					} else {
+						failedCount++;
+					}
+				} catch (error) {
+					failedCount++;
+					console.error(`删除视频 ${videoId} 失败:`, error);
+				}
+			}
+
+			if (successCount > 0) {
+				toast.success('批量删除完成', {
+					description: `成功删除 ${successCount} 个视频${failedCount > 0 ? `，失败 ${failedCount} 个` : ''}`
+				});
+
+				// 重新加载视频列表
+				const { query, currentPage, videoSource, showFailedOnly, sortBy, sortOrder } =
+					$appStateStore;
+				await loadVideos(query, currentPage, videoSource, showFailedOnly, sortBy, sortOrder);
+
+				// 清空选择
+				clearSelection();
+			} else {
+				toast.error('批量删除失败', {
+					description: '所有视频都删除失败'
+				});
+			}
+		} catch (error) {
+			console.error('批量删除过程中发生错误:', error);
+			toast.error('批量删除失败', {
+				description: '删除过程中发生错误'
+			});
+		} finally {
+			batchDeleting = false;
+			batchDeleteDialogOpen = false;
+		}
+	}
+
 	$: if ($page.url.search !== lastSearch) {
 		lastSearch = $page.url.search;
 		handleSearchParamsChange($page.url.searchParams);
@@ -422,8 +509,53 @@
 				<span class="xs:inline hidden">批量重置</span>
 				<span class="xs:hidden">重置</span>
 			</Button>
+
+			<!-- 批量删除模式按钮 -->
+			<Button
+				variant={selectionMode ? 'outline' : 'destructive'}
+				size="sm"
+				class="col-span-2 w-full sm:col-span-1 sm:w-auto {selectionMode ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600' : ''}"
+				onclick={toggleSelectionMode}
+				disabled={loading}
+			>
+				{#if selectionMode}
+					<span>退出</span>
+				{:else}
+					<TrashIcon class="h-4 w-4 sm:mr-2" />
+					<span class="hidden sm:inline">批量删除</span>
+				{/if}
+			</Button>
 		</div>
 	</div>
+
+	<!-- 批量操作工具栏 -->
+	{#if selectionMode}
+		<div
+			class="space-y-3 rounded-lg border border-blue-200 bg-blue-50/50 p-3 dark:border-blue-800 dark:bg-blue-950/20"
+		>
+			<div class="flex items-center justify-between gap-2">
+				<div class="text-sm font-medium text-blue-700 dark:text-blue-300">
+					已选择 {selectedVideos.size} 个视频--将进行批量删除！！！
+				</div>
+				<div class="flex gap-2">
+					{#if videosData?.videos && selectedVideos.size < videosData.videos.length}
+						<Button variant="outline" size="sm" onclick={selectAllVideos}>全选</Button>
+					{/if}
+					{#if selectedVideos.size > 0}
+						<Button variant="outline" size="sm" onclick={clearSelection}>取消选中</Button>
+						<Button
+							variant="destructive"
+							size="sm"
+							onclick={() => (batchDeleteDialogOpen = true)}
+							disabled={batchDeleting}
+						>
+							删除选中
+						</Button>
+					{/if}
+				</div>
+			</div>
+		</div>
+	{/if}
 
 	<!-- 筛选面板 -->
 	{#if showFilters && videoSources}
@@ -536,6 +668,9 @@
 			{#each videosData.videos as video (video.id)}
 				<VideoCard
 					{video}
+					{selectionMode}
+					selected={selectedVideos.has(video.id)}
+					onSelectionChange={handleVideoSelection}
 					onReset={async (forceReset) => {
 						await handleResetVideo(video, forceReset);
 					}}
@@ -691,6 +826,42 @@
 			<AlertDialog.Cancel disabled={resettingAll}>取消</AlertDialog.Cancel>
 			<AlertDialog.Action onclick={handleResetAllVideos} disabled={resettingAll}>
 				{resettingAll ? '重置中...' : '确认重置'}
+			</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
+
+<!-- 批量删除确认对话框 -->
+<AlertDialog.Root bind:open={batchDeleteDialogOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>确认批量删除视频</AlertDialog.Title>
+			<AlertDialog.Description>
+				确定要删除选中的 <span class="font-medium text-red-600">{selectedVideos.size}</span> 个视频吗？
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<div class="py-4">
+			<div
+				class="rounded-lg border border-yellow-200 bg-yellow-50 p-3 dark:border-yellow-800 dark:bg-yellow-950/20"
+			>
+				<div class="text-sm text-yellow-800 dark:text-yellow-200">
+					<strong>注意：</strong>
+					<ul class="mt-1 list-inside list-disc">
+						<li>此操作不可撤销</li>
+						<li>删除当前视频后，在视频源设置中开启"扫描已删除视频"后可重新下载</li>
+						<li>视频文件和相关元数据将被标记为已删除</li>
+					</ul>
+				</div>
+			</div>
+		</div>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel disabled={batchDeleting}>取消</AlertDialog.Cancel>
+			<AlertDialog.Action
+				onclick={handleBatchDelete}
+				disabled={batchDeleting}
+				class="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+			>
+				{batchDeleting ? '删除中...' : '确认删除'}
 			</AlertDialog.Action>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>

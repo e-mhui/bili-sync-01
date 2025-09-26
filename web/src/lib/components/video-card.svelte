@@ -24,6 +24,9 @@
 	export let onReset: ((force: boolean) => Promise<void>) | null = null; // 自定义重置函数
 	export let resetDialogOpen = false; // 导出对话框状态，让父组件可以控制
 	export let resetting = false;
+	export let selectionMode: boolean = false; // 是否为选择模式
+	export let selected: boolean = false; // 是否被选中
+	export let onSelectionChange: ((videoId: number, selected: boolean) => void) | null = null; // 选择状态变化回调
 
 	function getStatusText(status: number): string {
 		if (status === 7) {
@@ -128,14 +131,21 @@
 		goto(`/video/${video.id}`);
 	}
 
+	function handleSelectionChange(event: Event) {
+		if (onSelectionChange) {
+			const checkbox = event.target as HTMLInputElement;
+			onSelectionChange(video.id, checkbox.checked);
+		}
+	}
+
 	// 根据模式确定显示的标题和副标题
 	$: displayTitle = customTitle || getEnhancedVideoTitle(video);
 	$: displaySubtitle = customSubtitle || video.upper_name;
 	$: showUserIcon = mode === 'default';
 	$: cardClasses =
 		mode === 'default'
-			? 'group flex h-full min-w-0 flex-col transition-shadow hover:shadow-md'
-			: 'transition-shadow hover:shadow-md';
+			? `group flex h-full min-w-0 flex-col transition-all hover:shadow-md ${selected ? 'ring-2 ring-blue-500' : ''}`
+			: `transition-all hover:shadow-md ${selected ? 'ring-2 ring-blue-500' : ''}`;
 
 	// 从路径中提取番剧名称的通用函数
 	function extractBangumiName(path: string): string {
@@ -236,6 +246,18 @@
 					}
 				}}
 			/>
+			<!-- 选择模式复选框覆盖在封面左上角 -->
+			{#if selectionMode}
+				<div class="absolute top-2 left-2 z-20">
+					<input
+						type="checkbox"
+						checked={selected}
+						on:change={handleSelectionChange}
+						class="h-5 w-5 rounded border-2 border-white bg-white/80 text-blue-600 shadow-lg backdrop-blur-sm focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
+					/>
+				</div>
+			{/if}
+
 			<!-- 状态徽章覆盖在封面上 -->
 			<div class="absolute top-2 right-2 z-20">
 				<Badge variant={overallStatus.color} class="shrink-0 text-xs shadow-md">
@@ -247,6 +269,15 @@
 
 	<CardHeader class="{mode === 'default' ? 'flex-shrink-0 pb-3' : 'pb-3'} relative z-10">
 		<div class="flex min-w-0 items-start justify-between gap-2">
+			<!-- 选择模式复选框（无封面时显示） -->
+			{#if selectionMode && (!video.cover || mode !== 'default')}
+				<input
+					type="checkbox"
+					checked={selected}
+					on:change={handleSelectionChange}
+					class="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
+				/>
+			{/if}
 			<CardTitle
 				class="line-clamp-2 min-w-0 flex-1 cursor-default text-sm leading-tight"
 				title={displayTitle}
