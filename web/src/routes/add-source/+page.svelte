@@ -447,9 +447,6 @@
 				params.collection_type = collectionType;
 				if (cover) {
 					params.cover = cover;
-					console.log('发送cover参数到后端:', cover);
-				} else {
-					console.log('cover变量为空，不发送cover参数');
 				}
 			}
 
@@ -706,7 +703,6 @@
 			const result = await api.getUserCollections(upId);
 			if (result.data && result.data.collections) {
 				userCollections = result.data.collections;
-				console.log('获取到的用户合集:', userCollections);
 				if (userCollections.length === 0) {
 					toast.info('该UP主暂无合集');
 				} else {
@@ -759,7 +755,6 @@
 		cover = collection.cover || '';
 		collectionType = collection.collection_type;
 		isManualInput = false; // 从列表选择，不是手动输入
-		console.log('选择合集 - cover:', collection.cover, '设置后的cover变量:', cover);
 		toast.success('已选择合集', {
 			description: `${collection.collection_type === 'season' ? '合集' : '系列'}：${collection.name}`
 		});
@@ -841,15 +836,12 @@
 
 				// 处理合集：存储 s_id_m_id 的组合
 				existingCollectionIds.clear();
-				console.log('原始合集数据:', result.data.collection);
 				result.data.collection?.forEach((c) => {
 					if (c.s_id && c.m_id) {
 						const key = `${c.s_id}_${c.m_id}`;
-						console.log(`添加合集到过滤列表: ${key}`, c);
 						existingCollectionIds.add(key);
 					}
 				});
-				console.log('最终合集过滤列表:', existingCollectionIds);
 
 				// 处理收藏夹
 				existingFavoriteIds.clear();
@@ -886,13 +878,6 @@
 							console.warn('解析selected_seasons失败:', b.selected_seasons);
 						}
 					}
-				});
-
-				console.log('已加载视频源过滤信息:', {
-					collections: existingCollectionIds.size,
-					favorites: existingFavoriteIds.size,
-					submissions: existingSubmissionIds.size,
-					bangumi: existingBangumiSeasonIds.size
 				});
 			}
 		} catch (error) {
