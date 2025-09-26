@@ -420,7 +420,9 @@ class ApiClient {
 	/**
 	 * 获取现有番剧源列表（用于合并选择）
 	 */
-	async getBangumiSourcesForMerge(): Promise<ApiResponse<import('./types').BangumiSourceListResponse>> {
+	async getBangumiSourcesForMerge(): Promise<
+		ApiResponse<import('./types').BangumiSourceListResponse>
+	> {
 		return this.get<import('./types').BangumiSourceListResponse>('/video-sources/bangumi/list');
 	}
 

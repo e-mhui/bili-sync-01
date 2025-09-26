@@ -83,6 +83,14 @@
 	let cachedNameBeforeMerge = '';
 	let cachedPathBeforeMerge = '';
 	let isUsingMergedSourceMeta = false;
+
+	// 过滤已有视频源相关
+	let existingVideoSources: VideoSourcesResponse | null = null;
+	let existingCollectionIds: Set<string> = new Set();
+	let existingFavoriteIds: Set<number> = new Set();
+	let existingSubmissionIds: Set<number> = new Set();
+	let existingBangumiSeasonIds: Set<string> = new Set();
+	let loadingExistingSources = false;
 	let isMergingBangumi = false;
 
 	// 悬停详情相关
@@ -152,11 +160,12 @@
 	// 滚动容器引用
 	let submissionScrollContainer: HTMLElement;
 
-	onMount(() => {
+	onMount(async () => {
 		setBreadcrumb([
 			{ label: '主页', href: '/' },
 			{ label: '添加视频源', isActive: true }
 		]);
+		await loadExistingVideoSources();
 	});
 
 	onDestroy(() => {
@@ -549,6 +558,14 @@
 
 	// 选择收藏夹
 	function selectFavorite(favorite: UserFavoriteFolder) {
+		// 检查收藏夹是否已存在
+		if (isFavoriteExists(favorite.id)) {
+			toast.error('收藏夹已存在', {
+				description: `该收藏夹「${favorite.name || favorite.title}」已经添加过了`
+			});
+			return;
+		}
+
 		sourceId = favorite.id.toString();
 		name = favorite.name || favorite.title;
 		favoriteValidationResult = {
@@ -562,6 +579,14 @@
 
 	// 选择搜索到的收藏夹
 	function selectSearchedFavorite(favorite: UserFavoriteFolder) {
+		// 检查收藏夹是否已存在
+		if (isFavoriteExists(favorite.fid)) {
+			toast.error('收藏夹已存在', {
+				description: `该收藏夹「${favorite.title}」已经添加过了`
+			});
+			return;
+		}
+
 		sourceId = favorite.fid.toString();
 		name = favorite.title;
 		favoriteValidationResult = {
@@ -720,6 +745,14 @@
 
 	// 选择合集
 	function selectCollection(collection: UserCollectionItem) {
+		// 检查合集是否已存在
+		if (isCollectionExists(collection.sid, collection.mid.toString())) {
+			toast.error('合集已存在', {
+				description: `该合集「${collection.name}」已经添加过了`
+			});
+			return;
+		}
+
 		sourceId = collection.sid;
 		name = collection.name;
 		cover = collection.cover || '';
@@ -797,8 +830,106 @@
 		}
 	}
 
+	// 加载已有视频源（用于过滤）
+	async function loadExistingVideoSources() {
+		loadingExistingSources = true;
+		try {
+			const result = await api.getVideoSources();
+			if (result.data) {
+				existingVideoSources = result.data;
+
+				// 处理合集：存储 s_id_m_id 的组合
+				existingCollectionIds.clear();
+				result.data.collection?.forEach((c) => {
+					if (c.s_id && c.m_id) {
+						existingCollectionIds.add(`${c.s_id}_${c.m_id}`);
+					}
+				});
+
+				// 处理收藏夹
+				existingFavoriteIds.clear();
+				result.data.favorite?.forEach((f) => {
+					if (f.f_id) {
+						existingFavoriteIds.add(f.f_id);
+					}
+				});
+
+				// 处理UP主投稿
+				existingSubmissionIds.clear();
+				result.data.submission?.forEach((s) => {
+					if (s.upper_id) {
+						existingSubmissionIds.add(s.upper_id);
+					}
+				});
+
+				// 处理番剧（主季度ID + 已选择的季度ID）
+				existingBangumiSeasonIds.clear();
+				result.data.bangumi?.forEach((b) => {
+					if (b.season_id) {
+						existingBangumiSeasonIds.add(b.season_id);
+					}
+					// 如果有已选择的季度，也加入到过滤列表中
+					if (b.selected_seasons) {
+						try {
+							const selectedSeasons = JSON.parse(b.selected_seasons);
+							if (Array.isArray(selectedSeasons)) {
+								selectedSeasons.forEach((seasonId) => {
+									existingBangumiSeasonIds.add(seasonId);
+								});
+							}
+						} catch (e) {
+							console.warn('解析selected_seasons失败:', b.selected_seasons);
+						}
+					}
+				});
+
+				console.log('已加载视频源过滤信息:', {
+					collections: existingCollectionIds.size,
+					favorites: existingFavoriteIds.size,
+					submissions: existingSubmissionIds.size,
+					bangumi: existingBangumiSeasonIds.size
+				});
+			}
+		} catch (error) {
+			console.error('加载已有视频源失败:', error);
+		} finally {
+			loadingExistingSources = false;
+		}
+	}
+
+	// 检查合集是否已存在
+	function isCollectionExists(sId: string, mId: string): boolean {
+		const key = `${sId}_${mId}`;
+		return existingCollectionIds.has(key);
+	}
+
+	// 检查UP主投稿是否已存在
+	function isSubmissionExists(upperId: number): boolean {
+		return existingSubmissionIds.has(upperId);
+	}
+
+	// 检查收藏夹是否已存在
+	function isFavoriteExists(fId: number): boolean {
+		return existingFavoriteIds.has(fId);
+	}
+
+	// 检查番剧季度是否已存在
+	function isBangumiSeasonExists(seasonId: string): boolean {
+		return existingBangumiSeasonIds.has(seasonId);
+	}
+
 	// 切换季度选择
 	function toggleSeasonSelection(seasonId: string) {
+		// 检查季度是否已存在
+		if (isBangumiSeasonExists(seasonId)) {
+			const seasonName =
+				filteredBangumiSeasons.find((s) => s.season_id === seasonId)?.season_title || '该季度';
+			toast.error('季度已存在', {
+				description: `${seasonName}已经添加过了`
+			});
+			return;
+		}
+
 		const index = selectedSeasons.indexOf(seasonId);
 		if (index === -1) {
 			selectedSeasons = [...selectedSeasons, seasonId];
@@ -806,6 +937,41 @@
 			selectedSeasons = selectedSeasons.filter((id) => id !== seasonId);
 		}
 	}
+
+	// 过滤后的收藏夹列表（过滤掉已存在的）
+	$: filteredUserFavorites = userFavorites.filter((f) => {
+		const fid = Number(f.id);
+		return !existingFavoriteIds.has(fid);
+	});
+
+	$: filteredSearchedUserFavorites = searchedUserFavorites.filter((f) => {
+		const fid = Number(f.id);
+		return !existingFavoriteIds.has(fid);
+	});
+
+	// 过滤后的合集列表（过滤掉已存在的）
+	$: filteredUserCollections = userCollections.filter((collection) => {
+		return !isCollectionExists(collection.sid, collection.mid.toString());
+	});
+
+	// 过滤后的搜索结果（根据类型过滤已存在的源）
+	$: filteredSearchResults = searchResults.filter((result) => {
+		if (sourceType === 'submission' && result.mid) {
+			return !existingSubmissionIds.has(Number(result.mid));
+		}
+		// 对于番剧搜索，过滤已存在的主季度
+		if (sourceType === 'bangumi' && result.season_id) {
+			return !isBangumiSeasonExists(result.season_id);
+		}
+		// 对于合集搜索，在搜索结果页面不过滤，因为需要选择具体合集才能判断
+		return true;
+	});
+
+	// 过滤后的番剧季度列表（标记已存在的季度）
+	$: filteredBangumiSeasons = bangumiSeasons.map((season) => ({
+		...season,
+		isExisting: isBangumiSeasonExists(season.season_id)
+	}));
 
 	// 监听sourceType变化，清理季度相关状态
 	$: if (sourceType !== 'bangumi') {
@@ -1433,9 +1599,11 @@
 										</Button>
 									</div>
 
-									{#if userFavorites.length > 0}
+									{#if filteredUserFavorites.length > 0}
 										<p class="text-xs text-yellow-600 dark:text-yellow-400">
-											已获取 {userFavorites.length} 个收藏夹，请在{isMobile ? '下方' : '右侧'}选择
+											已获取 {filteredUserFavorites.length} 个收藏夹，请在{isMobile
+												? '下方'
+												: '右侧'}选择
 										</p>
 									{:else}
 										<p class="text-xs text-yellow-600 dark:text-yellow-400">
@@ -1527,7 +1695,7 @@
 									onblur={handleUpIdChange}
 									required
 								/>
-								{#if userCollections.length > 0}
+								{#if filteredUserCollections.length > 0}
 									<p class="mt-1 text-xs text-green-600">
 										✓ 已获取合集列表，请在{isMobile ? '下方' : '右侧'}选择
 									</p>
@@ -1681,7 +1849,13 @@
 						<!-- 名称 -->
 						<div class="space-y-2">
 							<Label for="name">名称</Label>
-							<Input id="name" bind:value={name} placeholder="请输入视频源名称" required disabled={isMergingBangumi} />
+							<Input
+								id="name"
+								bind:value={name}
+								placeholder="请输入视频源名称"
+								required
+								disabled={isMergingBangumi}
+							/>
 							{#if isMergingBangumi}
 								<p class="text-xs text-purple-600">合并时自动沿用目标番剧源的名称</p>
 							{/if}
@@ -1690,7 +1864,13 @@
 						<!-- 保存路径 -->
 						<div class="space-y-2">
 							<Label for="path">保存路径</Label>
-							<Input id="path" bind:value={path} placeholder="例如：D:/Videos/Bilibili" required disabled={isMergingBangumi} />
+							<Input
+								id="path"
+								bind:value={path}
+								placeholder="例如：D:/Videos/Bilibili"
+								required
+								disabled={isMergingBangumi}
+							/>
 							{#if isMergingBangumi}
 								<p class="text-xs text-purple-600">合并时自动沿用目标番剧源的保存路径</p>
 							{:else}
@@ -1755,7 +1935,7 @@
 											? ''
 											: 'grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));'}
 									>
-										{#each searchResults as result, i (result.bvid || result.season_id || result.mid || i)}
+										{#each filteredSearchResults as result, i (result.bvid || result.season_id || result.mid || i)}
 											<button
 												onclick={() => selectSearchResult(result)}
 												onmouseenter={(e) => handleMouseEnter(result, e)}
@@ -1814,6 +1994,14 @@
 																			: result.result_type === 'video'
 																				? '视频'
 																				: result.result_type}
+															</span>
+														{/if}
+														<!-- 显示已存在标记 -->
+														{#if sourceType === 'submission' && result.mid && isSubmissionExists(Number(result.mid))}
+															<span
+																class="flex-shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+															>
+																已添加
 															</span>
 														{/if}
 													</div>
@@ -1929,7 +2117,7 @@
 				{/if}
 
 				<!-- UP主合集列表（移动到右侧） -->
-				{#if sourceType === 'collection' && userCollections.length > 0}
+				{#if sourceType === 'collection' && filteredUserCollections.length > 0}
 					<div class={isMobile ? 'mt-6 w-full' : 'flex-1'}>
 						<div
 							class="bg-card rounded-lg border {isMobile
@@ -1948,7 +2136,7 @@
 									<span
 										class="text-sm text-green-600 dark:text-green-400 {isMobile ? 'block' : 'ml-2'}"
 									>
-										共 {userCollections.length} 个合集
+										共 {filteredUserCollections.length} 个合集
 									</span>
 								</div>
 							</div>
@@ -1960,7 +2148,7 @@
 										? ''
 										: 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}
 								>
-									{#each userCollections as collection (collection.sid)}
+									{#each filteredUserCollections as collection (collection.sid)}
 										<button
 											onclick={() => selectCollection(collection)}
 											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors"
@@ -1994,6 +2182,13 @@
 														>
 															{collection.collection_type === 'season' ? '合集' : '系列'}
 														</span>
+														{#if isCollectionExists(collection.sid, collection.mid.toString())}
+															<span
+																class="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+															>
+																已添加
+															</span>
+														{/if}
 													</div>
 													<p class="text-muted-foreground mb-1 text-xs">ID: {collection.sid}</p>
 													<p class="text-muted-foreground text-xs">共 {collection.total} 个视频</p>
@@ -2013,7 +2208,7 @@
 				{/if}
 
 				<!-- 收藏夹列表（移动到右侧） -->
-				{#if sourceType === 'favorite' && userFavorites.length > 0}
+				{#if sourceType === 'favorite' && filteredUserFavorites.length > 0}
 					<div class={isMobile ? 'mt-6 w-full' : 'flex-1'}>
 						<div
 							class="bg-card rounded-lg border {isMobile
@@ -2034,7 +2229,7 @@
 											? 'block'
 											: 'ml-2'}"
 									>
-										共 {userFavorites.length} 个收藏夹
+										共 {filteredUserFavorites.length} 个收藏夹
 									</span>
 								</div>
 							</div>
@@ -2046,7 +2241,7 @@
 										? ''
 										: 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}
 								>
-									{#each userFavorites as favorite (favorite.id)}
+									{#each filteredUserFavorites as favorite (favorite.id)}
 										<button
 											onclick={() => selectFavorite(favorite)}
 											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors"
@@ -2148,7 +2343,7 @@
 											? ''
 											: 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}
 									>
-										{#each searchedUserFavorites as favorite (favorite.fid)}
+										{#each filteredSearchedUserFavorites as favorite (favorite.fid)}
 											<button
 												onclick={() => selectSearchedFavorite(favorite)}
 												class="hover:bg-muted rounded-lg border p-4 text-left transition-colors"
@@ -2240,18 +2435,23 @@
 												? ''
 												: 'grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));'}
 										>
-											{#each bangumiSeasons as season, i (season.season_id)}
+											{#each filteredBangumiSeasons as season, i (season.season_id)}
 												<div
 													role="button"
 													tabindex="0"
-													class="relative rounded-lg border p-4 transition-all duration-300 hover:bg-purple-50 dark:hover:bg-purple-900 {isMobile
+													class="relative rounded-lg border p-4 transition-all duration-300 {season.isExisting
+														? 'cursor-not-allowed bg-gray-50 opacity-60 dark:bg-gray-800'
+														: 'transform cursor-pointer hover:scale-102 hover:bg-purple-50 hover:shadow-md dark:hover:bg-purple-900'} {isMobile
 														? 'h-auto'
-														: 'h-[120px]'} transform hover:scale-102 hover:shadow-md"
-													onmouseenter={(e) => handleSeasonMouseEnter(season, e)}
-													onmouseleave={handleSeasonMouseLeave}
-													onmousemove={handleSeasonMouseMove}
-													onclick={() => toggleSeasonSelection(season.season_id)}
+														: 'h-[120px]'}"
+													onmouseenter={(e) =>
+														!season.isExisting && handleSeasonMouseEnter(season, e)}
+													onmouseleave={!season.isExisting ? handleSeasonMouseLeave : undefined}
+													onmousemove={!season.isExisting ? handleSeasonMouseMove : undefined}
+													onclick={() =>
+														!season.isExisting && toggleSeasonSelection(season.season_id)}
 													onkeydown={(e) =>
+														!season.isExisting &&
 														(e.key === 'Enter' || e.key === ' ') &&
 														toggleSeasonSelection(season.season_id)}
 													transition:fly={{ y: 50, duration: 300, delay: i * 100 }}
@@ -2281,8 +2481,11 @@
 																	type="checkbox"
 																	id="season-{season.season_id}"
 																	checked={selectedSeasons.includes(season.season_id)}
+																	disabled={season.isExisting}
 																	onchange={() => toggleSeasonSelection(season.season_id)}
-																	class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+																	class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500 {season.isExisting
+																		? 'cursor-not-allowed opacity-50'
+																		: ''}"
 																/>
 															</div>
 															<!-- 右下角集数标签 -->
@@ -2302,6 +2505,12 @@
 																	<span
 																		class="mt-1 inline-block rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-300"
 																		>当前</span
+																	>
+																{/if}
+																{#if season.isExisting}
+																	<span
+																		class="mt-1 ml-1 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+																		>已添加</span
 																	>
 																{/if}
 																<p class="text-muted-foreground mt-1 text-xs">
