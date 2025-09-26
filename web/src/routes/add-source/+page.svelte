@@ -706,6 +706,7 @@
 			const result = await api.getUserCollections(upId);
 			if (result.data && result.data.collections) {
 				userCollections = result.data.collections;
+				console.log('获取到的用户合集:', userCollections);
 				if (userCollections.length === 0) {
 					toast.info('该UP主暂无合集');
 				} else {
@@ -840,11 +841,15 @@
 
 				// 处理合集：存储 s_id_m_id 的组合
 				existingCollectionIds.clear();
+				console.log('原始合集数据:', result.data.collection);
 				result.data.collection?.forEach((c) => {
 					if (c.s_id && c.m_id) {
-						existingCollectionIds.add(`${c.s_id}_${c.m_id}`);
+						const key = `${c.s_id}_${c.m_id}`;
+						console.log(`添加合集到过滤列表: ${key}`, c);
+						existingCollectionIds.add(key);
 					}
 				});
+				console.log('最终合集过滤列表:', existingCollectionIds);
 
 				// 处理收藏夹
 				existingFavoriteIds.clear();
@@ -938,32 +943,23 @@
 		}
 	}
 
-	// 过滤后的收藏夹列表（过滤掉已存在的）
-	$: filteredUserFavorites = userFavorites.filter((f) => {
-		const fid = Number(f.id);
-		return !existingFavoriteIds.has(fid);
-	});
+	// 过滤后的收藏夹列表（不完全过滤，而是标记已存在状态）
+	$: filteredUserFavorites = userFavorites;
 
-	$: filteredSearchedUserFavorites = searchedUserFavorites.filter((f) => {
-		const fid = Number(f.id);
-		return !existingFavoriteIds.has(fid);
-	});
+	$: filteredSearchedUserFavorites = searchedUserFavorites;
 
-	// 过滤后的合集列表（过滤掉已存在的）
-	$: filteredUserCollections = userCollections.filter((collection) => {
-		return !isCollectionExists(collection.sid, collection.mid.toString());
-	});
+	// 过滤后的合集列表（不完全过滤，而是标记已存在状态）
+	$: filteredUserCollections = userCollections;
+
+	// 过滤后的关注UP主列表（不完全过滤，而是标记已存在状态）
+	$: filteredUserFollowings = userFollowings;
 
 	// 过滤后的搜索结果（根据类型过滤已存在的源）
 	$: filteredSearchResults = searchResults.filter((result) => {
 		if (sourceType === 'submission' && result.mid) {
 			return !existingSubmissionIds.has(Number(result.mid));
 		}
-		// 对于番剧搜索，过滤已存在的主季度
-		if (sourceType === 'bangumi' && result.season_id) {
-			return !isBangumiSeasonExists(result.season_id);
-		}
-		// 对于合集搜索，在搜索结果页面不过滤，因为需要选择具体合集才能判断
+		// 对于番剧和合集搜索，不完全过滤，显示所有结果但标记已存在状态
 		return true;
 	});
 
@@ -1599,11 +1595,9 @@
 										</Button>
 									</div>
 
-									{#if filteredUserFavorites.length > 0}
+									{#if userFavorites.length > 0}
 										<p class="text-xs text-yellow-600 dark:text-yellow-400">
-											已获取 {filteredUserFavorites.length} 个收藏夹，请在{isMobile
-												? '下方'
-												: '右侧'}选择
+											已获取 {userFavorites.length} 个收藏夹，请在{isMobile ? '下方' : '右侧'}选择
 										</p>
 									{:else}
 										<p class="text-xs text-yellow-600 dark:text-yellow-400">
@@ -1695,7 +1689,7 @@
 									onblur={handleUpIdChange}
 									required
 								/>
-								{#if filteredUserCollections.length > 0}
+								{#if userCollections.length > 0}
 									<p class="mt-1 text-xs text-green-600">
 										✓ 已获取合集列表，请在{isMobile ? '下方' : '右侧'}选择
 									</p>
@@ -1936,14 +1930,21 @@
 											: 'grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));'}
 									>
 										{#each filteredSearchResults as result, i (result.bvid || result.season_id || result.mid || i)}
+											{@const isBangumiExisting =
+												sourceType === 'bangumi' &&
+												result.season_id &&
+												isBangumiSeasonExists(result.season_id)}
 											<button
 												onclick={() => selectSearchResult(result)}
 												onmouseenter={(e) => handleMouseEnter(result, e)}
 												onmouseleave={handleMouseLeave}
 												onmousemove={handleMouseMove}
-												class="hover:bg-muted relative flex transform items-start gap-3 rounded-lg border p-4 text-left transition-all duration-300 hover:scale-102 hover:shadow-md"
+												class="hover:bg-muted relative flex transform items-start gap-3 rounded-lg border p-4 text-left transition-all duration-300 hover:scale-102 hover:shadow-md {isBangumiExisting
+													? 'opacity-60'
+													: ''}"
 												transition:fly={{ y: 50, duration: 300, delay: i * 50 }}
 												animate:flip={{ duration: 300 }}
+												disabled={isBangumiExisting}
 											>
 												{#if result.cover}
 													<img
@@ -1998,6 +1999,13 @@
 														{/if}
 														<!-- 显示已存在标记 -->
 														{#if sourceType === 'submission' && result.mid && isSubmissionExists(Number(result.mid))}
+															<span
+																class="flex-shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+															>
+																已添加
+															</span>
+														{/if}
+														{#if isBangumiExisting}
 															<span
 																class="flex-shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
 															>
@@ -2064,10 +2072,15 @@
 										? ''
 										: 'grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));'}
 								>
-									{#each userFollowings as following (following.mid)}
+									{#each filteredUserFollowings as following (following.mid)}
 										<button
 											onclick={() => selectFollowing(following)}
-											class="hover:bg-muted rounded-lg border p-3 text-left transition-colors"
+											disabled={sourceType === 'submission' &&
+												existingSubmissionIds.has(following.mid)}
+											class="hover:bg-muted rounded-lg border p-3 text-left transition-colors {sourceType ===
+												'submission' && existingSubmissionIds.has(following.mid)
+												? 'cursor-not-allowed opacity-60'
+												: ''}"
 										>
 											<div class="flex items-start gap-2">
 												{#if following.face}
@@ -2097,6 +2110,13 @@
 																V
 															</span>
 														{/if}
+														{#if sourceType === 'submission' && existingSubmissionIds.has(following.mid)}
+															<span
+																class="flex-shrink-0 rounded bg-gray-100 px-1 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+															>
+																已添加
+															</span>
+														{/if}
 													</div>
 													<p class="text-muted-foreground mb-1 truncate text-xs">
 														UID: {following.mid}
@@ -2117,7 +2137,7 @@
 				{/if}
 
 				<!-- UP主合集列表（移动到右侧） -->
-				{#if sourceType === 'collection' && filteredUserCollections.length > 0}
+				{#if sourceType === 'collection' && userCollections.length > 0}
 					<div class={isMobile ? 'mt-6 w-full' : 'flex-1'}>
 						<div
 							class="bg-card rounded-lg border {isMobile
@@ -2136,7 +2156,7 @@
 									<span
 										class="text-sm text-green-600 dark:text-green-400 {isMobile ? 'block' : 'ml-2'}"
 									>
-										共 {filteredUserCollections.length} 个合集
+										共 {userCollections.length} 个合集
 									</span>
 								</div>
 							</div>
@@ -2151,7 +2171,13 @@
 									{#each filteredUserCollections as collection (collection.sid)}
 										<button
 											onclick={() => selectCollection(collection)}
-											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors"
+											disabled={isCollectionExists(collection.sid, collection.mid.toString())}
+											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isCollectionExists(
+												collection.sid,
+												collection.mid.toString()
+											)
+												? 'cursor-not-allowed opacity-60'
+												: ''}"
 										>
 											<div class="flex items-start gap-3">
 												{#if collection.cover}
@@ -2190,7 +2216,9 @@
 															</span>
 														{/if}
 													</div>
-													<p class="text-muted-foreground mb-1 text-xs">ID: {collection.sid}</p>
+													<p class="text-muted-foreground mb-1 text-xs">
+														ID: {collection.sid} (检查key: {collection.sid}_{collection.mid})
+													</p>
 													<p class="text-muted-foreground text-xs">共 {collection.total} 个视频</p>
 													{#if collection.description}
 														<p class="text-muted-foreground mt-1 line-clamp-2 text-xs">
@@ -2208,7 +2236,7 @@
 				{/if}
 
 				<!-- 收藏夹列表（移动到右侧） -->
-				{#if sourceType === 'favorite' && filteredUserFavorites.length > 0}
+				{#if sourceType === 'favorite' && userFavorites.length > 0}
 					<div class={isMobile ? 'mt-6 w-full' : 'flex-1'}>
 						<div
 							class="bg-card rounded-lg border {isMobile
@@ -2229,7 +2257,7 @@
 											? 'block'
 											: 'ml-2'}"
 									>
-										共 {filteredUserFavorites.length} 个收藏夹
+										共 {userFavorites.length} 个收藏夹
 									</span>
 								</div>
 							</div>
@@ -2244,7 +2272,12 @@
 									{#each filteredUserFavorites as favorite (favorite.id)}
 										<button
 											onclick={() => selectFavorite(favorite)}
-											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors"
+											disabled={existingFavoriteIds.has(Number(favorite.id))}
+											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {existingFavoriteIds.has(
+												Number(favorite.id)
+											)
+												? 'cursor-not-allowed opacity-60'
+												: ''}"
 										>
 											<div class="flex items-start gap-3">
 												{#if favorite.cover}
@@ -2265,9 +2298,18 @@
 													</div>
 												{/if}
 												<div class="min-w-0 flex-1">
-													<h4 class="mb-1 truncate text-sm font-medium">
-														{favorite.name || favorite.title}
-													</h4>
+													<div class="mb-1 flex items-center gap-2">
+														<h4 class="truncate text-sm font-medium">
+															{favorite.name || favorite.title}
+														</h4>
+														{#if existingFavoriteIds.has(Number(favorite.id))}
+															<span
+																class="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+															>
+																已添加
+															</span>
+														{/if}
+													</div>
 													<p class="text-muted-foreground mb-1 text-xs">收藏夹ID: {favorite.id}</p>
 													<p class="text-muted-foreground mb-1 text-xs">
 														共 {favorite.media_count} 个视频
@@ -2577,9 +2619,16 @@
 										: 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}
 								>
 									{#each subscribedCollections as collection (collection.sid)}
+										{@const isExisting = isCollectionExists(
+											collection.sid,
+											collection.up_mid.toString()
+										)}
 										<button
 											onclick={() => selectSubscribedCollection(collection)}
-											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors"
+											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isExisting
+												? 'opacity-60'
+												: ''}"
+											disabled={isExisting}
 										>
 											<div class="flex items-start gap-3">
 												{#if collection.cover}
@@ -2607,6 +2656,13 @@
 														>
 															{collection.collection_type === 'season' ? '合集' : '系列'}
 														</span>
+														{#if isExisting}
+															<span
+																class="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+															>
+																已添加
+															</span>
+														{/if}
 													</div>
 													<p class="text-muted-foreground mb-1 text-xs">ID: {collection.sid}</p>
 													<p class="text-muted-foreground mb-1 text-xs">
