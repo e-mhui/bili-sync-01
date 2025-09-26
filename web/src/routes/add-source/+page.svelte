@@ -19,7 +19,7 @@
 		UserCollectionInfo,
 		AddVideoSourceRequest
 	} from '$lib/types';
-	import { Search, X } from '@lucide/svelte';
+	import { Search, X, Plus as PlusIcon } from '@lucide/svelte';
 	import { onDestroy, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { flip } from 'svelte/animate';
@@ -92,6 +92,14 @@
 	let existingBangumiSeasonIds: Set<string> = new Set();
 	let loadingExistingSources = false;
 	let isMergingBangumi = false;
+
+	// 批量添加相关
+	let batchMode = false; // 是否为批量模式
+	let batchSelectedItems = new Map(); // 存储选中项 {key: {type, data, name}}
+	let batchBasePath = '/Downloads'; // 批量基础路径
+	let batchAdding = false; // 批量添加进行中
+	let batchProgress = { current: 0, total: 0 }; // 批量添加进度
+	let batchDialogOpen = false; // 批量配置对话框状态
 
 	// 悬停详情相关
 	let hoveredItem: {
@@ -1437,6 +1445,262 @@
 	$: selectedSubmissionCount = Array.from(selectedSubmissionVideos).filter((bvid) =>
 		filteredSubmissionVideos.some((video) => video.bvid === bvid)
 	).length;
+
+	// 批量选择相关函数
+	function toggleBatchSelection(itemKey: string, item: any, itemType: string) {
+		if (batchSelectedItems.has(itemKey)) {
+			batchSelectedItems.delete(itemKey);
+		} else {
+			// 生成默认名称
+			let itemName = '';
+
+			switch (itemType) {
+				case 'search':
+					itemName = cleanTitle(item.title);
+					break;
+				case 'favorite':
+					itemName = item.name || item.title;
+					break;
+				case 'collection':
+					itemName = item.name || item.title;
+					break;
+				case 'following':
+					itemName = item.name;
+					break;
+				case 'bangumi':
+					itemName = item.season_title || item.title || item.full_title;
+					break;
+			}
+
+			batchSelectedItems.set(itemKey, {
+				type: itemType,
+				data: item,
+				name: itemName
+			});
+		}
+		batchSelectedItems = batchSelectedItems;
+	}
+
+	function isBatchSelected(itemKey: string): boolean {
+		return batchSelectedItems.has(itemKey);
+	}
+
+	function clearBatchSelection() {
+		batchSelectedItems.clear();
+		batchSelectedItems = batchSelectedItems;
+	}
+
+	function selectAllVisible(itemType: string) {
+		switch (itemType) {
+			case 'search':
+				filteredSearchResults.forEach((result, index) => {
+					const key = `search_${result.bvid || result.season_id || result.mid || index}`;
+					if (!batchSelectedItems.has(key)) {
+						toggleBatchSelection(key, result, 'search');
+					}
+				});
+				break;
+			case 'following':
+				filteredUserFollowings.forEach((following) => {
+					const key = `following_${following.mid}`;
+					// 跳过已添加的UP主
+					const isDisabled = sourceType === 'submission' && existingSubmissionIds.has(following.mid);
+					if (!batchSelectedItems.has(key) && !isDisabled) {
+						toggleBatchSelection(key, following, 'following');
+					}
+				});
+				break;
+			case 'favorite':
+				userFavorites.forEach((favorite) => {
+					const key = `favorite_${favorite.id}`;
+					// 跳过已添加的收藏夹
+					const isDisabled = existingFavoriteIds.has(favorite.id);
+					if (!batchSelectedItems.has(key) && !isDisabled) {
+						toggleBatchSelection(key, favorite, 'favorite');
+					}
+				});
+				break;
+			case 'searched-favorite':
+				searchedUserFavorites.forEach((favorite) => {
+					const key = `searched-favorite_${favorite.fid}`;
+					// 跳过已添加的收藏夹
+					const isDisabled = existingFavoriteIds.has(Number(favorite.fid));
+					if (!batchSelectedItems.has(key) && !isDisabled) {
+						toggleBatchSelection(key, favorite, 'favorite');
+					}
+				});
+				break;
+			case 'collection':
+				userCollections.forEach((collection) => {
+					const key = `collection_${collection.sid}`;
+					// 跳过已添加的合集
+					const isDisabled = isCollectionExists(collection.sid, collection.mid.toString());
+					if (!batchSelectedItems.has(key) && !isDisabled) {
+						toggleBatchSelection(key, collection, 'collection');
+					}
+				});
+				break;
+			case 'subscribed-collection':
+				subscribedCollections.forEach((collection) => {
+					const key = `subscribed-collection_${collection.sid}`;
+					// 跳过已添加的合集
+					const isDisabled = isCollectionExists(collection.sid, collection.up_mid.toString());
+					if (!batchSelectedItems.has(key) && !isDisabled) {
+						toggleBatchSelection(key, collection, 'collection');
+					}
+				});
+				break;
+		}
+	}
+
+	// 批量添加函数
+	async function handleBatchAdd() {
+		if (batchSelectedItems.size === 0) {
+			toast.error('未选择任何视频源');
+			return;
+		}
+
+		batchAdding = true;
+		batchProgress = { current: 0, total: batchSelectedItems.size };
+
+		const selectedItems = Array.from(batchSelectedItems.entries());
+		let successCount = 0;
+		let failedCount = 0;
+		const failedItems: string[] = [];
+
+		try {
+			for (let i = 0; i < selectedItems.length; i++) {
+				const [itemKey, item] = selectedItems[i];
+				batchProgress.current = i + 1;
+
+				try {
+					// 构建添加视频源的参数
+					const params: AddVideoSourceRequest = {
+						source_type: getSourceTypeFromBatchItem(item),
+						source_id: getSourceIdFromBatchItem(item),
+						name: item.name,
+						path: batchBasePath
+					};
+
+					// 添加特定类型的额外参数
+					if (item.type === 'following') {
+						if (sourceType === 'collection') {
+							params.up_id = item.data.mid.toString();
+							params.collection_type = 'season';
+						}
+						// UP主投稿类型不需要额外参数
+					} else if (item.type === 'collection') {
+						// 区分普通合集和关注的合集
+						if (itemKey.startsWith('subscribed-collection_')) {
+							// 关注的合集使用 up_mid
+							params.up_id = item.data.up_mid.toString();
+							params.collection_type = item.data.collection_type || 'season';
+						} else {
+							// 普通合集使用 mid
+							params.up_id = item.data.mid.toString();
+							params.collection_type = item.data.type || 'season';
+						}
+					}
+
+					if (item.data.cover) {
+						params.cover = item.data.cover;
+					}
+
+					const result = await api.addVideoSource(params);
+
+					if (result.data.success) {
+						successCount++;
+					} else {
+						failedCount++;
+						failedItems.push(item.name);
+					}
+				} catch (error) {
+					failedCount++;
+					failedItems.push(item.name);
+					console.error(`添加视频源 ${item.name} 失败:`, error);
+				}
+
+				// 添加小延迟避免请求过于频繁
+				await new Promise(resolve => setTimeout(resolve, 200));
+			}
+
+			// 显示结果
+			if (successCount > 0 && failedCount === 0) {
+				toast.success('批量添加完成', {
+					description: `成功添加 ${successCount} 个视频源`
+				});
+			} else if (successCount > 0) {
+				toast.success('批量添加部分成功', {
+					description: `成功添加 ${successCount} 个，失败 ${failedCount} 个`
+				});
+			} else {
+				toast.error('批量添加失败', {
+					description: '所有视频源都添加失败'
+				});
+			}
+
+			// 清空选择并关闭批量模式
+			clearBatchSelection();
+			batchMode = false;
+			batchDialogOpen = false;
+
+			// 如果有成功添加的，跳转到视频源管理页面
+			if (successCount > 0) {
+				setTimeout(() => {
+					goto('/video-sources');
+				}, 1000);
+			}
+
+		} catch (error) {
+			console.error('批量添加过程中发生错误:', error);
+			toast.error('批量添加失败', {
+				description: '添加过程中发生错误'
+			});
+		} finally {
+			batchAdding = false;
+			batchProgress = { current: 0, total: 0 };
+		}
+	}
+
+	// 根据批量选择项获取视频源类型
+	function getSourceTypeFromBatchItem(item: any): string {
+		switch (item.type) {
+			case 'search':
+				return sourceType; // 使用当前选择的源类型
+			case 'following':
+				return sourceType; // 使用当前选择的源类型（submission 或 collection）
+			case 'favorite':
+				return 'favorite';
+			case 'collection':
+				return 'collection';
+			case 'bangumi':
+				return 'bangumi';
+			default:
+				return sourceType;
+		}
+	}
+
+	// 根据批量选择项获取视频源ID
+	function getSourceIdFromBatchItem(item: any): string {
+		switch (item.type) {
+			case 'search':
+				if (sourceType === 'submission') {
+					return item.data.mid?.toString() || '';
+				}
+				return item.data.bvid || item.data.season_id || item.data.mid?.toString() || '';
+			case 'following':
+				return item.data.mid.toString();
+			case 'favorite':
+				// 处理两种收藏夹数据结构：用户自己的收藏夹使用id，搜索到的收藏夹使用fid
+				return (item.data.fid || item.data.id).toString();
+			case 'collection':
+				return item.data.sid.toString();
+			case 'bangumi':
+				return item.data.season_id || '';
+			default:
+				return '';
+		}
+	}
 </script>
 
 <svelte:head>
@@ -1448,7 +1712,31 @@
 <div class="py-2">
 	<div class="mx-auto px-4">
 		<div class="bg-card rounded-lg border p-6 shadow-sm">
-			<h1 class="mb-6 text-2xl font-bold">添加新视频源</h1>
+			<div class="mb-6 flex items-center justify-between">
+				<h1 class="text-2xl font-bold">添加新视频源</h1>
+				{#if sourceType !== 'bangumi' && sourceType !== 'watch_later'}
+					<Button
+						variant={batchMode ? 'default' : 'outline'}
+						size="sm"
+						onclick={() => {
+							batchMode = !batchMode;
+							if (!batchMode) {
+								batchSelectedItems.clear();
+								batchSelectedItems = batchSelectedItems;
+							}
+						}}
+						class="flex items-center gap-2"
+					>
+						{#if batchMode}
+							<X class="h-4 w-4" />
+							退出批量模式
+						{:else}
+							<PlusIcon class="h-4 w-4" />
+							批量添加
+						{/if}
+					</Button>
+				{/if}
+			</div>
 
 			<div class="flex {isMobile ? 'flex-col' : 'gap-8'}">
 				<!-- 左侧：表单区域 -->
@@ -1894,16 +2182,28 @@
 										共找到 {searchTotalResults} 个结果
 									</span>
 								</div>
-								<button
-									onclick={() => {
-										showSearchResults = false;
-										searchResults = [];
-										searchTotalResults = 0;
-									}}
-									class="text-muted-foreground hover:text-foreground p-1 text-xl"
-								>
-									<X class="h-5 w-5" />
-								</button>
+								<div class="flex items-center gap-2">
+									{#if batchMode && sourceType === 'submission'}
+										<Button
+											size="sm"
+											variant="outline"
+											onclick={() => selectAllVisible('search')}
+											class="text-xs"
+										>
+											全选
+										</Button>
+									{/if}
+									<button
+										onclick={() => {
+											showSearchResults = false;
+											searchResults = [];
+											searchTotalResults = 0;
+										}}
+										class="text-muted-foreground hover:text-foreground p-1 text-xl"
+									>
+										<X class="h-5 w-5" />
+									</button>
+								</div>
 							</div>
 
 							<div class="flex-1 overflow-hidden p-3">
@@ -1919,18 +2219,40 @@
 												sourceType === 'bangumi' &&
 												result.season_id &&
 												isBangumiSeasonExists(result.season_id)}
+											{@const itemKey = `search_${result.bvid || result.season_id || result.mid || i}`}
+											{@const isSelected = isBatchSelected(itemKey)}
 											<button
-												onclick={() => selectSearchResult(result)}
+												onclick={() => {
+													if (batchMode && sourceType === 'submission') {
+														toggleBatchSelection(itemKey, result, 'search');
+													} else {
+														selectSearchResult(result);
+													}
+												}}
 												onmouseenter={(e) => handleMouseEnter(result, e)}
 												onmouseleave={handleMouseLeave}
 												onmousemove={handleMouseMove}
 												class="hover:bg-muted relative flex transform items-start gap-3 rounded-lg border p-4 text-left transition-all duration-300 hover:scale-102 hover:shadow-md {isBangumiExisting
 													? 'opacity-60'
-													: ''}"
+													: ''} {batchMode && isSelected ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950' : ''}"
 												transition:fly={{ y: 50, duration: 300, delay: i * 50 }}
 												animate:flip={{ duration: 300 }}
 												disabled={isBangumiExisting}
 											>
+												<!-- 批量模式下的复选框 -->
+												{#if batchMode && sourceType === 'submission'}
+													<div class="flex-shrink-0 pt-1">
+														<input
+															type="checkbox"
+															checked={isSelected}
+															onclick={(e) => {
+																e.stopPropagation();
+																toggleBatchSelection(itemKey, result, 'search');
+															}}
+															class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+														/>
+													</div>
+												{/if}
 												{#if result.cover}
 													<img
 														src={processBilibiliImageUrl(result.cover)}
@@ -2048,6 +2370,16 @@
 										共 {userFollowings.length} 个UP主
 									</span>
 								</div>
+								{#if batchMode}
+									<Button
+										size="sm"
+										variant="outline"
+										onclick={() => selectAllVisible('following')}
+										class="text-xs"
+									>
+										全选
+									</Button>
+								{/if}
 							</div>
 
 							<div class="flex-1 overflow-y-auto p-3">
@@ -2058,16 +2390,37 @@
 										: 'grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));'}
 								>
 									{#each filteredUserFollowings as following (following.mid)}
+										{@const itemKey = `following_${following.mid}`}
+										{@const isSelected = isBatchSelected(itemKey)}
+										{@const isDisabled = sourceType === 'submission' && existingSubmissionIds.has(following.mid)}
 										<button
-											onclick={() => selectFollowing(following)}
-											disabled={sourceType === 'submission' &&
-												existingSubmissionIds.has(following.mid)}
-											class="hover:bg-muted rounded-lg border p-3 text-left transition-colors {sourceType ===
-												'submission' && existingSubmissionIds.has(following.mid)
+											onclick={() => {
+												if (batchMode) {
+													toggleBatchSelection(itemKey, following, 'following');
+												} else {
+													selectFollowing(following);
+												}
+											}}
+											disabled={isDisabled}
+											class="hover:bg-muted rounded-lg border p-3 text-left transition-colors {isDisabled
 												? 'cursor-not-allowed opacity-60'
-												: ''}"
+												: ''} {batchMode && isSelected ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950' : ''}"
 										>
 											<div class="flex items-start gap-2">
+												<!-- 批量模式下的复选框 -->
+												{#if batchMode}
+													<div class="flex-shrink-0 pt-1">
+														<input
+															type="checkbox"
+															checked={isSelected}
+															onclick={(e) => {
+																e.stopPropagation();
+																toggleBatchSelection(itemKey, following, 'following');
+															}}
+															class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+														/>
+													</div>
+												{/if}
 												{#if following.face}
 													<img
 														src={processBilibiliImageUrl(following.face)}
@@ -2144,6 +2497,16 @@
 										共 {userCollections.length} 个合集
 									</span>
 								</div>
+								{#if batchMode}
+									<Button
+										size="sm"
+										variant="outline"
+										onclick={() => selectAllVisible('collection')}
+										class="text-xs"
+									>
+										全选
+									</Button>
+								{/if}
 							</div>
 
 							<div class="flex-1 overflow-y-auto p-3">
@@ -2154,17 +2517,37 @@
 										: 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}
 								>
 									{#each filteredUserCollections as collection (collection.sid)}
+										{@const itemKey = `collection_${collection.sid}`}
+										{@const isSelected = isBatchSelected(itemKey)}
+										{@const isDisabled = isCollectionExists(collection.sid, collection.mid.toString())}
 										<button
-											onclick={() => selectCollection(collection)}
-											disabled={isCollectionExists(collection.sid, collection.mid.toString())}
-											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isCollectionExists(
-												collection.sid,
-												collection.mid.toString()
-											)
+											onclick={() => {
+												if (batchMode) {
+													toggleBatchSelection(itemKey, collection, 'collection');
+												} else {
+													selectCollection(collection);
+												}
+											}}
+											disabled={isDisabled}
+											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isDisabled
 												? 'cursor-not-allowed opacity-60'
-												: ''}"
+												: ''} {batchMode && isSelected ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950' : ''}"
 										>
 											<div class="flex items-start gap-3">
+												<!-- 批量模式下的复选框 -->
+												{#if batchMode}
+													<div class="flex-shrink-0 pt-1">
+														<input
+															type="checkbox"
+															checked={isSelected}
+															onclick={(e) => {
+																e.stopPropagation();
+																toggleBatchSelection(itemKey, collection, 'collection');
+															}}
+															class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+														/>
+													</div>
+												{/if}
 												{#if collection.cover}
 													<img
 														src={processBilibiliImageUrl(collection.cover)}
@@ -2245,6 +2628,16 @@
 										共 {userFavorites.length} 个收藏夹
 									</span>
 								</div>
+								{#if batchMode}
+									<Button
+										size="sm"
+										variant="outline"
+										onclick={() => selectAllVisible('favorite')}
+										class="text-xs"
+									>
+										全选
+									</Button>
+								{/if}
 							</div>
 
 							<div class="flex-1 overflow-y-auto p-3">
@@ -2255,16 +2648,37 @@
 										: 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}
 								>
 									{#each filteredUserFavorites as favorite (favorite.id)}
+										{@const itemKey = `favorite_${favorite.id}`}
+										{@const isSelected = isBatchSelected(itemKey)}
+										{@const isDisabled = existingFavoriteIds.has(Number(favorite.id))}
 										<button
-											onclick={() => selectFavorite(favorite)}
-											disabled={existingFavoriteIds.has(Number(favorite.id))}
-											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {existingFavoriteIds.has(
-												Number(favorite.id)
-											)
+											onclick={() => {
+												if (batchMode) {
+													toggleBatchSelection(itemKey, favorite, 'favorite');
+												} else {
+													selectFavorite(favorite);
+												}
+											}}
+											disabled={isDisabled}
+											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isDisabled
 												? 'cursor-not-allowed opacity-60'
-												: ''}"
+												: ''} {batchMode && isSelected ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950' : ''}"
 										>
 											<div class="flex items-start gap-3">
+												<!-- 批量模式下的复选框 -->
+												{#if batchMode}
+													<div class="flex-shrink-0 pt-1">
+														<input
+															type="checkbox"
+															checked={isSelected}
+															onclick={(e) => {
+																e.stopPropagation();
+																toggleBatchSelection(itemKey, favorite, 'favorite');
+															}}
+															class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+														/>
+													</div>
+												{/if}
 												{#if favorite.cover}
 													<img
 														src={processBilibiliImageUrl(favorite.cover)}
@@ -2343,17 +2757,29 @@
 										{/if}
 									</span>
 								</div>
-								<button
-									onclick={() => {
-										selectedUserId = '';
-										selectedUserName = '';
-										searchedUserFavorites = [];
-										loadingSearchedUserFavorites = false;
-									}}
-									class="p-1 text-xl text-green-500 hover:text-green-700 dark:text-green-300"
-								>
-									<X class="h-5 w-5" />
-								</button>
+								<div class="flex items-center gap-2">
+									{#if batchMode && searchedUserFavorites.length > 0}
+										<Button
+											size="sm"
+											variant="outline"
+											onclick={() => selectAllVisible('searched-favorite')}
+											class="text-xs"
+										>
+											全选
+										</Button>
+									{/if}
+									<button
+										onclick={() => {
+											selectedUserId = '';
+											selectedUserName = '';
+											searchedUserFavorites = [];
+											loadingSearchedUserFavorites = false;
+										}}
+										class="p-1 text-xl text-green-500 hover:text-green-700 dark:text-green-300"
+									>
+										<X class="h-5 w-5" />
+									</button>
+								</div>
 							</div>
 
 							<div class="flex-1 overflow-y-auto p-3">
@@ -2371,18 +2797,53 @@
 											: 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}
 									>
 										{#each filteredSearchedUserFavorites as favorite (favorite.fid)}
+											{@const itemKey = `searched-favorite_${favorite.fid}`}
+											{@const isSelected = isBatchSelected(itemKey)}
+											{@const isDisabled = existingFavoriteIds.has(Number(favorite.fid))}
 											<button
-												onclick={() => selectSearchedFavorite(favorite)}
-												class="hover:bg-muted rounded-lg border p-4 text-left transition-colors"
+												onclick={() => {
+													if (batchMode) {
+														toggleBatchSelection(itemKey, favorite, 'favorite');
+													} else {
+														selectSearchedFavorite(favorite);
+													}
+												}}
+												disabled={isDisabled}
+												class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isDisabled
+													? 'cursor-not-allowed opacity-60'
+													: ''} {batchMode && isSelected ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950' : ''}"
 											>
 												<div class="flex items-start gap-3">
+													<!-- 批量模式下的复选框 -->
+													{#if batchMode}
+														<div class="flex-shrink-0 pt-1">
+															<input
+																type="checkbox"
+																checked={isSelected}
+																onclick={(e) => {
+																	e.stopPropagation();
+																	toggleBatchSelection(itemKey, favorite, 'favorite');
+																}}
+																class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+															/>
+														</div>
+													{/if}
 													<div
 														class="bg-muted text-muted-foreground flex h-16 w-24 flex-shrink-0 items-center justify-center rounded text-xs"
 													>
 														收藏夹
 													</div>
 													<div class="min-w-0 flex-1">
-														<h4 class="mb-1 truncate text-sm font-medium">{favorite.title}</h4>
+														<div class="mb-1 flex items-center gap-2">
+															<h4 class="truncate text-sm font-medium">{favorite.title}</h4>
+															{#if existingFavoriteIds.has(Number(favorite.fid))}
+																<span
+																	class="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+																>
+																	已添加
+																</span>
+															{/if}
+														</div>
 														<p class="text-muted-foreground mb-1 text-xs">
 															收藏夹ID: {favorite.fid}
 														</p>
@@ -2594,6 +3055,16 @@
 										共 {subscribedCollections.length} 个合集
 									</span>
 								</div>
+								{#if batchMode}
+									<Button
+										size="sm"
+										variant="outline"
+										onclick={() => selectAllVisible('subscribed-collection')}
+										class="text-xs"
+									>
+										全选
+									</Button>
+								{/if}
 							</div>
 
 							<div class="flex-1 overflow-y-auto p-3">
@@ -2604,18 +3075,40 @@
 										: 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}
 								>
 									{#each subscribedCollections as collection (collection.sid)}
+										{@const itemKey = `subscribed-collection_${collection.sid}`}
+										{@const isSelected = isBatchSelected(itemKey)}
 										{@const isExisting = isCollectionExists(
 											collection.sid,
 											collection.up_mid.toString()
 										)}
 										<button
-											onclick={() => selectSubscribedCollection(collection)}
-											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isExisting
-												? 'opacity-60'
-												: ''}"
+											onclick={() => {
+												if (batchMode) {
+													toggleBatchSelection(itemKey, collection, 'collection');
+												} else {
+													selectSubscribedCollection(collection);
+												}
+											}}
 											disabled={isExisting}
+											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isExisting
+												? 'cursor-not-allowed opacity-60'
+												: ''} {batchMode && isSelected ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950' : ''}"
 										>
 											<div class="flex items-start gap-3">
+												<!-- 批量模式下的复选框 -->
+												{#if batchMode}
+													<div class="flex-shrink-0 pt-1">
+														<input
+															type="checkbox"
+															checked={isSelected}
+															onclick={(e) => {
+																e.stopPropagation();
+																toggleBatchSelection(itemKey, collection, 'collection');
+															}}
+															class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+														/>
+													</div>
+												{/if}
 												{#if collection.cover}
 													<img
 														src={processBilibiliImageUrl(collection.cover)}
@@ -2989,6 +3482,44 @@
 	</div>
 </div>
 
+<!-- 批量操作工具栏 -->
+{#if batchMode && batchSelectedItems.size > 0}
+	<div
+		class="fixed {isMobile ? 'bottom-4 left-4 right-4' : 'bottom-6 left-1/2 -translate-x-1/2'} z-50 bg-blue-600 dark:bg-blue-700 text-white rounded-lg shadow-xl border border-blue-500 dark:border-blue-600 px-4 py-3 transition-all duration-300"
+		transition:fly={{ y: 100, duration: 300 }}
+	>
+		<div class="flex {isMobile ? 'flex-col gap-3' : 'items-center gap-4'}">
+			<div class="text-sm font-medium {isMobile ? 'text-center' : ''}">
+				已选择 {batchSelectedItems.size} 个视频源
+			</div>
+			<div class="flex gap-2 {isMobile ? 'justify-center' : ''}">
+				<Button
+					size="sm"
+					variant="secondary"
+					onclick={clearBatchSelection}
+					class="text-xs bg-white/20 hover:bg-white/30 border-white/30 text-white"
+				>
+					清空
+				</Button>
+				<Button
+					size="sm"
+					variant="secondary"
+					onclick={() => { batchDialogOpen = true; }}
+					disabled={batchAdding}
+					class="text-xs bg-white hover:bg-gray-100 text-blue-600 dark:text-blue-700"
+				>
+					{batchAdding ? '添加中...' : '批量添加'}
+				</Button>
+			</div>
+		</div>
+		{#if batchAdding}
+			<div class="mt-2 text-xs text-blue-100 dark:text-blue-200 {isMobile ? 'text-center' : ''}">
+				正在添加 ({batchProgress.current}/{batchProgress.total})
+			</div>
+		{/if}
+	</div>
+{/if}
+
 <!-- 统一的悬停详情框 -->
 {#if hoveredItem}
 	<div
@@ -3152,6 +3683,72 @@
 				</div>
 			</div>
 		{/if}
+	</div>
+{/if}
+
+<!-- 批量添加配置对话框 -->
+{#if batchDialogOpen}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" transition:fade>
+		<div class="bg-card mx-4 w-full max-w-md rounded-lg border shadow-lg" transition:fly={{ y: -50 }}>
+			<div class="border-b p-4">
+				<h3 class="text-lg font-semibold">批量添加配置</h3>
+				<p class="text-muted-foreground mt-1 text-sm">
+					将添加 {batchSelectedItems.size} 个视频源
+				</p>
+			</div>
+
+			<div class="space-y-4 p-4">
+				<div>
+					<Label for="batch-base-path">基础保存路径</Label>
+					<Input
+						id="batch-base-path"
+						bind:value={batchBasePath}
+						placeholder="/Downloads"
+						class="mt-1"
+					/>
+					<p class="text-muted-foreground mt-1 text-xs">
+						所有选中的视频源将保存到此路径
+					</p>
+				</div>
+
+				<div class="max-h-60 overflow-y-auto rounded border">
+					<div class="space-y-2 p-3">
+						{#each Array.from(batchSelectedItems.values()) as item, index}
+							<div class="bg-muted flex items-center justify-between rounded p-2 text-sm">
+								<div class="min-w-0 flex-1">
+									<div class="truncate font-medium">{item.name}</div>
+									<div class="text-muted-foreground truncate text-xs">
+										{batchBasePath}
+									</div>
+								</div>
+								<span class="bg-background ml-2 rounded px-2 py-1 text-xs">
+									{item.type === 'search' ? '搜索' :
+									 item.type === 'favorite' ? '收藏夹' :
+									 item.type === 'following' ? 'UP主' :
+									 item.type === 'bangumi' ? '番剧' : item.type}
+								</span>
+							</div>
+						{/each}
+					</div>
+				</div>
+			</div>
+
+			<div class="flex justify-end gap-2 border-t p-4">
+				<Button
+					variant="outline"
+					onclick={() => { batchDialogOpen = false; }}
+					disabled={batchAdding}
+				>
+					取消
+				</Button>
+				<Button
+					onclick={handleBatchAdd}
+					disabled={batchAdding || !batchBasePath.trim()}
+				>
+					{batchAdding ? '添加中...' : '开始添加'}
+				</Button>
+			</div>
+		</div>
 	</div>
 {/if}
 
