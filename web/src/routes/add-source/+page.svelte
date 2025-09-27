@@ -97,10 +97,21 @@
 	// 批量添加相关
 	let batchMode = false; // 是否为批量模式
 	let batchSelectedItems = new Map(); // 存储选中项 {key: {type, data, name}}
+	let batchCheckboxStates = {}; // 存储checkbox状态的响应式对象
 	let batchBasePath = '/Downloads'; // 批量基础路径
 	let batchAdding = false; // 批量添加进行中
 	let batchProgress = { current: 0, total: 0 }; // 批量添加进度
 	let batchDialogOpen = false; // 批量配置对话框状态
+
+	// 响应式语句：当Map变化时更新checkbox状态对象
+	$: {
+		const newStates = {};
+		for (const [key] of batchSelectedItems) {
+			newStates[key] = true;
+		}
+		batchCheckboxStates = newStates;
+		console.log('🔄 Reactive update - checkbox states:', Object.keys(newStates));
+	}
 
 	// 悬停详情相关
 	let hoveredItem: {
@@ -1483,15 +1494,26 @@
 		}
 	}
 	function toggleBatchSelection(itemKey: string, item: any, itemType: string) {
+		console.log('🔵 toggleBatchSelection called with:', {
+			itemKey,
+			itemType,
+			batchMode,
+			currentMapSize: batchSelectedItems.size
+		});
+
 		if (batchSelectedItems.has(itemKey)) {
+			console.log('🔴 Removing item:', itemKey);
 			batchSelectedItems.delete(itemKey);
 		} else {
+			console.log('🟢 Adding item:', itemKey);
+
 			// 先做跨源类型限制：不允许在一次批量中混合不同视频源类型
 			const newItemSourceType = resolveBatchItemSourceTypeByRawType(itemType);
 			if (batchSelectedItems.size > 0) {
 				const first = batchSelectedItems.values().next().value;
 				const currentBatchSourceType = getSourceTypeFromBatchItem(first);
 				if (newItemSourceType !== currentBatchSourceType) {
+					console.log('❌ Cross-type selection rejected');
 					toast.error('批量模式不支持跨源类型选择', {
 						description: '请先清空已选项，再选择其他源类型的内容'
 					});
@@ -1526,16 +1548,25 @@
 				name: itemName
 			});
 		}
-		batchSelectedItems = batchSelectedItems;
+
+		console.log('📊 After operation:', {
+			newMapSize: batchSelectedItems.size,
+			hasItem: batchSelectedItems.has(itemKey),
+			allKeys: Array.from(batchSelectedItems.keys())
+		});
+
+		batchSelectedItems = new Map(batchSelectedItems);
+		console.log('✅ New Map created for reactivity');
 	}
 
 	function isBatchSelected(itemKey: string): boolean {
-		return batchSelectedItems.has(itemKey);
+		return !!batchCheckboxStates[itemKey];
 	}
 
 	function clearBatchSelection() {
-		batchSelectedItems.clear();
-		batchSelectedItems = batchSelectedItems;
+		console.log('🧹 Clearing batch selection');
+		batchSelectedItems = new Map();
+		console.log('✅ New empty Map created');
 	}
 
 	function selectAllVisible(itemType: string) {
@@ -2279,7 +2310,6 @@
 												result.season_id &&
 												isBangumiSeasonExists(result.season_id)}
 											{@const itemKey = `search_${result.bvid || result.season_id || result.mid || i}`}
-											{@const isSelected = isBatchSelected(itemKey)}
 											<button
 												onclick={() => {
 													if (batchMode && sourceType === 'submission') {
@@ -2293,7 +2323,7 @@
 												onmousemove={handleMouseMove}
 												class="hover:bg-muted relative flex transform items-start gap-3 rounded-lg border p-4 text-left transition-all duration-300 hover:scale-102 hover:shadow-md {isBangumiExisting
 													? 'opacity-60'
-													: ''} {batchMode && isSelected
+													: ''} {batchMode && isBatchSelected(itemKey)
 													? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
 													: ''}"
 												transition:fly={{ y: 50, duration: 300, delay: i * 50 }}
@@ -2305,7 +2335,7 @@
 													<div class="flex-shrink-0 pt-1">
 														<input
 															type="checkbox"
-															checked={isSelected}
+															checked={batchCheckboxStates[itemKey] || false}
 															onclick={(e) => {
 																e.stopPropagation();
 																toggleBatchSelection(itemKey, result, 'search');
@@ -2452,7 +2482,6 @@
 								>
 									{#each filteredUserFollowings as following (following.mid)}
 										{@const itemKey = `following_${following.mid}`}
-										{@const isSelected = isBatchSelected(itemKey)}
 										{@const isDisabled =
 											sourceType === 'submission' && existingSubmissionIds.has(following.mid)}
 										<button
@@ -2466,7 +2495,7 @@
 											disabled={isDisabled}
 											class="hover:bg-muted rounded-lg border p-3 text-left transition-colors {isDisabled
 												? 'cursor-not-allowed opacity-60'
-												: ''} {batchMode && isSelected
+												: ''} {batchMode && isBatchSelected(itemKey)
 												? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
 												: ''}"
 										>
@@ -2476,7 +2505,7 @@
 													<div class="flex-shrink-0 pt-1">
 														<input
 															type="checkbox"
-															checked={isSelected}
+															checked={batchCheckboxStates[itemKey] || false}
 															onclick={(e) => {
 																e.stopPropagation();
 																toggleBatchSelection(itemKey, following, 'following');
@@ -2582,7 +2611,6 @@
 								>
 									{#each filteredUserCollections as collection (collection.sid)}
 										{@const itemKey = `collection_${collection.sid}`}
-										{@const isSelected = isBatchSelected(itemKey)}
 										{@const isDisabled = isCollectionExists(
 											collection.sid,
 											collection.mid.toString()
@@ -2598,7 +2626,7 @@
 											disabled={isDisabled}
 											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isDisabled
 												? 'cursor-not-allowed opacity-60'
-												: ''} {batchMode && isSelected
+												: ''} {batchMode && isBatchSelected(itemKey)
 												? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
 												: ''}"
 										>
@@ -2608,7 +2636,7 @@
 													<div class="flex-shrink-0 pt-1">
 														<input
 															type="checkbox"
-															checked={isSelected}
+															checked={batchCheckboxStates[itemKey] || false}
 															onclick={(e) => {
 																e.stopPropagation();
 																toggleBatchSelection(itemKey, collection, 'collection');
@@ -2718,7 +2746,6 @@
 								>
 									{#each filteredUserFavorites as favorite (favorite.id)}
 										{@const itemKey = `favorite_${favorite.id}`}
-										{@const isSelected = isBatchSelected(itemKey)}
 										{@const isDisabled = existingFavoriteIds.has(Number(favorite.id))}
 										<button
 											onclick={() => {
@@ -2731,7 +2758,7 @@
 											disabled={isDisabled}
 											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isDisabled
 												? 'cursor-not-allowed opacity-60'
-												: ''} {batchMode && isSelected
+												: ''} {batchMode && isBatchSelected(itemKey)
 												? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
 												: ''}"
 										>
@@ -2741,7 +2768,7 @@
 													<div class="flex-shrink-0 pt-1">
 														<input
 															type="checkbox"
-															checked={isSelected}
+															checked={batchCheckboxStates[itemKey] || false}
 															onclick={(e) => {
 																e.stopPropagation();
 																toggleBatchSelection(itemKey, favorite, 'favorite');
@@ -2869,8 +2896,7 @@
 									>
 										{#each filteredSearchedUserFavorites as favorite (favorite.fid)}
 											{@const itemKey = `searched-favorite_${favorite.fid}`}
-											{@const isSelected = isBatchSelected(itemKey)}
-											{@const isDisabled = existingFavoriteIds.has(Number(favorite.fid))}
+												{@const isDisabled = existingFavoriteIds.has(Number(favorite.fid))}
 											<button
 												onclick={() => {
 													if (batchMode) {
@@ -2882,7 +2908,7 @@
 												disabled={isDisabled}
 												class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isDisabled
 													? 'cursor-not-allowed opacity-60'
-													: ''} {batchMode && isSelected
+													: ''} {batchMode && isBatchSelected(itemKey)
 													? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
 													: ''}"
 											>
@@ -2892,7 +2918,7 @@
 														<div class="flex-shrink-0 pt-1">
 															<input
 																type="checkbox"
-																checked={isSelected}
+																checked={batchCheckboxStates[itemKey] || false}
 																onclick={(e) => {
 																	e.stopPropagation();
 																	toggleBatchSelection(itemKey, favorite, 'favorite');
@@ -3149,7 +3175,6 @@
 								>
 									{#each subscribedCollections as collection (collection.sid)}
 										{@const itemKey = `subscribed-collection_${collection.sid}`}
-										{@const isSelected = isBatchSelected(itemKey)}
 										{@const isExisting = isCollectionExists(
 											collection.sid,
 											collection.up_mid.toString()
@@ -3165,7 +3190,7 @@
 											disabled={isExisting}
 											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isExisting
 												? 'cursor-not-allowed opacity-60'
-												: ''} {batchMode && isSelected
+												: ''} {batchMode && isBatchSelected(itemKey)
 												? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
 												: ''}"
 										>
@@ -3175,7 +3200,7 @@
 													<div class="flex-shrink-0 pt-1">
 														<input
 															type="checkbox"
-															checked={isSelected}
+															checked={batchCheckboxStates[itemKey] || false}
 															onclick={(e) => {
 																e.stopPropagation();
 																toggleBatchSelection(itemKey, collection, 'collection');
