@@ -26,6 +26,7 @@
 	import { fade, fly } from 'svelte/transition';
 
 	let sourceType: VideoCategory = 'collection';
+	let lastSourceType: VideoCategory = sourceType; // 记录上一次的源类型，用于检测切换
 	let sourceId = '';
 	let upId = '';
 	let name = '';
@@ -1011,6 +1012,15 @@
 		fetchBangumiSeasons();
 	}
 
+	// 切换源类型时，如处于批量模式且已有选择，则清空选择防止跨源类型
+	$: if (sourceType !== lastSourceType) {
+		if (batchMode && batchSelectedItems.size > 0) {
+			clearBatchSelection();
+			toast('已切换源类型，已清空批量选择，请重新选择');
+		}
+		lastSourceType = sourceType;
+	}
+
 	// 统一的悬浮处理函数
 	function handleItemMouseEnter(
 		type: 'search' | 'season',
@@ -1456,10 +1466,39 @@
 	).length;
 
 	// 批量选择相关函数
+	function resolveBatchItemSourceTypeByRawType(itemType: string): string {
+		// 将原始的批量项类别映射为其对应的视频源类型
+		switch (itemType) {
+			case 'search':
+			case 'following':
+				return sourceType; // 跟随当前选择的源类型
+			case 'favorite':
+				return 'favorite';
+			case 'collection':
+				return 'collection';
+			case 'bangumi':
+				return 'bangumi';
+			default:
+				return sourceType;
+		}
+	}
 	function toggleBatchSelection(itemKey: string, item: any, itemType: string) {
 		if (batchSelectedItems.has(itemKey)) {
 			batchSelectedItems.delete(itemKey);
 		} else {
+			// 先做跨源类型限制：不允许在一次批量中混合不同视频源类型
+			const newItemSourceType = resolveBatchItemSourceTypeByRawType(itemType);
+			if (batchSelectedItems.size > 0) {
+				const first = batchSelectedItems.values().next().value;
+				const currentBatchSourceType = getSourceTypeFromBatchItem(first);
+				if (newItemSourceType !== currentBatchSourceType) {
+					toast.error('批量模式不支持跨源类型选择', {
+						description: '请先清空已选项，再选择其他源类型的内容'
+					});
+					return;
+				}
+			}
+
 			// 生成默认名称
 			let itemName = '';
 
@@ -1570,6 +1609,16 @@
 			return;
 		}
 
+		// 校验所有被选项是否属于同一视频源类型，防止跨源类型批量添加
+		const resolvedTypes = new Set(
+			Array.from(batchSelectedItems.values()).map((it: any) => getSourceTypeFromBatchItem(it))
+		);
+		if (resolvedTypes.size > 1) {
+			toast.error('不能跨源类型批量添加', {
+				description: '已检测到多种源类型，请清空后按类型分别添加'
+			});
+			return;
+		}
 		batchAdding = true;
 		batchProgress = { current: 0, total: batchSelectedItems.size };
 
