@@ -875,19 +875,28 @@
 				existingBangumiSeasonIds.clear();
 				result.data.bangumi?.forEach((b) => {
 					if (b.season_id) {
-						existingBangumiSeasonIds.add(b.season_id);
+						existingBangumiSeasonIds.add(b.season_id.toString());
 					}
 					// 如果有已选择的季度，也加入到过滤列表中
 					if (b.selected_seasons) {
 						try {
-							const selectedSeasons = JSON.parse(b.selected_seasons);
+							// 检查 selected_seasons 是字符串还是已经解析的数组
+							let selectedSeasons;
+							if (typeof b.selected_seasons === 'string') {
+								selectedSeasons = JSON.parse(b.selected_seasons);
+							} else {
+								selectedSeasons = b.selected_seasons;
+							}
+
 							if (Array.isArray(selectedSeasons)) {
 								selectedSeasons.forEach((seasonId) => {
-									existingBangumiSeasonIds.add(seasonId);
+									// 确保统一转换为字符串进行比较
+									const seasonIdStr = seasonId.toString();
+									existingBangumiSeasonIds.add(seasonIdStr);
 								});
 							}
 						} catch (e) {
-							console.warn('解析selected_seasons失败:', b.selected_seasons);
+							console.warn('解析selected_seasons失败:', b.selected_seasons, e);
 						}
 					}
 				});
@@ -917,7 +926,7 @@
 
 	// 检查番剧季度是否已存在
 	function isBangumiSeasonExists(seasonId: string): boolean {
-		return existingBangumiSeasonIds.has(seasonId);
+		return existingBangumiSeasonIds.has(seasonId.toString());
 	}
 
 	// 切换季度选择
@@ -3858,8 +3867,9 @@
 			<div class="p-4 space-y-4">
 				<!-- UP主选择器 -->
 				<div class="space-y-2">
-					<label class="text-sm font-medium">选择UP主查看投稿</label>
+					<label for="batch-up-selector" class="text-sm font-medium">选择UP主查看投稿</label>
 					<select
+						id="batch-up-selector"
 						bind:value={sourceId}
 						class="w-full rounded border border-gray-300 px-3 py-2 text-sm"
 						onchange={() => {
