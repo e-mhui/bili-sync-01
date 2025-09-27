@@ -514,7 +514,9 @@
 			<Button
 				variant={selectionMode ? 'outline' : 'destructive'}
 				size="sm"
-				class="col-span-2 w-full sm:col-span-1 sm:w-auto {selectionMode ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600' : ''}"
+				class="col-span-2 w-full sm:col-span-1 sm:w-auto {selectionMode
+					? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600'
+					: ''}"
 				onclick={toggleSelectionMode}
 				disabled={loading}
 			>

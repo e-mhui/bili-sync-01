@@ -100,10 +100,6 @@
 	let batchAdding = false; // 批量添加进行中
 	let batchProgress = { current: 0, total: 0 }; // 批量添加进度
 	let batchDialogOpen = false; // 批量配置对话框状态
-	let batchSubmissionMode = 'all'; // 批量投稿模式：'all' | 'recent' | 'selected'
-	let batchSelectedVideos: string[] = []; // 批量选择的投稿视频ID
-	let batchShowSubmissionSelection = false; // 是否显示批量投稿选择对话框
-	let batchSelectedSubmissionVideos = new Set<string>(); // 批量模式下选中的投稿视频集合
 
 	// 悬停详情相关
 	let hoveredItem: {
@@ -1454,12 +1450,6 @@
 		loadSubmissionVideos();
 	}
 
-	// 当显示批量投稿选择且有sourceId时加载数据
-	$: if (batchShowSubmissionSelection && sourceId && sourceType === 'submission') {
-		resetSubmissionState();
-		loadSubmissionVideos();
-	}
-
 	// 计算已选择的投稿数量
 	$: selectedSubmissionCount = Array.from(selectedSubmissionVideos).filter((bvid) =>
 		filteredSubmissionVideos.some((video) => video.bvid === bvid)
@@ -1507,10 +1497,6 @@
 	function clearBatchSelection() {
 		batchSelectedItems.clear();
 		batchSelectedItems = batchSelectedItems;
-		// 重置批量投稿选择
-		batchSubmissionMode = 'all';
-		batchSelectedVideos = [];
-		batchSelectedSubmissionVideos.clear();
 	}
 
 	function selectAllVisible(itemType: string) {
@@ -1527,7 +1513,8 @@
 				filteredUserFollowings.forEach((following) => {
 					const key = `following_${following.mid}`;
 					// 跳过已添加的UP主
-					const isDisabled = sourceType === 'submission' && existingSubmissionIds.has(following.mid);
+					const isDisabled =
+						sourceType === 'submission' && existingSubmissionIds.has(following.mid);
 					if (!batchSelectedItems.has(key) && !isDisabled) {
 						toggleBatchSelection(key, following, 'following');
 					}
@@ -1611,13 +1598,7 @@
 							params.up_id = item.data.mid.toString();
 							params.collection_type = 'season';
 						} else if (sourceType === 'submission') {
-							// 处理UP主投稿的历史投稿选择
-							if (batchSubmissionMode === 'recent') {
-								params.selected_videos = [];
-							} else if (batchSubmissionMode === 'selected' && batchSelectedVideos.length > 0) {
-								params.selected_videos = batchSelectedVideos;
-							}
-							// batchSubmissionMode === 'all' 时不需要添加 selected_videos 参数
+							// 批量添加UP主投稿时总是使用全部投稿模式
 						}
 					} else if (item.type === 'collection') {
 						// 区分普通合集和关注的合集
@@ -1651,7 +1632,7 @@
 				}
 
 				// 添加小延迟避免请求过于频繁
-				await new Promise(resolve => setTimeout(resolve, 200));
+				await new Promise((resolve) => setTimeout(resolve, 200));
 			}
 
 			// 显示结果
@@ -1680,7 +1661,6 @@
 					goto('/video-sources');
 				}, 1000);
 			}
-
 		} catch (error) {
 			console.error('批量添加过程中发生错误:', error);
 			toast.error('批量添加失败', {
@@ -1753,10 +1733,6 @@
 							if (!batchMode) {
 								batchSelectedItems.clear();
 								batchSelectedItems = batchSelectedItems;
-								// 重置批量投稿选择
-								batchSubmissionMode = 'all';
-								batchSelectedVideos = [];
-								batchSelectedSubmissionVideos.clear();
 							}
 						}}
 						class="flex items-center gap-2"
@@ -2268,7 +2244,9 @@
 												onmousemove={handleMouseMove}
 												class="hover:bg-muted relative flex transform items-start gap-3 rounded-lg border p-4 text-left transition-all duration-300 hover:scale-102 hover:shadow-md {isBangumiExisting
 													? 'opacity-60'
-													: ''} {batchMode && isSelected ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950' : ''}"
+													: ''} {batchMode && isSelected
+													? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
+													: ''}"
 												transition:fly={{ y: 50, duration: 300, delay: i * 50 }}
 												animate:flip={{ duration: 300 }}
 												disabled={isBangumiExisting}
@@ -2426,7 +2404,8 @@
 									{#each filteredUserFollowings as following (following.mid)}
 										{@const itemKey = `following_${following.mid}`}
 										{@const isSelected = isBatchSelected(itemKey)}
-										{@const isDisabled = sourceType === 'submission' && existingSubmissionIds.has(following.mid)}
+										{@const isDisabled =
+											sourceType === 'submission' && existingSubmissionIds.has(following.mid)}
 										<button
 											onclick={() => {
 												if (batchMode) {
@@ -2438,7 +2417,9 @@
 											disabled={isDisabled}
 											class="hover:bg-muted rounded-lg border p-3 text-left transition-colors {isDisabled
 												? 'cursor-not-allowed opacity-60'
-												: ''} {batchMode && isSelected ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950' : ''}"
+												: ''} {batchMode && isSelected
+												? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
+												: ''}"
 										>
 											<div class="flex items-start gap-2">
 												<!-- 批量模式下的复选框 -->
@@ -2553,7 +2534,10 @@
 									{#each filteredUserCollections as collection (collection.sid)}
 										{@const itemKey = `collection_${collection.sid}`}
 										{@const isSelected = isBatchSelected(itemKey)}
-										{@const isDisabled = isCollectionExists(collection.sid, collection.mid.toString())}
+										{@const isDisabled = isCollectionExists(
+											collection.sid,
+											collection.mid.toString()
+										)}
 										<button
 											onclick={() => {
 												if (batchMode) {
@@ -2565,7 +2549,9 @@
 											disabled={isDisabled}
 											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isDisabled
 												? 'cursor-not-allowed opacity-60'
-												: ''} {batchMode && isSelected ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950' : ''}"
+												: ''} {batchMode && isSelected
+												? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
+												: ''}"
 										>
 											<div class="flex items-start gap-3">
 												<!-- 批量模式下的复选框 -->
@@ -2696,7 +2682,9 @@
 											disabled={isDisabled}
 											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isDisabled
 												? 'cursor-not-allowed opacity-60'
-												: ''} {batchMode && isSelected ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950' : ''}"
+												: ''} {batchMode && isSelected
+												? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
+												: ''}"
 										>
 											<div class="flex items-start gap-3">
 												<!-- 批量模式下的复选框 -->
@@ -2845,7 +2833,9 @@
 												disabled={isDisabled}
 												class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isDisabled
 													? 'cursor-not-allowed opacity-60'
-													: ''} {batchMode && isSelected ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950' : ''}"
+													: ''} {batchMode && isSelected
+													? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
+													: ''}"
 											>
 												<div class="flex items-start gap-3">
 													<!-- 批量模式下的复选框 -->
@@ -3126,7 +3116,9 @@
 											disabled={isExisting}
 											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isExisting
 												? 'cursor-not-allowed opacity-60'
-												: ''} {batchMode && isSelected ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950' : ''}"
+												: ''} {batchMode && isSelected
+												? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
+												: ''}"
 										>
 											<div class="flex items-start gap-3">
 												<!-- 批量模式下的复选框 -->
@@ -3519,7 +3511,9 @@
 <!-- 批量操作工具栏 -->
 {#if batchMode && batchSelectedItems.size > 0}
 	<div
-		class="fixed {isMobile ? 'bottom-4 left-4 right-4' : 'bottom-6 left-1/2 -translate-x-1/2'} z-50 bg-blue-600 dark:bg-blue-700 text-white rounded-lg shadow-xl border border-blue-500 dark:border-blue-600 px-4 py-3 transition-all duration-300"
+		class="fixed {isMobile
+			? 'right-4 bottom-4 left-4'
+			: 'bottom-6 left-1/2 -translate-x-1/2'} z-50 rounded-lg border border-blue-500 bg-blue-600 px-4 py-3 text-white shadow-xl transition-all duration-300 dark:border-blue-600 dark:bg-blue-700"
 		transition:fly={{ y: 100, duration: 300 }}
 	>
 		<div class="flex {isMobile ? 'flex-col gap-3' : 'items-center gap-4'}">
@@ -3531,16 +3525,18 @@
 					size="sm"
 					variant="secondary"
 					onclick={clearBatchSelection}
-					class="text-xs bg-white/20 hover:bg-white/30 border-white/30 text-white"
+					class="border-white/30 bg-white/20 text-xs text-white hover:bg-white/30"
 				>
 					清空
 				</Button>
 				<Button
 					size="sm"
 					variant="secondary"
-					onclick={() => { batchDialogOpen = true; }}
+					onclick={() => {
+						batchDialogOpen = true;
+					}}
 					disabled={batchAdding}
-					class="text-xs bg-white hover:bg-gray-100 text-blue-600 dark:text-blue-700"
+					class="bg-white text-xs text-blue-600 hover:bg-gray-100 dark:text-blue-700"
 				>
 					{batchAdding ? '添加中...' : '批量添加'}
 				</Button>
@@ -3722,8 +3718,14 @@
 
 <!-- 批量添加配置对话框 -->
 {#if batchDialogOpen}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" transition:fade>
-		<div class="bg-card mx-4 w-full max-w-md rounded-lg border shadow-lg" transition:fly={{ y: -50 }}>
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+		transition:fade
+	>
+		<div
+			class="bg-card mx-4 w-full max-w-md rounded-lg border shadow-lg"
+			transition:fly={{ y: -50 }}
+		>
 			<div class="border-b p-4">
 				<h3 class="text-lg font-semibold">批量添加配置</h3>
 				<p class="text-muted-foreground mt-1 text-sm">
@@ -3740,73 +3742,8 @@
 						placeholder="/Downloads"
 						class="mt-1"
 					/>
-					<p class="text-muted-foreground mt-1 text-xs">
-						所有选中的视频源将保存到此路径
-					</p>
+					<p class="text-muted-foreground mt-1 text-xs">所有选中的视频源将保存到此路径</p>
 				</div>
-
-				<!-- UP主投稿的历史投稿选择 -->
-				{#if sourceType === 'submission' && Array.from(batchSelectedItems.values()).some(item => item.type === 'following')}
-					<div class="space-y-3">
-						<Label>历史投稿处理方式</Label>
-						<div class="space-y-2">
-							<label class="flex items-center gap-2">
-								<input
-									type="radio"
-									bind:group={batchSubmissionMode}
-									value="all"
-									class="text-blue-600"
-								/>
-								<span class="text-sm">下载所有历史投稿</span>
-							</label>
-							<label class="flex items-center gap-2">
-								<input
-									type="radio"
-									bind:group={batchSubmissionMode}
-									value="recent"
-									class="text-blue-600"
-								/>
-								<span class="text-sm">仅下载新投稿（不下载历史投稿）</span>
-							</label>
-							<label class="flex items-center gap-2">
-								<input
-									type="radio"
-									bind:group={batchSubmissionMode}
-									value="selected"
-									class="text-blue-600"
-								/>
-								<span class="text-sm">手动选择历史投稿</span>
-							</label>
-						</div>
-						{#if batchSubmissionMode === 'selected'}
-							<div class="mt-2">
-								<Button
-									size="sm"
-									variant="outline"
-									onclick={() => {
-										// 获取第一个UP主作为代表，加载其投稿数据
-										const followingItems = Array.from(batchSelectedItems.values()).filter(item => item.type === 'following');
-										if (followingItems.length > 0) {
-											const firstUp = followingItems[0];
-											sourceId = firstUp.data.mid.toString();
-											selectedUpName = firstUp.data.name;
-											// 从已保存的选择中恢复选中状态
-											batchSelectedSubmissionVideos.clear();
-											batchSelectedVideos.forEach(bvid => batchSelectedSubmissionVideos.add(bvid));
-											batchShowSubmissionSelection = true;
-										}
-									}}
-									class="text-xs"
-								>
-									{batchSelectedSubmissionVideos.size > 0 ? `已选择 ${batchSelectedSubmissionVideos.size} 个投稿` : '选择历史投稿'}
-								</Button>
-							</div>
-						{/if}
-						<p class="text-muted-foreground text-xs">
-							此设置将应用于所有选中的UP主投稿源
-						</p>
-					</div>
-				{/if}
 
 				<div class="max-h-60 overflow-y-auto rounded border">
 					<div class="space-y-2 p-3">
@@ -3819,10 +3756,15 @@
 									</div>
 								</div>
 								<span class="bg-background ml-2 rounded px-2 py-1 text-xs">
-									{item.type === 'search' ? '搜索' :
-									 item.type === 'favorite' ? '收藏夹' :
-									 item.type === 'following' ? 'UP主' :
-									 item.type === 'bangumi' ? '番剧' : item.type}
+									{item.type === 'search'
+										? '搜索'
+										: item.type === 'favorite'
+											? '收藏夹'
+											: item.type === 'following'
+												? 'UP主'
+												: item.type === 'bangumi'
+													? '番剧'
+													: item.type}
 								</span>
 							</div>
 						{/each}
@@ -3833,154 +3775,15 @@
 			<div class="flex justify-end gap-2 border-t p-4">
 				<Button
 					variant="outline"
-					onclick={() => { batchDialogOpen = false; }}
+					onclick={() => {
+						batchDialogOpen = false;
+					}}
 					disabled={batchAdding}
 				>
 					取消
 				</Button>
-				<Button
-					onclick={handleBatchAdd}
-					disabled={batchAdding || !batchBasePath.trim()}
-				>
+				<Button onclick={handleBatchAdd} disabled={batchAdding || !batchBasePath.trim()}>
 					{batchAdding ? '添加中...' : '开始添加'}
-				</Button>
-			</div>
-		</div>
-	</div>
-{/if}
-
-<!-- 批量投稿选择对话框 -->
-{#if batchShowSubmissionSelection}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" transition:fade>
-		<div class="bg-card mx-4 w-full max-w-2xl rounded-lg border shadow-lg" transition:fly={{ y: -50 }}>
-			<div class="border-b p-4">
-				<h3 class="text-lg font-semibold">选择历史投稿</h3>
-				<p class="text-muted-foreground mt-1 text-sm">
-					{#if selectedUpName}
-						正在查看：{selectedUpName} 的投稿列表 - 此设置将应用于所有选中的UP主投稿源
-					{:else}
-						选择要下载的历史投稿，此设置将应用于所有选中的UP主投稿源
-					{/if}
-				</p>
-			</div>
-
-			<div class="p-4 space-y-4">
-				<!-- UP主选择器 -->
-				<div class="space-y-2">
-					<label for="batch-up-selector" class="text-sm font-medium">选择UP主查看投稿</label>
-					<select
-						id="batch-up-selector"
-						bind:value={sourceId}
-						class="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-						onchange={() => {
-							const followingItems = Array.from(batchSelectedItems.values()).filter(item => item.type === 'following');
-							const selectedUp = followingItems.find(item => item.data.mid.toString() === sourceId);
-							if (selectedUp) {
-								selectedUpName = selectedUp.data.name;
-							}
-						}}
-					>
-						{#each Array.from(batchSelectedItems.values()).filter(item => item.type === 'following') as upItem}
-							<option value={upItem.data.mid.toString()}>{upItem.data.name}</option>
-						{/each}
-					</select>
-				</div>
-
-				<div class="flex items-center justify-between">
-					<span class="text-sm font-medium">当前选择：{batchSelectedSubmissionVideos.size} 个投稿</span>
-					<div class="flex gap-2">
-						<Button
-							size="sm"
-							variant="outline"
-							onclick={() => {
-								batchSelectedSubmissionVideos.clear();
-								batchSelectedSubmissionVideos = batchSelectedSubmissionVideos;
-							}}
-							class="text-xs"
-						>
-							清空选择
-						</Button>
-						<Button
-							size="sm"
-							variant="outline"
-							onclick={() => {
-								// 全选当前显示的投稿
-								submissionVideos.forEach(video => batchSelectedSubmissionVideos.add(video.bvid));
-								batchSelectedSubmissionVideos = batchSelectedSubmissionVideos;
-							}}
-							class="text-xs"
-						>
-							全选当前UP主
-						</Button>
-					</div>
-				</div>
-
-				<div class="text-muted-foreground text-xs space-y-2">
-					<div>💡 您可以切换不同UP主查看其投稿列表，选择的投稿将作为历史投稿选择策略。</div>
-					<div>📝 您选择的投稿时间范围或类型将应用于所有选中的UP主投稿源。</div>
-					<div>⚠️ 如果需要为不同UP主设置不同的投稿选择，请逐个添加而不是使用批量添加。</div>
-				</div>
-
-				<!-- 投稿列表 -->
-				{#if submissionVideos.length > 0}
-					<div class="max-h-96 overflow-y-auto border rounded">
-						<div class="grid gap-2 p-3">
-							{#each submissionVideos as video}
-								<label class="flex items-start gap-3 p-2 hover:bg-muted rounded cursor-pointer">
-									<input
-										type="checkbox"
-										checked={batchSelectedSubmissionVideos.has(video.bvid)}
-										onchange={(e) => {
-											if (e.currentTarget.checked) {
-												batchSelectedSubmissionVideos.add(video.bvid);
-											} else {
-												batchSelectedSubmissionVideos.delete(video.bvid);
-											}
-											batchSelectedSubmissionVideos = batchSelectedSubmissionVideos;
-										}}
-										class="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-									/>
-									<div class="min-w-0 flex-1">
-										<h4 class="text-sm font-medium line-clamp-2">{video.title}</h4>
-										<div class="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-											<span>BVID: {video.bvid}</span>
-											{#if video.pubdate}
-												<span>•</span>
-												<span>{new Date(video.pubdate * 1000).toLocaleDateString()}</span>
-											{/if}
-											{#if video.duration}
-												<span>•</span>
-												<span>{Math.floor(video.duration / 60)}:{(video.duration % 60).toString().padStart(2, '0')}</span>
-											{/if}
-										</div>
-									</div>
-								</label>
-							{/each}
-						</div>
-					</div>
-				{:else}
-					<div class="text-center py-8 text-muted-foreground">
-						<div class="text-sm">暂无投稿数据</div>
-						<div class="text-xs mt-1">请先选择一个UP主以加载投稿列表</div>
-					</div>
-				{/if}
-			</div>
-
-			<div class="flex justify-end gap-2 border-t p-4">
-				<Button
-					variant="outline"
-					onclick={() => { batchShowSubmissionSelection = false; }}
-				>
-					取消
-				</Button>
-				<Button
-					onclick={() => {
-						// 将选中的投稿转换为数组
-						batchSelectedVideos = Array.from(batchSelectedSubmissionVideos);
-						batchShowSubmissionSelection = false;
-					}}
-				>
-					确认
 				</Button>
 			</div>
 		</div>
