@@ -471,11 +471,19 @@ impl<'a> Video<'a> {
                             .into());
                         } else {
                             tracing::error!("所有质量级别都获取失败");
+
+                            // 检查是否为HTTP 412风控错误
+                            let error_str = e.to_string();
+                            if error_str.contains("412 Precondition Failed") {
+                                tracing::warn!("检测到HTTP 412风控错误，转换为风控异常");
+                                return Err(crate::bilibili::BiliError::RiskControlOccurred.into());
+                            }
+
                             // 检查是否可能是隐蔽的充电专享视频（API成功但实际是试看片段）
-                            let error_str = e.to_string().to_lowercase();
-                            if error_str.contains("检测到试看")
-                                || error_str.contains("试看模式")
-                                || error_str.contains("试看片段")
+                            let error_str_lower = error_str.to_lowercase();
+                            if error_str_lower.contains("检测到试看")
+                                || error_str_lower.contains("试看模式")
+                                || error_str_lower.contains("试看片段")
                             {
                                 tracing::info!("检测到隐蔽的充电专享视频（试看片段模式）");
                                 return Err(crate::bilibili::BiliError::RequestFailed(
@@ -944,6 +952,13 @@ impl<'a> Video<'a> {
                             .into());
                         } else {
                             tracing::error!("所有番剧质量级别都获取失败");
+
+                            // 检查是否为HTTP 412风控错误
+                            let error_str = e.to_string();
+                            if error_str.contains("412 Precondition Failed") {
+                                tracing::warn!("检测到番剧HTTP 412风控错误，转换为风控异常");
+                                return Err(crate::bilibili::BiliError::RiskControlOccurred.into());
+                            }
                         }
                         return Err(e);
                     }
