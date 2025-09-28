@@ -86,6 +86,46 @@ impl<'a> Video<'a> {
         Ok(serde_json::from_value(res["data"].take())?)
     }
 
+    /// 检查视频是否存在
+    /// 调用视频详情API，如果返回-404则表示视频已被删除
+    pub async fn check_video_exists(&self) -> Result<bool> {
+        tracing::debug!("检查视频是否存在: BVID={}", self.bvid);
+
+        let res = match self
+            .client
+            .request(Method::GET, "https://api.bilibili.com/x/web-interface/view")
+            .await
+            .query(&[("bvid", &self.bvid)])
+            .send()
+            .await
+        {
+            Ok(response) => response,
+            Err(_) => {
+                // 网络错误，假设视频存在，避免误判
+                return Ok(true);
+            }
+        };
+
+        let json_res = match res.json::<serde_json::Value>().await {
+            Ok(json) => json,
+            Err(_) => {
+                // JSON解析错误，假设视频存在，避免误判
+                return Ok(true);
+            }
+        };
+
+        // 检查API返回码
+        if let Some(code) = json_res["code"].as_i64() {
+            if code == -404 {
+                tracing::debug!("视频已被删除: BVID={}", self.bvid);
+                return Ok(false);
+            }
+        }
+
+        // 其他情况假设视频存在
+        Ok(true)
+    }
+
     /// 调用视频详情API获取epid信息，用于API降级处理
     /// 当普通视频API返回-404错误时，可以通过此方法获取epid，然后尝试番剧API降级
     pub async fn get_video_detail_for_epid(&self) -> Result<Option<String>> {
@@ -475,6 +515,17 @@ impl<'a> Video<'a> {
                             // 检查是否为HTTP 412风控错误
                             let error_str = e.to_string();
                             if error_str.contains("412 Precondition Failed") {
+                                // 先检查视频是否已被删除
+                                if let Ok(exists) = self.check_video_exists().await {
+                                    if !exists {
+                                        tracing::warn!("检测到HTTP 412但视频已被删除，返回404错误而非风控");
+                                        return Err(crate::bilibili::BiliError::RequestFailed(
+                                            -404,
+                                            "视频已被删除".to_string(),
+                                        )
+                                        .into());
+                                    }
+                                }
                                 tracing::warn!("检测到HTTP 412风控错误，转换为风控异常");
                                 return Err(crate::bilibili::BiliError::RiskControlOccurred.into());
                             }
@@ -956,6 +1007,17 @@ impl<'a> Video<'a> {
                             // 检查是否为HTTP 412风控错误
                             let error_str = e.to_string();
                             if error_str.contains("412 Precondition Failed") {
+                                // 先检查视频是否已被删除
+                                if let Ok(exists) = self.check_video_exists().await {
+                                    if !exists {
+                                        tracing::warn!("检测到番剧HTTP 412但视频已被删除，返回404错误而非风控");
+                                        return Err(crate::bilibili::BiliError::RequestFailed(
+                                            -404,
+                                            "视频已被删除".to_string(),
+                                        )
+                                        .into());
+                                    }
+                                }
                                 tracing::warn!("检测到番剧HTTP 412风控错误，转换为风控异常");
                                 return Err(crate::bilibili::BiliError::RiskControlOccurred.into());
                             }
