@@ -305,15 +305,21 @@ impl ErrorClassifier {
 
                 let should_retry = match *code {
                     -352 | -412 => false,     // 风控不重试
+                    -404 => false,            // 404错误不重试
                     -500..=-400 | -1 => true, // 服务器错误或网络错误可重试
-                    _ => false,               // 充电专享视频等其他错误不重试
+                    _ => false,               // 其他错误不重试
+                };
+
+                let should_ignore = match *code {
+                    -404 => true,             // 404错误忽略，仅显示警告
+                    _ => false,               // 其他错误不忽略
                 };
 
                 let message = format!("B站API错误: {}", msg);
 
                 ClassifiedError::new(error_type, message)
-                    .with_retry_policy(should_retry, false) // 简化逻辑，移除充电视频特殊处理
-                    .with_auto_delete(false) // 充电视频现在由upower字段在获取详情时处理
+                    .with_retry_policy(should_retry, should_ignore) // 404错误设置为忽略
+                    .with_auto_delete(false) // 不自动删除
             }
         }
     }
