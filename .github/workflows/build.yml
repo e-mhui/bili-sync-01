@@ -120,6 +120,7 @@ jobs:
           toolchain: ${{ steps.read_rust_toolchain.outputs.value }}
           args: "--locked --release -p bili_sync"
           strip: true
+          cross-version: "0.2.5"
 
       - name: Package archive
         shell: bash
